@@ -275,25 +275,25 @@ export default function Home() {
    </aside>
 
    <section className={"aigzt-chat-card workspace-surface flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[22px] "+(chatActive?"h-[calc(100dvh-172px)]":"h-[calc(100dvh-250px)] min-h-[455px]")+" lg:h-[calc(100dvh-222px)] lg:min-h-[525px]"}>
-    <div className="flex items-center justify-between gap-2 border-b border-border/70 px-4 py-3.5 sm:px-5">
+    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 py-2.5 sm:px-5 sm:py-3.5">
      <div className="min-w-0"><div className="flex items-center gap-2"><span className="size-2 rounded-full bg-primary"/><span className="truncate text-[13px] font-semibold sm:text-sm">{current?.value.title||"新建对话"}</span></div><p className="ml-4 mt-0.5 text-[10px] text-muted-foreground">选择任务模式，开始使用你的 AI 工具箱</p></div>
      <div className="flex items-center gap-1">
       {selected&&(deleteConfirm?<><span className="text-[11px] text-destructive">删除会话？</span><Button size="sm" variant="outline" onClick={()=>setDeleteConfirm(false)}>取消</Button><Button size="sm" variant="destructive" onClick={()=>void remove()}>删除</Button></>:<Button size="icon" variant="ghost" aria-label="删除会话" onClick={()=>setDeleteConfirm(true)}><Trash2 className="size-4"/></Button>)}
       <Button size="icon" variant="secondary" aria-label="新建对话" onClick={startNew} className="rounded-lg"><Plus className="size-4"/></Button>
      </div>
     </div>
-    <div className="aigzt-chat-tools workspace-scroll flex items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-3 sm:px-5">
+    <div className="aigzt-chat-tools workspace-scroll flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-2 sm:px-5">
      <span className="shrink-0 text-[11px] text-muted-foreground">引擎</span>
      <Button size="sm" variant={engine==="native"?"default":"secondary"} onClick={()=>setEngine("native")} className="h-8 shrink-0 rounded-lg text-xs"><Check className="size-3"/>内置 AI</Button>
      <Button size="sm" variant={engine==="gateway"?"default":"secondary"} disabled={!gatewayReady} onClick={()=>setEngine("gateway")} className="h-8 shrink-0 rounded-lg text-xs"><Sparkles className="size-3"/>FreeLLMAPI</Button>
      <Button size="sm" variant="ghost" disabled={checking} onClick={()=>void checkGateway()} className="h-8 shrink-0 text-xs">{checking?"连接检测中…":gatewayReady?"重新检测":"连接网关"}<ChevronRight className="size-3"/></Button>
     </div>
-    <div className={(chatActive?"flex":"hidden sm:flex")+" aigzt-chat-tools workspace-scroll items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-2.5 sm:px-5"}>
+    <div className={(chatActive?"flex":"hidden sm:flex")+" aigzt-chat-tools workspace-scroll shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-1.5 sm:px-5"}>
      <span className="shrink-0 text-[11px] text-muted-foreground">任务</span>
      {tools.map(t=><Button key={t.id} size="sm" variant={activeMode===t.id?"secondary":"ghost"} className={"h-8 shrink-0 rounded-lg px-3 text-[11px] "+(activeMode===t.id?"text-foreground":"text-muted-foreground")} onClick={()=>void changeMode(t.id)}>{t.label}</Button>)}
     </div>
 
-    <div ref={chatScroll} className="workspace-scroll min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+    <div ref={chatScroll} data-chat-messages className="workspace-scroll min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
      {visibleMessages.length===0&&!busy?<div className="space-y-3 py-1 sm:space-y-5 sm:py-5">
       <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/13 text-primary sm:size-11 sm:rounded-2xl"><WandSparkles className="size-6"/></span><div><h2 className="text-base font-semibold sm:text-xl">今天想完成什么？</h2><p className="mt-0.5 text-[11px] leading-5 text-muted-foreground sm:mt-1 sm:text-sm sm:leading-6">选择任务即可开始。会话和项目资料自动保留，手机与电脑可接续使用。</p></div></div>
       <div className="grid grid-cols-2 gap-2 sm:gap-3">{quickTools.map(t=>{const Icon=t.icon;return <Button key={t.id} variant="outline" onClick={()=>useSuggestion(t)} className="workspace-button h-auto min-h-[72px] flex-row items-center justify-start gap-2 rounded-xl border-border/75 bg-card p-2.5 text-left hover:border-primary/40 hover:bg-primary/7 sm:min-h-[110px] sm:flex-col sm:items-start sm:justify-between sm:rounded-2xl sm:p-4">

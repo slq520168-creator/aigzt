@@ -139,11 +139,15 @@ body { background-image:radial-gradient(ellipse 70vw 46vh at 98% -13%,color-mix(
     min-height: 0;
     flex: 1 1 auto;
   }
-  .aigzt-chat-card > .workspace-scroll {
+  .aigzt-chat-card > [data-chat-messages] {
     min-height: 0;
     flex: 1 1 0%;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+  .aigzt-chat-card > :not([data-chat-messages]) {
+    flex-grow: 0;
+    flex-shrink: 0;
   }
   /* Navigation must never float above the iOS/Android on-screen keyboard. */
   body:has(.aigzt-chat-input:focus) [data-bottom-nav],
