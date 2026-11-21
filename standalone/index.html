@@ -79,6 +79,7 @@
   <div class="modal-head"><div><h2>连接我自己的 AI</h2><p>免费池优先使用，个人密钥仅按你选择的模型调用。</p></div><button class="close-modal" data-close="keyDialog" aria-label="关闭">×</button></div>
   <form id="keyForm"><label>服务商
    <select id="keyProvider"><option value="openrouter">OpenRouter（数百模型）</option><option value="groq">Groq（快速免费额度）</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option></select></label>
+   <button id="openrouterLogin" type="button" class="outline full">使用 OpenRouter 账号授权我的额度</button>
    <label>自己的 API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="密钥不会保存到服务器或浏览器持久存储"></label>
    <label class="check-row"><input type="checkbox" id="allowPaid"><span>我理解：使用个人密钥可能产生服务商费用；仅在主动选择该线路时调用。</span></label>
    <p class="small-note">密钥仅保存在当前浏览器页面内存中，关闭或刷新后需要重新填写。平台不会默认收费，也不会代替你注册其他服务商。</p>
