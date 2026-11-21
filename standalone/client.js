@@ -1,7 +1,7 @@
 "use strict";
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
- modelTitle:"免费模型",provider:"free",keys:{},connected:{},
+ modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
@@ -122,25 +122,72 @@ function refreshKeyPanel(){
  provider==="novai_pro"?"部分 Flash 模型限额免费；其他模型可能收费。":
  provider==="openrouter"?"可用官方账号授权，或创建 API Key。":"登录服务商账号创建 API Key，再返回粘贴。";
  $("personalKey").value="";
- $("personalKey").placeholder=rec?"已加密保存，留空即可":"粘贴 API Key";
- $("keySaveLabel").textContent=rec?"更换密钥":"验证并保存";
+ $("personalKey").placeholder=rec?"已保存，无需再次填写；更换时才输入新密钥":"粘贴 API Key";
+ $("keySaveLabel").textContent=rec?"更换并保存密钥":"加密保存密钥";
+ $("useSavedKey").hidden=!rec;
  $("disconnectProvider").hidden=!rec;
  $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini";
  $("allowPaid").checked=Boolean(rec?.consent);
- $("keyStatus").textContent=rec?"已连接 · 密钥已保存":"";
+ $("keyStatus").textContent=rec?(rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
  $("openrouterLogin").hidden=provider!=="openrouter";
 }
 async function fetchConnections(){
- if(!S.user){S.savedProviders={};S.connected={};return}
- const d=await api("/api/connections"),saved={};
- for(const item of d.connections||[]){
-  saved[item.provider]={model:item.model,consent:!!item.consent,updatedAt:item.updatedAt};
-  if(!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model}];
+ if(!S.user){S.savedProviders={};S.connected={};S.connectionsLoaded=false;return}
+ try{
+  const result=await api("/api/connections"),saved={};
+  for(const item of result.connections||[]){
+   saved[item.provider]={model:item.model||"",consent:!!item.consent,verified:!!item.verified,updatedAt:item.updatedAt};
+   if(item.model&&!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model}];
+  }
+  S.savedProviders=saved;S.connectionsLoaded=true;refreshSourceChips();
+  if(S.provider!=="free"&&!connected(S.provider))setFreeDefault(false);
+  S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);
+  S.selectedFree=isFreeModel(S.provider,S.model);
+  updateModelTitle();
+  if(!$("keyDialog").open||!$("personalKey").value)refreshKeyPanel();
+ }catch(e){
+  S.connectionsLoaded=false;
+  flashError("密钥状态暂未同步："+humanError(e));
  }
- S.savedProviders=saved;refreshSourceChips();
- if(S.provider!=="free"&&!connected(S.provider)){S.provider="free";S.model="free:auto";S.modelTitle="免费模型"}
- S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);
- updateModelTitle();refreshKeyPanel();
+}
+function isFreeModel(provider,model){
+ if(provider==="free")return true;
+ if(typeof model!=="string")return false;
+ if(provider==="openrouter")return model==="openrouter/free"||model.endsWith(":free");
+ if(provider==="novai")return /^\[free\]/i.test(model);
+ if(provider==="novai_pro")return ["glm-4.7-flash","glm-4.1v-thinking-flash","glm-4.6v-flash"].includes(model);
+ return false;
+}
+function setFreeDefault(render=true){
+ S.provider="free";S.model="free:auto";S.modelTitle="免费自动";S.allowPaid=false;S.selectedFree=true;
+ if(render)updateModelTitle();
+}
+async function useSavedConnection(){
+ const provider=$("keyProvider").value,entry=S.savedProviders[provider];
+ if(!entry){$("keyStatus").textContent="请先保存密钥";return}
+ const button=$("useSavedKey");button.disabled=true;
+ try{
+  let model=entry.model;
+  if(!model){
+   const manual=$("manualModel").value.trim();
+   if(manual){
+    await api("/api/connections/"+provider+"/selected",{model:manual});
+    entry.model=manual;model=manual;
+   }
+  }
+  if(!model){
+   try{
+    const models=await api("/api/connections/"+provider+"/models",{});
+    const item=(models.models||[]).find(x=>x.type==="text")||(models.models||[])[0];
+    if(item){model=item.id;entry.model=model;entry.verified=true;S.connected[provider]=models.models}
+   }catch(e){$("keyStatus").textContent="密钥已保存。"+humanError(e)+"。可填写官方模型 ID 后使用。";return}
+  }
+  if(!model){$("keyStatus").textContent="密钥已保存。请填写官方模型 ID 后使用。";return}
+  S.provider=provider;S.model=model;S.modelTitle=provider+" · "+model;
+  S.allowPaid=!!entry.consent;S.selectedFree=isFreeModel(provider,model);
+  updateModelTitle();hide("keyDialog");$("prompt").focus();
+ }catch(e){$("keyStatus").textContent=humanError(e)}
+ finally{button.disabled=false}
 }
 async function removeSavedKey(){
  const p=$("keyProvider").value;
@@ -1004,6 +1051,7 @@ function openModels(){
 function openKeyPanel(provider){
  if(typeof provider==="string"&&$("keyProvider").querySelector('option[value="'+provider+'"]'))$("keyProvider").value=provider;
  refreshKeyPanel();show("keyDialog");
+ if(S.user&&!S.connectionsLoaded)void fetchConnections();
 }
 function setCreationMode(mode){
  S.createMode=mode;
@@ -1075,7 +1123,7 @@ async function finishOpenRouterOAuth(){
  try{
   const result=await api("/api/openrouter/exchange",{code,verifier:saved.verifier});
   const d=await api("/api/connections",{provider:"openrouter",apiKey:result.key,consent:false});
-  S.savedProviders.openrouter={model:d.connection.model,consent:false,updatedAt:d.connection.updatedAt};
+  S.savedProviders.openrouter={model:d.connection.model,consent:false,verified:!!d.connection.verified,updatedAt:d.connection.updatedAt};
   S.connected.openrouter=d.models||[];
   S.provider="openrouter";S.model=d.connection.model;S.modelTitle="OpenRouter · "+S.model;S.allowPaid=false;updateModelTitle();
   refreshSourceChips();$("keyProvider").value="openrouter";refreshKeyPanel();show("keyDialog");
@@ -1104,7 +1152,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.freeToolsMode=false;S.freeToolsCategory="全部";S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.freeToolsMode=false;S.freeToolsCategory="全部";S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -1119,13 +1167,17 @@ async function verifyKey(event){
   const manualModel=$("manualModel").value.trim();
   const data=await api("/api/connections",{provider:p,apiKey:key,model:manualModel||undefined,consent:$("allowPaid").checked});
   const rec=data.connection;
-  if(!rec||!Array.isArray(data.models)||!data.models.length)throw Error("服务商未返回可用模型");
-  S.savedProviders[p]={model:rec.model,consent:!!rec.consent,updatedAt:rec.updatedAt};
-  S.connected[p]=data.models;delete S.keys[p];
-  S.provider=p;S.model=rec.model;S.modelTitle=p+" · "+(data.models.find(m=>m.id===rec.model)?.name||rec.model);
+  if(!rec)throw Error("密钥保存失败");
+  S.savedProviders[p]={model:rec.model||"",consent:!!rec.consent,verified:!!rec.verified,updatedAt:rec.updatedAt};
+  S.connected[p]=Array.isArray(data.models)?data.models:[];delete S.keys[p];
+  if(rec.model){
+   S.provider=p;S.model=rec.model;
+   S.modelTitle=p+" · "+(S.connected[p].find(m=>m.id===rec.model)?.name||rec.model);
+   S.selectedFree=isFreeModel(p,rec.model);
+  }
   S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
-  refreshKeyPanel();$("keyStatus").textContent=rec.verified?"已验证并加密保存":"密钥已保存，但此模型调用尚未验证";
-  if(rec.consent){hide("keyDialog");$("prompt").focus()}
+  refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已加密保存 · 模型目录已验证":(data.warning||"密钥已加密保存 · 模型目录未验证");
+  if(rec.consent&&rec.verified&&rec.model){hide("keyDialog");$("prompt").focus()}
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
 }
@@ -1189,6 +1241,7 @@ function wire(){
  $("authForm").addEventListener("submit",e=>void login(e));
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
+ $("useSavedKey").addEventListener("click",()=>void useSavedConnection());
  $("allowPaid").addEventListener("change",()=>{
   const provider=$("keyProvider").value,consent=$("allowPaid").checked;
   if(!S.savedProviders[provider])return;
