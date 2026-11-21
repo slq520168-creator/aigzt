@@ -69,7 +69,7 @@
  <dialog id="modelDialog" class="modal wide-modal">
   <div class="modal-head"><div><h2>模型大厅</h2><p id="modelSummary">免费模型与各家真实模型分开展示，不虚报可用额度。</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
   <div class="model-tools"><input id="modelSearch" placeholder="搜索 GPT、Grok、Gemini、Qwen、编程模型…" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
-  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="cloudflare">本站免费</button><button class="chip" data-source="openrouter">OpenRouter</button></div>
+  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="cloudflare">本站免费</button><button class="chip" data-source="openrouter">OpenRouter</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button></div>
   <div class="model-count" id="modelCount">正在读取真实模型目录…</div>
   <div class="model-list" id="modelList"></div>
   <button class="outline full" id="moreModels" type="button" hidden>加载更多模型</button>
