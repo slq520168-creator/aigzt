@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4.4-connectivity";
+const VERSION="aigzt-cf-4.5-free-default";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -213,7 +213,7 @@ async function freeText(env,messages,mode,preferred="free:auto"){
  const system=mode==="code"?"你是中文编程助手，提供可运行的代码与测试方法。":"你是中文 AI 助手，准确回答，不能编造事实。";
  const history=messages.map(m=>({role:m.role,content:truncate(m.body,3000)}));
  const sources=[
-  {id:"vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"vexa",ms:8500,query:true},
+  {id:"vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"auto",ms:8500,query:true},
   {id:"vireonix",endpoint:"https://vireonix.ai/v1/chat/completions",model:"auto",ms:6500},
   {id:"cehpoint",endpoint:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai",ms:6500}
  ];
@@ -225,7 +225,7 @@ async function freeText(env,messages,mode,preferred="free:auto"){
   try{
    const notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,2200);
    const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n").slice(-3000);
-   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent,model:source.model}:{model:source.model,messages:[{role:"system",content:system},...history],max_tokens:800,stream:false};
+   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:{model:source.model,messages:[{role:"system",content:system},...history],max_tokens:800,stream:false};
    const res=await fetch(source.endpoint,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(source.ms)});
    if(!res.ok||res.status>=300){failures.push(source.id+": HTTP "+res.status);continue}
    const out=await res.json(),content=source.query?(out.success===true?out.response:null):out?.choices?.[0]?.message?.content;
