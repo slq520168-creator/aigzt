@@ -30,6 +30,7 @@
     <div class="side-heading project-heading"><span>项目</span><button id="newProject" class="icon-btn small-btn" aria-label="新建项目"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button></div>
     <div id="projectsList" class="project-list" aria-label="项目列表"></div>
     <div class="sidebar-links">
+     <button class="nav-row" id="navWork"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作任务</span></button>
      <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>AI 模型</span></button>
      <button class="nav-row" id="groqConnect"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span>Groq 免费额度</span></button>
      <button class="nav-row" id="navFiles"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>已上传文件</span></button>
@@ -45,9 +46,25 @@
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button><button type="button" class="work-top" id="workOpen">工作</button></div>
     <div class="top-right"><button class="icon-btn" id="themeToggle" title="切换呼吸主题" aria-label="切换呼吸主题"><span class="ui-icon" data-icon="palette" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
+   <section class="work-board" id="workBoard" hidden aria-label="工作任务">
+    <div class="work-header"><div><h2>工作模式</h2><p>任务分步保存 · 额度不足自动切换已授权模型</p></div><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+    <div id="workEmpty" class="work-empty">在下方输入任务，自动执行并保存每一步。</div>
+    <div id="workDetail" class="work-detail" hidden>
+     <h3 id="workTitle"></h3><div id="workState" class="work-state" role="status"></div>
+     <div id="workProgress" class="work-progress"></div>
+     <div id="workStepList" class="work-step-list"></div>
+     <div class="work-actions">
+      <button type="button" id="workContinue" class="outline">继续执行</button>
+      <button type="button" id="workStop" class="outline">停止</button>
+      <button type="button" id="workExport" class="outline">导出 Markdown</button>
+      <button type="button" id="workDelete" class="danger-link">删除</button>
+     </div>
+    </div>
+    <details class="work-history"><summary>历史任务</summary><div id="workTaskList" class="work-task-list"></div></details>
+   </section>
    <div class="conversation" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
    <div class="composer-area">
     <div class="error-banner" id="errorBanner" role="alert" hidden></div>
@@ -69,6 +86,7 @@
       <button type="button" class="subtle" id="composeModels"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span><span>模型</span></button>
       <button type="button" class="subtle" id="imageMode" aria-pressed="false"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>作图</span></button>
       <button type="button" class="subtle" id="videoMode" aria-pressed="false"><span class="ui-icon" data-icon="video" aria-hidden="true"></span><span>视频</span></button>
+      <button type="button" class="subtle" id="workModeBtn" aria-pressed="false"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作模式</span></button>
       <button type="button" class="subtle" id="codeToggle" aria-pressed="false"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>代码</span></button>
      </div>
     </form>

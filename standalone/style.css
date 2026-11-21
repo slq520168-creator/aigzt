@@ -278,3 +278,34 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 .key-provider-guide a{color:#266a84;font-weight:600;font-size:14px;text-decoration:none}
 .key-provider-guide a:hover{text-decoration:underline}
 .key-provider-guide span{color:#78888d;font-size:12px}
+
+.work-top{border:1px solid #e2e8ea;border-radius:12px;padding:6px 11px;font-size:13px;color:#44616c;white-space:nowrap}
+.work-top:hover,.work-top.active{background:#eaf2f3;border-color:#b9d1d4}
+.work-board{flex:1;min-height:0;overflow-y:auto;max-width:900px;width:100%;margin:auto;padding:12px 30px 32px;overscroll-behavior:contain}
+.work-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-bottom:18px;border-bottom:1px solid #e9edef}
+.work-header h2{margin:0;font-size:21px;font-weight:650}
+.work-header p{font-size:12px;color:#7a8a90;margin:6px 0 0}
+.work-empty{text-align:center;color:#869299;font-size:14px;padding:65px 12px}
+.work-detail{padding-top:18px}
+.work-detail h3{font-size:17px;overflow-wrap:anywhere;margin:0 0 8px}
+.work-state{color:#567580;font-size:13px;overflow-wrap:anywhere;margin-bottom:14px}
+.work-progress{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:15px}
+.work-progress-step{font-size:12px;padding:5px 10px;background:#f3f5f6;color:#89979c;border-radius:13px}
+.work-progress-step.done{background:#e4f2ec;color:#3e7758}
+.work-progress-step.current{background:#e6eef6;color:#3d6d98}
+.work-step{padding:15px 0;border-top:1px solid #edf0f1}
+.work-step-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:9px}
+.work-step-head strong{font-size:14px}
+.work-step-head small{font-size:11px;color:#859599;overflow-wrap:anywhere;text-align:right}
+.work-step-body{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+.work-switch-note{font-size:12px;color:#567c73;margin-top:8px}
+.work-actions{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}
+.work-actions button{font-size:12px;padding:8px 12px}
+.work-history{margin-top:24px;border-top:1px solid #e9edef;padding-top:12px}
+.work-history summary{font-size:13px;color:#677b82;cursor:pointer;padding:5px}
+.work-task-list{display:flex;flex-direction:column;gap:3px;margin-top:10px}
+.work-task-row{display:flex;justify-content:space-between;gap:12px;align-items:center;text-align:left;padding:10px 12px;border-radius:10px;font-size:13px}
+.work-task-row.active,.work-task-row:hover{background:#f0f4f5}
+.work-task-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.work-task-row small{font-size:11px;color:#8a9699;flex:none}
+@media(max-width:900px){.work-board{padding:8px 14px 20px}.work-header h2{font-size:19px}.work-header p{font-size:11px}.work-top{font-size:12px;padding:6px 8px}}

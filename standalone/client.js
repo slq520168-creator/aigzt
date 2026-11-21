@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费模型",provider:"free",keys:{},connected:{},
- allowPaid:false,savedProviders:{},freeModels:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -20,6 +20,7 @@ const ICONS={
  'panel-left':'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
  layers:'<path d="m12 2 9 5-9 5-9-5 9-5Zm-9 10 9 5 9-5M3 17l9 5 9-5"/>',
  zap:'<path d="m13 2-3 8h8l-7 12 2-9H5l8-11Z"/>',
+ 'list-checks':'<path d="m3 7 2 2 3-3M3 15l2 2 3-3M12 8h9M12 16h9"/>',
  x:'<path d="M18 6 6 18M6 6l12 12"/>',
  plus:'<path d="M12 5v14M5 12h14"/>',
  'square-pen':'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.37 3.63a1 1 0 0 1 3 3L12 16l-4 1 1-4Z"/>',
@@ -408,6 +409,7 @@ function setModel(row){
 
 function setComposerMode(mode){
  S.composerMode=mode;
+ if(S.workMode&&mode!=="text")setWorkMode(false);
  $("imageMode").classList.toggle("active",mode==="image");
  $("videoMode").classList.toggle("active",mode==="video");
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
@@ -441,7 +443,130 @@ async function uploadSelected(files){
  }
 }
 
+
+const WORK_LABELS=["规划","制作","复核","交付"];
+function setWorkMode(on){
+ S.workMode=on;
+ if(on){setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("workModeBtn").classList.add("active");$("workModeBtn").setAttribute("aria-pressed","true");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
+ else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("workModeBtn").classList.remove("active");$("workModeBtn").setAttribute("aria-pressed","false");$("prompt").placeholder="向 AI 提问…";}
+ closeMenu();
+}
+function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
+function renderWorkTasks(){
+ const box=$("workTaskList");box.replaceChildren();
+ if(!S.user){box.append(node("div","hint","登录后保存工作任务"));return}
+ if(!S.workTasks.length){box.append(node("div","hint","暂无任务"));return}
+ for(const t of S.workTasks){
+  const b=node("button","work-task-row"+(S.workTaskId===t.id?" active":""));
+  b.type="button";b.append(node("span","work-task-name",t.title),node("small","",workStatus(t)));
+  b.addEventListener("click",()=>void selectWorkTask(t.id));box.append(b);
+ }
+}
+function renderWorkDetail(){
+ const d=S.workDetail,task=d?.task,container=$("workDetail");
+ container.hidden=!task;$("workEmpty").hidden=!!task;
+ if(!task)return;
+ $("workTitle").textContent=task.title;
+ $("workState").textContent=workStatus(task)+(task.error?" · "+task.error:"");
+ const progress=$("workProgress");progress.replaceChildren();
+ for(let i=0;i<4;i++){const item=node("span","work-progress-step"+(i<task.nextStep?" done":i===task.nextStep?" current":""),
+  WORK_LABELS[i]);progress.append(item)}
+ const list=$("workStepList");list.replaceChildren();
+ for(const step of d.steps||[]){
+  const section=node("section","work-step");
+  const header=node("div","work-step-head");
+  header.append(node("strong","",step.phase),node("small","",step.provider+(step.model&&step.model!==step.provider?" · "+step.model:"")));
+  section.append(header,node("div","work-step-body",step.body));
+  if(step.attempts?.length){section.append(node("div","work-switch-note","已切换 "+step.attempts.length+" 条不可用线路，继续使用 "+step.provider))}
+  list.append(section);
+ }
+ $("workContinue").hidden=task.status==="completed"||task.status==="cancelled";
+ $("workContinue").disabled=S.workBusy;
+ $("workStop").hidden=task.status==="completed"||task.status==="cancelled";
+ $("workExport").disabled=!(d.steps||[]).length;
+ $("workDelete").disabled=S.workBusy;
+}
+async function fetchWorkTasks(){
+ if(!S.user){S.workTasks=[];renderWorkTasks();return}
+ try{
+  const data=await api("/api/work/tasks");S.workTasks=data.tasks||[];renderWorkTasks();
+  if(!S.workDetail&&S.workTasks.length&&!S.workTaskId&&S.workMode)void selectWorkTask(S.workTasks[0].id);
+ }catch(e){$("workState").textContent="任务列表读取失败："+humanError(e)}
+}
+async function selectWorkTask(id){
+ if(S.workBusy&&S.workTaskId!==id)return;
+ try{
+  const d=await api("/api/work/tasks/"+id);S.workTaskId=id;S.workDetail=d;
+  renderWorkDetail();renderWorkTasks();
+ }catch(e){$("workState").textContent=humanError(e)}
+}
+async function startWorkTask(){
+ if(S.workBusy)return;
+ if(!S.user){show("authDialog");return}
+ const prompt=$("prompt").value.trim();if(prompt.length<3){flashError("请描述需要完成的任务");return}
+ S.workBusy=true;const epoch=++S.workEpoch;
+ $("sendBtn").disabled=true;$("workState").textContent="正在创建工作任务…";
+ try{
+  const data=await api("/api/work/tasks",{prompt,provider:S.provider,model:S.model,projectId:S.activeProjectId,
+   attachments:S.attachments.map(x=>x.id)});
+  if(epoch!==S.workEpoch)return;
+  $("prompt").value="";S.attachments=[];renderAttachments();
+  S.workTaskId=data.id;S.workDetail=null;
+  await selectWorkTask(data.id);await fetchWorkTasks();
+ }catch(e){flashError(humanError(e));$("workState").textContent=humanError(e)}
+ finally{S.workBusy=false;$("sendBtn").disabled=false}
+ if(epoch===S.workEpoch&&S.workTaskId===S.workDetail?.task?.id)void executeWorkTask(S.workTaskId);
+}
+async function executeWorkTask(id){
+ if(S.workBusy||!S.user)return;
+ S.workBusy=true;const epoch=++S.workEpoch;
+ $("sendBtn").disabled=true;$("workContinue").disabled=true;
+ try{
+  for(let i=0;i<4;i++){
+   if(epoch!==S.workEpoch)break;
+   const current=S.workDetail?.task;
+   if(!current||current.id!==id||["completed","cancelled","paused"].includes(current.status)&&i>0)break;
+   $("workState").textContent="正在执行 "+WORK_LABELS[current.nextStep] +" · 额度不足自动切换可用模型";
+   const d=await api("/api/work/tasks/"+id+"/advance",{});
+   if(epoch!==S.workEpoch)break;
+   if(d.busy){$("workState").textContent="此任务正在其他页面执行";break}
+   S.workDetail=d;renderWorkDetail();
+   await fetchWorkTasks();
+   const t=d.task;
+   if(!t||t.status==="completed"||t.status==="paused"||t.status==="cancelled")break;
+  }
+ }catch(e){$("workState").textContent="暂时无法继续："+humanError(e)}
+ finally{
+  if(epoch===S.workEpoch){S.workBusy=false;$("sendBtn").disabled=false;$("workContinue").disabled=false;renderWorkDetail();void fetchWorkTasks()}
+ }
+}
+async function stopWorkTask(){
+ const id=S.workTaskId;if(!id)return;
+ ++S.workEpoch;S.workBusy=false;$("sendBtn").disabled=false;
+ try{S.workDetail=await api("/api/work/tasks/"+id+"/cancel",{});renderWorkDetail();await fetchWorkTasks()}
+ catch(e){$("workState").textContent=humanError(e)}
+}
+async function deleteWorkTask(){
+ const id=S.workTaskId;if(!id||S.workBusy)return;
+ if(!confirm("删除这个任务及步骤记录？删除后不能恢复。"))return;
+ try{
+  await api("/api/work/tasks/"+id+"/delete",{});
+  S.workTaskId=null;S.workDetail=null;renderWorkDetail();await fetchWorkTasks();
+ }catch(e){$("workState").textContent=humanError(e)}
+}
+function exportWorkTask(){
+ const d=S.workDetail;if(!d?.steps?.length)return;
+ const content="# "+d.task.title+"\n\n"+
+  "任务："+d.task.prompt+"\n\n"+
+  d.steps.map(s=>"## "+s.phase+"\n\n"+s.body+"\n").join("\n");
+ const file=new Blob([content],{type:"text/markdown;charset=utf-8"});
+ const url=URL.createObjectURL(file),a=document.createElement("a");
+ a.href=url;a.download="AIGZT-"+d.task.title.replace(/[\\/:*?"<>|]/g,"_").slice(0,34)+".md";
+ document.body.append(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
 async function sendMessage(){
+ if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
@@ -662,7 +787,7 @@ async function login(event){
  try{
   const d=await api(S.authRegister?"/api/register":"/api/login",{email,password});
   S.user=d.user;hide("authDialog");form.reset();newChat();
-  await Promise.all([fetchMe(),fetchProjects(),fetchChats(),fetchConnections()]);
+  await Promise.all([fetchMe(),fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);
  }catch(e){$("authError").textContent=humanError(e)}
  finally{$("authSubmit").disabled=false}
 }
@@ -677,7 +802,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;S.keys={};S.connected={};S.savedProviders={};S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;S.keys={};S.connected={};S.savedProviders={};S.workTasks=[];S.workDetail=null;S.workTaskId=null;S.workMode=false;S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -706,6 +831,14 @@ function wire(){
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
+ $("navWork").addEventListener("click",()=>setWorkMode(true));
+ $("workOpen").addEventListener("click",()=>setWorkMode(!S.workMode));
+ $("workModeBtn").addEventListener("click",()=>setWorkMode(!S.workMode));
+ $("workClose").addEventListener("click",()=>setWorkMode(false));
+ $("workContinue").addEventListener("click",()=>void executeWorkTask(S.workTaskId));
+ $("workStop").addEventListener("click",()=>void stopWorkTask());
+ $("workDelete").addEventListener("click",()=>void deleteWorkTask());
+ $("workExport").addEventListener("click",exportWorkTask);
  $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq")});
  $("imageQuick").addEventListener("click",()=>{hide("modelDialog");setComposerMode("image");$("toolTray").hidden=true});
  $("navFiles").addEventListener("click",()=>void openFiles());
@@ -773,6 +906,6 @@ function hideAttachMenu(){$("attachMenu").hidden=true}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
- applyTheme(enabled?"rainbow":"plain");await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections()]);await finishOpenRouterOAuth();
+ applyTheme(enabled?"rainbow":"plain");await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
  updateModelTitle();
 });
