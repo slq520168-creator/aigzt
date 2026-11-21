@@ -728,6 +728,11 @@ function setFreeToolsMode(enabled){
   $("navFreeTools").classList.add("active");renderFreeTools();
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
+  if(!S.workMode){
+   $("conversation").hidden=false;
+   $("chatTop").classList.add("active");
+   $("chatTop").setAttribute("aria-pressed","true");
+  }
  }
  closeMenu();
 }
