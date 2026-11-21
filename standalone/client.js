@@ -479,6 +479,7 @@ const WORK_AGENT_PRODUCTS=[
  {name:"Google Antigravity",desc:"Google · 开发代理",url:"https://antigravity.google",region:"国际",kind:"dev"},
  {name:"Nova AI（Mac Agent）",desc:"Mac · 网页、邮件和自动任务",url:"https://nova-ai-agent.com/",region:"国际",kind:"work"},
  {name:"Nova（Agent Workspace）",desc:"Mac · Claude / ChatGPT 代理工作台",url:"https://supernova.md/",region:"国际",kind:"work"},
+ {name:"Nova AI（免费多模型）",desc:"novaai.one · 7 个模型自动路由，无需自带密钥；官网使用",url:"https://www.novaai.one/",region:"国际",kind:"web"},
  {name:"Nova AI（模型聚合）",desc:"novai.su · 多模型接口与免费模型",url:"https://once-cf.novai.su/",region:"国际",kind:"api"},
  {name:"NovAI（中国模型）",desc:"aiapi-pro.com · 中国模型与免费 Flash",url:"https://aiapi-pro.com/",region:"中国",kind:"api"},
  {name:"GigaAgent（ГигаАгент）",desc:"Sber · 俄罗斯自主任务代理",url:"https://www.sberbank.ru/ru/sberpress/all/article?blockID=1303&lang=ru&newsID=79a5051e-0de1-40eb-94b7-10ca383ca531&regionID=78&type=NEWS",region:"俄罗斯",kind:"work"},
@@ -502,7 +503,7 @@ function renderWorkAgentCatalog(){
    const link=node("a","work-agent-product");link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
    const details=node("span","work-agent-description");
    details.append(node("strong","",item.name),node("small","",item.desc));
-   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":item.kind==="api"?"API 入口":"官网");
+   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":item.kind==="api"?"API 入口":item.kind==="web"?"免费官网":"官网");
    link.append(details,meta);grid.append(link);
   }
   group.append(heading,grid);target.append(group);
