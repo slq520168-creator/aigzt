@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4.3-chat-surface";
+const VERSION="aigzt-cf-4.4-connectivity";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -137,12 +137,19 @@ async function providerModels(body){
  if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("请输入自己的有效 API Key");
  const h=HOSTS[id];
  const headers=id==="gemini"?{"x-goog-api-key":key}:{Authorization:"Bearer "+key};
- const resp=await fetch("https://"+h.host+h.models,{headers,redirect:"manual",signal:AbortSignal.timeout(12000)});
- if(resp.status>=300&&resp.status<400)throw Error("服务商要求跳转，已安全终止");
- if(!resp.ok)throw Error("服务商授权或查询失败，HTTP "+resp.status);
+ let resp;
+ try{resp=await fetch("https://"+h.host+h.models,{headers,redirect:"manual",signal:AbortSignal.timeout(10000)})}
+ catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"连接服务商超时":"无法连接服务商网络，请稍后重试"),{status:503})}
+ if(resp.status>=300&&resp.status<400)throw Object.assign(new Error("服务商返回跳转，已终止连接"),{status:502});
+ if(!resp.ok){
+  const status=resp.status;
+  const reason=status===401?"API Key 无效、已撤销或输入不完整":status===403?"服务商拒绝访问，检查账号地区与密钥权限":status===429?"服务商免费额度或频率已达到上限":status===404?"模型目录地址不可用":status>=500?"服务商接口暂时故障":"模型目录请求失败 HTTP "+status;
+  throw Object.assign(new Error(reason+"（HTTP "+status+"）"),{status:status===429?429:status===401||status===403?400:502});
+ }
  const json=await resp.json();
  let models=id==="gemini"?(json.models||[]).filter(x=>x.name?.startsWith("models/gemini-")).map(x=>({id:x.name.slice(7),name:x.displayName||x.name})):
   (json.data||[]).filter(x=>x.id).map(x=>({id:x.id,name:x.name||x.id}));
+ if(!Array.isArray(models)||models.length===0)throw Object.assign(new Error("连接成功但服务商没有返回可用模型"),{status:502});
  return {ok:true,models:models.slice(0,500)};
 }
 async function exchangeOpenRouter(body){
@@ -165,7 +172,7 @@ async function callExternal(provider,model,key,messages,consent){
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))throw Error("请先输入自己的 API Key");
  const isOpenRouterFree=provider==="openrouter"&&(model==="openrouter/free"||model.endsWith(":free"));
- if(!isOpenRouterFree&&consent!==true)throw Error("此线路可能使用本人付费额度，请先勾选费用确认");
+ if(!isOpenRouterFree&&consent!==true)throw Error("请先确认使用本人额度；若账户启用付费可能产生费用");
  const host=HOSTS[provider],headers={"content-type":"application/json","accept":"application/json"};
  if(provider==="gemini")headers["x-goog-api-key"]=key;
  else headers.authorization="Bearer "+key;
@@ -179,9 +186,10 @@ async function callExternal(provider,model,key,messages,consent){
  }else{
   body={model,messages:history,max_tokens:750,stream:false};
  }
- const res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(20000)});
+ let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(15000)})}
+ catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
  if(res.status>=300&&res.status<400)throw Error("上游跳转已拦截");
- if(!res.ok)throw Error(res.status===429?"个人服务商额度或速率已用完":res.status===402?"需要充值：已停止请求":"个人服务商调用失败 HTTP "+res.status);
+ if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503});
  const out=await res.json();
  const text=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("\n"):
  provider==="openai"?(out.output_text||(out.output||[]).flatMap(o=>o.content||[]).map(x=>x.text||"").join("\n")):
@@ -210,21 +218,23 @@ async function freeText(env,messages,mode,preferred="free:auto"){
   {id:"cehpoint",endpoint:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai",ms:6500}
  ];
  if(env.OPENROUTER_FREE_KEY)sources.push({id:"openrouter",endpoint:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY,ms:9000});
- if(env.GROQ_FREE_KEY)sources.push({id:"groq",endpoint:"https://api.groq.com/openai/v1/chat/completions",model:"llama-3.1-8b-instant",key:env.GROQ_FREE_KEY,ms:9000});
+ if(env.GROQ_FREE_KEY)sources.push({id:"groq",endpoint:"https://api.groq.com/openai/v1/chat/completions",model:"openai/gpt-oss-20b",key:env.GROQ_FREE_KEY,ms:9000});
  const preferredId=preferred.split(":")[1],order=preferredId==="auto"?sources:[...sources.filter(x=>x.id===preferredId),...sources.filter(x=>x.id!==preferredId)];
+ const failures=[];
  for(const source of order){
   try{
    const notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,2200);
    const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n").slice(-3000);
    const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent,model:source.model}:{model:source.model,messages:[{role:"system",content:system},...history],max_tokens:800,stream:false};
    const res=await fetch(source.endpoint,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(source.ms)});
-   if(!res.ok||res.status>=300)continue;
+   if(!res.ok||res.status>=300){failures.push(source.id+": HTTP "+res.status);continue}
    const out=await res.json(),content=source.query?(out.success===true?out.response:null):out?.choices?.[0]?.message?.content;
    const txt=typeof content==="string"?content:Array.isArray(content)?content.map(x=>x.text||"").join("\n"):"";
    if(txt.trim())return {content:truncate(txt,40000),actualModel:source.id+"/"+(out.model||source.model)};
-  }catch{}
+   failures.push(source.id+": 无有效文本");
+  }catch(e){failures.push(source.id+": "+(e?.name==="TimeoutError"||e?.name==="AbortError"?"超时":"网络失败"))}
  }
- throw Object.assign(new Error("免费模型暂时繁忙，请重试或选择其他免费线路"),{status:503});
+ throw Object.assign(new Error("免费模型暂时不可用（"+failures.slice(0,4).join("；")+"）"),{status:503});
 }
 async function chat(req,env,user){
  requireUser(user);
@@ -428,6 +438,27 @@ async function queryVideo(req,user){
  const url=typeof data?.video?.url==="string"&&data.video.url.startsWith("https://")?data.video.url:null;
  return {ok:true,status:data.status||"pending",url};
 }
+async function upstreamConnectivity(req){
+ const cache=caches.default,key=new Request(new URL("/health/connectivity",req.url).toString());
+ const cached=await cache.match(key).catch(()=>null);
+ if(cached)return cached;
+ const targets=[
+  {name:"Vexa 免费文字及作图",url:"https://vexa-ai.pages.dev/health",auth:false},
+  {name:"Groq 密钥接口",url:"https://api.groq.com/openai/v1/models",auth:true}
+ ];
+ const results=await Promise.all(targets.map(async t=>{
+  const started=Date.now();
+  try{
+   const r=await fetch(t.url,{method:"GET",headers:{accept:"application/json"},redirect:"manual",signal:AbortSignal.timeout(4500)});
+   const reachable=t.auth?(r.status===401||r.status===403||r.status===200):r.ok;
+   return {name:t.name,reachable,http:r.status,elapsedMs:Date.now()-started};
+  }catch(e){return {name:t.name,reachable:false,reason:e?.name==="TimeoutError"?"timeout":"network",elapsedMs:Date.now()-started}}
+ }));
+ const rsp=response({ok:true,website:true,upstreams:results},200,{"cache-control":"public,max-age=180"});
+ await cache.put(key,rsp.clone()).catch(()=>{});
+ return rsp;
+}
+
 async function main(req,env){
  const url=new URL(req.url),path=url.pathname;
  if(req.method==="GET"&&(path==="/"||path==="/index.html"))return staticResponse(HTML,"text/html; charset=utf-8");
@@ -436,10 +467,13 @@ async function main(req,env){
  if(req.method==="GET"&&path==="/manifest.webmanifest")return staticResponse(JSON.stringify({name:"AIGZT",short_name:"aigzt",description:"AI 统一聊天工作台",start_url:"/",scope:"/",display:"standalone",background_color:"#ffffff",theme_color:"#ffffff",icons:[{src:"/app-icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable"}]}),"application/manifest+json");
  if(req.method==="GET"&&path==="/app-icon.svg")return staticResponse('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="48" fill="#e8f4ef"/><path d="M48 143 88 46h16l40 97h-18l-11-29H77l-11 29H48zm35-44h26L96 64z" fill="#327f70"/><circle cx="148" cy="49" r="12" fill="#e6b654"/></svg>',"image/svg+xml");
  if(req.method==="GET"&&path==="/health")return response({ok:true,app:"AIGZT 独立工作台",version:VERSION,ownHosting:true,database:Boolean(env.DB),externalFreeOnly:true,storage:Boolean(env.MEDIA),limits:{perUserDaily:USER_DAILY,siteDaily:SITE_DAILY}});
+ if(req.method==="GET"&&path==="/health/connectivity")return upstreamConnectivity(req);
  if(!path.startsWith("/api/"))return fail("路径不存在",404);
  if(req.method==="POST"){
-  const origin=req.headers.get("origin");
-  if(origin!==url.origin)return fail("来源校验失败",403);
+  const origin=req.headers.get("origin"),site=req.headers.get("sec-fetch-site"),ref=req.headers.get("referer");
+  let refOk=false;
+  if(!origin&&ref){try{refOk=new URL(ref).origin===url.origin}catch{}}
+  if(!(origin===url.origin||(!origin&&(site==="same-origin"||refOk))))return fail("请求来源无法验证，请在当前网页内操作",403);
   const ip=req.headers.get("cf-connecting-ip")||"unknown";
   if(env.RATE){
    const limit=await env.RATE.limit({key:ip+":"+path});

@@ -356,12 +356,12 @@ async function sendMessage(){
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
  if(S.composerMode==="text"&&S.provider!=="free"&&!S.keys[S.provider]){
-  $("keyProvider").value=S.provider;show("keyDialog");return;
+  openKeyPanel(S.provider);return;
  }
  const freeRoute=S.provider==="free"||(S.provider==="openrouter"&&(S.model==="openrouter/free"||S.model.endsWith(":free")));
  if(S.composerMode==="text"&&!freeRoute&&!S.allowPaid){
   flashError("已选择的模型可能产生费用，请在「我的 AI 连接」中明确确认。");
-  show("keyDialog");$("keyProvider").value=S.provider;return;
+  openKeyPanel(S.provider);return;
  }
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
@@ -394,7 +394,7 @@ async function loadCatalog(){
   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
-  $("modelSummary").textContent=d.catalogError?"外部目录暂不可用，本站免费模型正常保留。":"从真实接口获取 "+S.remoteModels.length+" 个 OpenRouter 模型；其中免费与付费按实际价格标记。";
+  $("modelSummary").textContent=d.catalogError?"模型目录暂不可用，仍可尝试免费线路。":"已读取 "+S.remoteModels.length+" 个模型；实际调用以连接状态为准。";
  }catch(e){
   $("modelSummary").textContent="模型目录连接失败："+humanError(e);
   // Never invent a catalog. The Worker free-model catalog remains available
@@ -589,22 +589,31 @@ async function verifyKey(event){
  if(!S.user){show("authDialog");return}
  const provider=$("keyProvider").value,key=$("personalKey").value.trim();
  if(!key){$("keyStatus").textContent="请输入自己的 API Key";return}
- $("keyStatus").textContent="正在向服务商读取真实模型…";
+ const submit=event.submitter||$("keyForm").querySelector('button[type="submit"]');
+ if(submit)submit.disabled=true;
+ $("keyStatus").textContent="正在验证服务商连接…";
  try{
   const data=await api("/api/provider-models",{provider,apiKey:key});
-  S.keys[provider]=key;S.connected[provider]=data.models||[];S.allowPaid=$("allowPaid").checked;
-  if(provider==="groq"&&S.connected.groq.length){
-   const preferred=S.connected.groq.find(x=>x.id==="llama-3.1-8b-instant")||S.connected.groq.find(x=>x.id==="llama-3.3-70b-versatile")||S.connected.groq[0];
-   if(preferred?.id){S.provider="groq";S.model=preferred.id;S.modelTitle="Groq · "+(preferred.name||preferred.id);updateModelTitle()}
+  if(!Array.isArray(data.models)||!data.models.length)throw Error("服务商未返回可用模型");
+  S.keys[provider]=key;S.connected[provider]=data.models;
+  S.allowPaid=$("allowPaid").checked;
+  if(provider==="groq"){
+   const goodIds=["openai/gpt-oss-20b","openai/gpt-oss-120b","qwen/qwen3.6-27b","qwen/qwen3.8-27b"];
+   const selected=goodIds.map(id=>data.models.find(m=>m.id===id)).find(Boolean)||
+     data.models.find(m=>/(gpt-oss|qwen|llama)/i.test(m.id)&&!/guard|audio|tts|whisper|deprecated/i.test(m.id));
+   if(!selected)throw Error("Groq 已连接，但没有适用于文字聊天的有效模型");
+   S.provider="groq";S.model=selected.id;S.modelTitle="Groq · "+(selected.name||selected.id);updateModelTitle();
   }
   refreshSourceChips();
-  $("keyStatus").textContent="已验证 "+provider+" · "+S.connected[provider].length+" 个模型";
-  if(provider==="groq"&&S.connected.groq.length){
-   if(S.allowPaid){hide("keyDialog");closeMenu();flashError("");$("prompt").focus()}
-   else $("keyStatus").textContent="Groq 密钥已验证。确认使用个人账户额度后，再次点击验证以开始聊天。";
+  if(provider==="groq"){
+   if(S.allowPaid){$("personalKey").value="";hide("keyDialog");$("prompt").focus()}
+   else $("keyStatus").textContent="Groq 已连接。请勾选确认使用个人额度，无需再次输入密钥。";
+  }else{
+   $("keyStatus").textContent=provider+" 已连接 · "+data.models.length+" 个模型";
+   $("personalKey").value="";
   }
-  $("personalKey").value="";
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
+ finally{if(submit)submit.disabled=false}
 }
 function wire(){
  $("menuBtn").addEventListener("click",openMenu);
@@ -651,6 +660,13 @@ function wire(){
  $("authForm").addEventListener("submit",e=>void login(e));
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
+ $("allowPaid").addEventListener("change",()=>{
+  S.allowPaid=$("allowPaid").checked;
+  const provider=$("keyProvider").value;
+  if(provider==="groq"&&S.allowPaid&&S.keys.groq&&S.provider==="groq"){
+   $("personalKey").value="";hide("keyDialog");$("prompt").focus();
+  }
+ });
  $("openrouterLogin").addEventListener("click",()=>void beginOpenRouterOAuth().catch(e=>{$("keyStatus").textContent=humanError(e)}));
  $("keyProvider").addEventListener("change",e=>{
   $("openrouterLogin").hidden=e.target.value!=="openrouter";
