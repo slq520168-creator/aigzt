@@ -58,7 +58,11 @@ function iconButton(icon,text,onClick){
  b.append(el,node("span","",text));b.addEventListener("click",onClick);renderIcons(b);return b;
 }
 
-function show(id){if(!$(id).open)$(id).showModal()}
+function show(id){
+ const el=$(id);if(!el||el.open)return;
+ if(el.classList.contains("workspace-view")||el.classList.contains("context-popover")){el.show();closeMenu();}
+ else el.showModal();
+}
 function hide(id){if($(id).open)$(id).close()}
 function closeMenu(){$("shell").classList.remove("menu-open");$("sideShade").hidden=true}
 function openMenu(){$("shell").classList.add("menu-open");$("sideShade").hidden=false}
@@ -458,10 +462,18 @@ function refreshSourceChips(){
  }
 }
 function openModels(){
- show("modelDialog");S.modelPage=0;void loadCatalog();
+ S.modelPage=0;S.filter="free";S.source="all";
+ $("modelFilter").value="free";
+ for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="all");
+ show("modelDialog");void loadCatalog();
 }
-function openKeyPanel(){
- show("keyDialog");$("keyStatus").textContent="";
+function openKeyPanel(provider){
+ const selected=typeof provider==="string"?provider:$("keyProvider").value;
+ if(selected&&$("keyProvider").querySelector('option[value="'+selected+'"]'))$("keyProvider").value=selected;
+ $("openrouterLogin").hidden=$("keyProvider").value!=="openrouter";
+ $("groqKeyGuide").hidden=$("keyProvider").value!=="groq";
+ $("keyStatus").textContent="";
+ show("keyDialog");
 }
 function setCreationMode(mode){
  S.createMode=mode;
@@ -579,8 +591,15 @@ async function verifyKey(event){
  try{
   const data=await api("/api/provider-models",{provider,apiKey:key});
   S.keys[provider]=key;S.connected[provider]=data.models||[];S.allowPaid=$("allowPaid").checked;
+  if(provider==="groq"&&S.connected.groq.length){
+   const preferred=S.connected.groq.find(x=>x.id==="llama-3.1-8b-instant")||S.connected.groq.find(x=>x.id==="llama-3.3-70b-versatile")||S.connected.groq[0];
+   if(preferred?.id){S.provider="groq";S.model=preferred.id;S.modelTitle="Groq · "+(preferred.name||preferred.id);updateModelTitle()}
+  }
   refreshSourceChips();
-  $("keyStatus").textContent="已连接 "+provider+" · 发现 "+S.connected[provider].length+" 个模型。密钥仅在当前页面内存中使用。";
+  $("keyStatus").textContent="已验证 "+provider+" · "+S.connected[provider].length+" 个模型";
+  if(provider==="groq"&&S.connected.groq.length){
+   hide("keyDialog");closeMenu();flashError("");$("prompt").focus();
+  }
   $("personalKey").value="";
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
 }
@@ -591,6 +610,7 @@ function wire(){
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
+ $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
  $("newChat").addEventListener("click",newChat);$("headerNew").addEventListener("click",newChat);
  $("headerMore").addEventListener("click",()=>openChatActions());
  $("searchBtn").addEventListener("click",()=>{closeMenu();show("searchDialog");$("chatSearchInput").focus()});
@@ -627,7 +647,10 @@ function wire(){
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
  $("openrouterLogin").addEventListener("click",()=>void beginOpenRouterOAuth().catch(e=>{$("keyStatus").textContent=humanError(e)}));
- $("keyProvider").addEventListener("change",e=>{$("openrouterLogin").hidden=e.target.value!=="openrouter"});
+ $("keyProvider").addEventListener("change",e=>{
+  $("openrouterLogin").hidden=e.target.value!=="openrouter";
+  $("groqKeyGuide").hidden=e.target.value!=="groq";
+ });
  $("modelSearch").addEventListener("input",e=>{S.query=e.target.value;S.modelPage=0;renderModels()});
  $("modelFilter").addEventListener("change",e=>{S.filter=e.target.value;S.modelPage=0;renderModels()});
  for(const btn of els("#sourceChips .chip"))btn.addEventListener("click",()=>activateSource(btn.dataset.source));

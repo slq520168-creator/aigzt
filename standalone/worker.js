@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4.2-sidebar";
+const VERSION="aigzt-cf-4.3-chat-surface";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -433,6 +433,8 @@ async function main(req,env){
  if(req.method==="GET"&&(path==="/"||path==="/index.html"))return staticResponse(HTML,"text/html; charset=utf-8");
  if(req.method==="GET"&&path==="/style.css")return staticResponse(CSS,"text/css; charset=utf-8");
  if(req.method==="GET"&&path==="/app.js")return staticResponse(CLIENT,"application/javascript; charset=utf-8");
+ if(req.method==="GET"&&path==="/manifest.webmanifest")return staticResponse(JSON.stringify({name:"AIGZT",short_name:"aigzt",description:"AI 统一聊天工作台",start_url:"/",scope:"/",display:"standalone",background_color:"#ffffff",theme_color:"#ffffff",icons:[{src:"/app-icon.svg",sizes:"any",type:"image/svg+xml",purpose:"any maskable"}]}),"application/manifest+json");
+ if(req.method==="GET"&&path==="/app-icon.svg")return staticResponse('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="48" fill="#e8f4ef"/><path d="M48 143 88 46h16l40 97h-18l-11-29H77l-11 29H48zm35-44h26L96 64z" fill="#327f70"/><circle cx="148" cy="49" r="12" fill="#e6b654"/></svg>',"image/svg+xml");
  if(req.method==="GET"&&path==="/health")return response({ok:true,app:"AIGZT 独立工作台",version:VERSION,ownHosting:true,database:Boolean(env.DB),externalFreeOnly:true,storage:Boolean(env.MEDIA),limits:{perUserDaily:USER_DAILY,siteDaily:SITE_DAILY}});
  if(!path.startsWith("/api/"))return fail("路径不存在",404);
  if(req.method==="POST"){
