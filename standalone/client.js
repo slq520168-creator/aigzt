@@ -257,10 +257,45 @@ async function listArchived(){
 
 function hideWelcome(){$("welcome").hidden=true}
 function showWelcome(){$("welcome").hidden=false}
+
+function renderImageJob(bubble,id){
+ bubble.dataset.imageTask=id;
+ const label=node("span","image-job-label","Krea 免费作图排队中…");
+ const btn=node("button","image-job-refresh","查询进度");btn.type="button";
+ btn.addEventListener("click",()=>void pollImageJob(bubble,id,true));
+ bubble.replaceChildren(label,btn);void pollImageJob(bubble,id,false);
+}
+async function pollImageJob(bubble,id,manual){
+ if(!bubble.isConnected||bubble.dataset.imageTask!==id||bubble.dataset.imageBusy==="1")return;
+ const now=Date.now();
+ if(!manual&&now-Number(bubble.dataset.lastImagePoll||0)<7000)return;
+ bubble.dataset.imageBusy="1";bubble.dataset.lastImagePoll=String(now);
+ let delay=10000;
+ try{
+  const r=await api("/api/image/task/"+id);
+  if(!bubble.isConnected||bubble.dataset.imageTask!==id)return;
+  if(r.done){
+   delete bubble.dataset.imageTask;
+   if(r.failed){bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
+   const img=node("img","chat-generated-image");img.src=r.image;img.alt="AI 生成图片";img.loading="lazy";
+   const link=node("a","chat-download","打开图片");link.href=r.image;link.target="_blank";link.rel="noopener";
+   bubble.replaceChildren(img,link);return;
+  }
+  const label=bubble.querySelector(".image-job-label");if(label)label.textContent=r.notice||"Krea 生成中…";
+  delay=Math.max(9000,Math.min(18000,Number(r.waitSeconds||10)*1000));
+ }catch(e){const label=bubble.querySelector(".image-job-label");if(label)label.textContent="暂时无法查询，请点击查询进度"}
+ finally{
+  bubble.dataset.imageBusy="0";if(!bubble.dataset.imageStart)bubble.dataset.imageStart=String(Date.now());
+  if(bubble.isConnected&&bubble.dataset.imageTask===id&&Date.now()-Number(bubble.dataset.imageStart)<240000)window.setTimeout(()=>void pollImageJob(bubble,id,false),delay);
+ }
+}
+
 function appendMessage(role,content,model){
  const row=node("div","message "+role),bubble=node("div","bubble",content);
  if(role==="assistant"){
-  const icon=node("span","avatar-ai","✧");row.append(icon,bubble);
+  const icon=node("span","avatar-ai");icon.innerHTML="<svg viewBox=\"0 0 36 36\" width=\"34\" height=\"34\" aria-hidden=\"true\"><rect x=\"4\" y=\"6\" width=\"28\" height=\"27\" rx=\"12\" fill=\"#d6eef1\" stroke=\"#92c4ce\" stroke-width=\"1.2\"/><path d=\"M4 15C0 12 3 7 8 10M32 15c4-3 1-8-4-5\" fill=\"#b0d9e6\"/><circle cx=\"13\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><circle cx=\"23\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><path d=\"M14 26q4 3 8 0\" fill=\"none\" stroke=\"#496f77\" stroke-width=\"1.7\" stroke-linecap=\"round\"/><circle cx=\"8.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><circle cx=\"27.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><path d=\"M18 6V2\" stroke=\"#74aab6\" stroke-width=\"1.8\"/><circle cx=\"18\" cy=\"3\" r=\"2\" fill=\"#f7c975\"/></svg>";row.append(icon,bubble);
+  const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
+  if(pending){bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";const a=node("a","chat-download","打开图片");a.href=picture[1];a.target="_blank";a.rel="noopener";bubble.append(im,a)}
 
@@ -368,7 +403,10 @@ async function sendMessage(){
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  appendMessage("user",sentBody);$("prompt").value="";S.attachments=[];renderAttachments();
- const loading=appendMessage("assistant","正在获取真实回复…");
+ const loading=appendMessage("assistant","");
+ const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status"),dots=node("span","thinking-dots");
+ for(let i=0;i<3;i++)dots.append(node("i"));dots.setAttribute("aria-hidden","true");
+ status.append(dots,node("span","",S.composerMode==="image"?"正在提交 Krea 作图…":S.composerMode==="video"?"正在提交视频…":"正在思考…"));loadingBubble.replaceChildren(status);
  try{
   let result;
   if(S.composerMode==="text")result=await api("/api/chat",{chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),

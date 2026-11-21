@@ -262,3 +262,14 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 .quick-entry strong{font-size:13px;font-weight:600}
 .quick-entry small{font-size:11px;color:#859197}
 @media(max-width:430px){.model-quick{grid-template-columns:1fr;gap:7px}.quick-entry{padding:10px 12px}}
+
+.avatar-ai{width:34px;height:34px;display:grid;place-items:center;flex:none;background:transparent!important;color:inherit!important}
+.avatar-ai svg{display:block;width:34px;height:34px}
+.thinking-status{display:inline-flex;align-items:center;gap:8px;color:#70858a;font-size:13px;min-height:27px}
+.thinking-dots{display:inline-flex;gap:4px;align-items:center}
+.thinking-dots i{width:5px;height:5px;border-radius:50%;background:#a1c9c4;animation:thinkdots 1.15s ease-in-out infinite}
+.thinking-dots i:nth-child(2){animation-delay:.18s}.thinking-dots i:nth-child(3){animation-delay:.36s}
+@keyframes thinkdots{0%,70%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
+@media(prefers-reduced-motion:reduce){.thinking-dots i{animation:none}}
+.image-job-label{font-size:13px;color:#698189}.image-job-refresh{margin-left:10px;padding:5px 9px;color:#3e7484;border:1px solid #dce7e8;border-radius:10px;font-size:12px}
+.image-job-error{font-size:13px;color:#b44545}

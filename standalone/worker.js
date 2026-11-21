@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4.5-free-default";
+const VERSION="aigzt-cf-4.6-krea-im";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -354,54 +354,122 @@ async function mediaChat(req,env,user){
  const exists=b.chatId?await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",b.chatId,user.id):null;
  if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
  const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
- const result=mode==="image"?await createImage(mediaReq,env,user):await createVideo(mediaReq,user);
- const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply=mode==="image"?"![生成图片]("+result.image+")":"视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
+ const result=mode==="image"?await submitKrea(mediaReq,env,user):await createVideo(mediaReq,user);
+ const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply=mode==="image"?(result.pending?"[[aigzt:image-job:"+result.jobId+"]]":"![生成图片]("+result.image+")"):"视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
  if(!exists){const pid=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/.test(b.projectId)?b.projectId:null;
   if(pid&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",pid,user.id))throw Error("项目不存在");
   await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now,pid);}
+ const userMessageId=crypto.randomUUID(),assistantMessageId=crypto.randomUUID();
  await env.DB.batch([
-  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"user",prompt,mode,now),
-  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"assistant",reply,result.model||mode,now+1),
+  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(userMessageId,chatId,user.id,"user",prompt,mode,now),
+  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(assistantMessageId,chatId,user.id,"assistant",reply,result.model||mode,now+1),
   env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id)
  ]);
- return {ok:true,chatId,reply,model:result.model||mode,...(result.requestId?{requestId:result.requestId}:{})};
+ if(result.pending)await dbRun(env.DB,"UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=?",chatId,assistantMessageId,result.jobId,user.id);
+ return {ok:true,chatId,reply,model:result.model||mode,...(result.pending?{pending:true,jobId:result.jobId}:{}),...(result.requestId?{requestId:result.requestId}:{})};
 }
 
-async function createImage(req,env,user){
- requireUser(user);
- const body=await parseJSON(req),prompt=truncate(body.prompt,1000).trim();
+
+const KREA="https://krea-krea-2.hf.space";
+function hfHeaders(env){const t=String(env.HF_TOKEN||env.HUGGINGFACE_TOKEN||"").trim();return /^hf_[A-Za-z0-9_-]{16,}$/.test(t)?{authorization:"Bearer "+t}:{}}
+function detectImage(a){if(a.length>4&&a[0]===137&&a[1]===80&&a[2]===78&&a[3]===71)return"image/png";if(a.length>3&&a[0]===255&&a[1]===216&&a[2]===255)return"image/jpeg";if(a.length>12&&String.fromCharCode(...a.slice(0,4))==="RIFF"&&String.fromCharCode(...a.slice(8,12))==="WEBP")return"image/webp";return""}
+async function downloadImage(resp){
+ if(!resp.ok||resp.status>=300)throw Error("图片下载 HTTP "+resp.status);
+ const r=resp.body?.getReader();if(!r)throw Error("没有返回图片");
+ let n=0;const chunks=[];
+ for(;;){const {value,done}=await r.read();if(done)break;n+=value.length;if(n>6000000){await r.cancel().catch(()=>{});throw Error("图片超过6MB")}chunks.push(value)}
+ const a=new Uint8Array(n);let x=0;for(const c of chunks){a.set(c,x);x+=c.length}
+ const mime=detectImage(a);if(!mime||n<1024)throw Error("无效图片数据");
+ return {a,mime};
+}
+function findImageUrl(v){
+ if(typeof v==="string")return v.startsWith("https://")?v:"";
+ if(Array.isArray(v)){for(const x of v){const s=findImageUrl(x);if(s)return s}return""}
+ if(v&&typeof v==="object"){
+  for(const k of ["url","src","image","path"]){const s=findImageUrl(v[k]);if(s)return s}
+  for(const x of Object.values(v)){const s=findImageUrl(x);if(s)return s}
+ }
+ return "";
+}
+async function saveKreaImage(env,uid,rawUrl){
+ const url=new URL(rawUrl),h=url.hostname.toLowerCase();
+ if(url.protocol!=="https:"||url.username||url.password||!(h==="krea-krea-2.hf.space"||h.endsWith(".hf.space")||h==="huggingface.co"||h.endsWith(".huggingface.co")||h==="hf.co"||h.endsWith(".hf.co")||h.endsWith(".gradio.live")))throw Error("非可信图片来源");
+ const resp=await fetch(url.href,{headers:{accept:"image/*",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(11000)});
+ const {a,mime}=await downloadImage(resp),id=crypto.randomUUID();
+ await env.MEDIA.put(uid+"/"+id,a,{httpMetadata:{contentType:mime},customMetadata:{name:"Krea-2 Turbo 图像"}});
+ return id;
+}
+async function submitKrea(req,env,user){
+ requireUser(user);const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(!prompt)throw Error("请输入图片描述");
  if(!env.MEDIA)throw Object.assign(new Error("独立图片存储未绑定"),{status:503});
- const refund=await quota(env,user.id,"image");
- let lastError;
- for(const model of ["hd","flux","turbo-img"]){
-  try{
-   const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({prompt,model,preference:"quality"}),redirect:"manual",signal:AbortSignal.timeout(15000)});
-   if(!res.ok||res.status>=300)throw Error(model+" 生成服务暂时不可用");
-   const result=await res.json();
-   const url=new URL(String(result.proxy_url||""));
-   if(result.success!==true||result.model!==model||url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/"))throw Error("没有获得可信生成图片");
-   if(!["deepai.org","pollinations.ai"].includes(result.source))throw Error("图片来源无效");
-   const image=await fetch(url.href,{redirect:"manual",signal:AbortSignal.timeout(15000)});
-   if(!image.ok||image.status>=300||!String(image.headers.get("content-type")||"").startsWith("image/"))throw Error("生成图片无法读取");
-   const reader=image.body?.getReader();if(!reader)throw Error("图片内容为空");
-   const chunks=[];let total=0;
-   for(;;){
-    const {done,value}=await reader.read();if(done)break;
-    total+=value.byteLength;
-    if(total>6_000_000){await reader.cancel().catch(()=>{});throw Error("生成图片超过6MB")}
-    chunks.push(value);
-   }
-   if(total<1024)throw Error("生成图片文件无效");
-   const data=new Uint8Array(total);let at=0;for(const part of chunks){data.set(part,at);at+=part.byteLength}
-   const id=crypto.randomUUID();
-   const mime=String(image.headers.get("content-type")||"").split(";")[0];
-   await env.MEDIA.put(user.id+"/"+id,data,{httpMetadata:{contentType:mime},customMetadata:{name:"AI 生成图片"}});
-   return {ok:true,image:"/api/files/"+id,model:"Vexa "+model+" · "+result.source};
-  }catch(e){lastError=e}
+ const rollback=await quota(env,user.id,"image");
+ try{
+  const seed=Math.floor(Math.random()*2147483647);
+  const payload={prompt,negative_prompt:"",model:"Turbo",steps:8,guidance:0,width:1024,height:1024,seed,randomize:false};
+  const res=await fetch(KREA+"/gradio_api/call/v2/generate",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(12000)});
+  if(!res.ok||res.status>=300)throw Error(res.status===429?"Krea 免费额度达到上限":"Krea 任务提交 HTTP "+res.status);
+  const data=await res.json(),eid=String(data?.event_id||"");
+  if(!/^[A-Za-z0-9_-]{8,128}$/.test(eid))throw Error("Krea 没有返回合法任务号");
+  const id=crypto.randomUUID(),day=new Date().toISOString().slice(0,10)+":image";
+  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,eid,Date.now(),day);
+  return {ok:true,pending:true,jobId:id,model:"Krea-2 Turbo · IM 同款"};
+ }catch(e){await rollback().catch(()=>{});throw Object.assign(new Error("Krea 免费作图暂不可用："+(e?.name==="TimeoutError"?"提交超时":e.message||"网络失败")),{status:503})}
+}
+async function failKreaJob(env,job,message){
+ const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",message,Date.now(),job.id,job.user_id);
+ if(r.meta?.changes){
+  await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",job.charged_day,job.user_id),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",job.charged_day)]).catch(()=>{});
+  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","作图失败："+message,job.message_id,job.user_id).catch(()=>{});
  }
- await refund().catch(()=>{});
- throw Object.assign(new Error("免费作图线路暂时不可用，请稍后再试"),{status:503,cause:lastError});
+}
+async function queryKreaEvent(env,eid){
+ let resp;
+ try{resp=await fetch(KREA+"/gradio_api/call/generate/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
+ catch{return {status:"pending",notice:"Krea 正在排队"}}
+ if(!resp.ok||resp.status>=300)return resp.status===404?{status:"failed",error:"Krea 任务已经失效"}:{status:"pending",notice:"Krea 暂时无法查询"};
+ const reader=resp.body?.getReader();if(!reader)return {status:"pending"};
+ const dec=new TextDecoder();let buf="",total=0,doneUrl="",bad="";
+ const handle=block=>{
+  const event=block.match(/(?:^|\n)event:\s*([^\n]+)/)?.[1]?.trim();
+  const content=block.split("\n").filter(x=>x.startsWith("data:")).map(x=>x.slice(5).trim()).join("\n");
+  if(event==="error"||event==="failed"){bad="Krea 生成任务失败";return}
+  if(event==="complete"){try{doneUrl=findImageUrl(JSON.parse(content));if(!doneUrl)bad="Krea 未返回图片"}catch{bad="Krea 结果格式错误"}}
+ };
+ try{
+  for(;;){
+   const {done,value}=await reader.read();if(done)break;
+   total+=value.length;if(total>180000)throw Error("too_large");
+   buf+=dec.decode(value,{stream:true}).replace(/\r\n/g,"\n");
+   let end;while((end=buf.indexOf("\n\n"))>=0){handle(buf.slice(0,end));buf=buf.slice(end+2);if(doneUrl||bad)break}
+   if(doneUrl||bad)break;
+  }
+  if(buf.trim()&&!doneUrl&&!bad)handle(buf);
+ }catch(e){if(e?.message==="too_large")bad="Krea 返回数据异常"}
+ finally{reader.cancel().catch(()=>{})}
+ return bad?{status:"failed",error:bad}:doneUrl?{status:"complete",url:doneUrl}:{status:"pending",notice:"Krea 正在排队或绘图"};
+}
+async function imageJobStatus(env,user,id){
+ requireUser(user);
+ const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
+ if(!job)return fail("作图任务不存在",404);
+ if(job.status==="complete")return response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"Krea-2 Turbo"});
+ if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
+ if(Date.now()-job.created_at>30*60000){await failKreaJob(env,job,"Krea 免费队列超时");return response({ok:true,done:true,failed:true,error:"Krea 免费队列超时"})}
+ const now=Date.now();
+ if(now-(job.checked_at||0)<6800)return response({ok:true,done:false,pending:true,waitSeconds:9});
+ const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,id,user.id,now-6700);
+ if(!claimed.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:9});
+ const state=await queryKreaEvent(env,job.external_id);
+ if(state.status==="failed"){await failKreaJob(env,job,state.error);return response({ok:true,done:true,failed:true,error:state.error})}
+ if(state.status==="pending")return response({ok:true,done:false,pending:true,waitSeconds:10,notice:state.notice});
+ try{
+  const mid=await saveKreaImage(env,user.id,state.url);
+  const changed=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',media_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",mid,Date.now(),id,user.id);
+  if(changed.meta?.changes&&job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mid+")",job.message_id,user.id);
+  const final=changed.meta?.changes?mid:(await dbGet(env.DB,"SELECT media_id FROM image_jobs WHERE id=? AND user_id=?",id,user.id))?.media_id;
+  return response({ok:true,done:true,image:"/api/files/"+final,model:"Krea-2 Turbo"});
+ }catch{return response({ok:true,done:false,pending:true,waitSeconds:12,notice:"图片已生成，正在保存"})}
 }
 
 async function createVideo(req,user){
@@ -498,7 +566,9 @@ async function main(req,env){
  if(!user)return fail("请先登录独立 AIGZT 账号",401);
  if(path==="/api/provider-models"&&req.method==="POST")return response(await providerModels(await parseJSON(req)));
  if(path==="/api/openrouter/exchange"&&req.method==="POST")return response(await exchangeOpenRouter(await parseJSON(req)));
- if(path==="/api/image"&&req.method==="POST")return response(await createImage(req,env,user));
+ if(path==="/api/image"&&req.method==="POST")return response(await submitKrea(req,env,user));
+ const imageJob=path.match(/^\/api\/image\/task\/([0-9a-f-]{36})$/i);
+ if(imageJob&&req.method==="GET")return imageJobStatus(env,user,imageJob[1]);
  if(path==="/api/chat/media"&&req.method==="POST")return response(await mediaChat(req,env,user));
  if(path==="/api/files/upload"&&req.method==="POST")return response(await uploadFile(req,env,user));
  const fm=path.match(/^\/api\/files\/([0-9a-f-]{36})$/);
