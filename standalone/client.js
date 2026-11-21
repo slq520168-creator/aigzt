@@ -145,7 +145,7 @@ async function loadCatalog(){
   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"cloudflare"}));
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
-  $("modelSummary").textContent="从真实接口获取 "+S.remoteModels.length+" 个 OpenRouter 模型；其中免费与付费按实际价格标记。";
+  $("modelSummary").textContent=d.catalogError?"外部目录暂不可用，本站免费模型正常保留。":"从真实接口获取 "+S.remoteModels.length+" 个 OpenRouter 模型；其中免费与付费按实际价格标记。";
  }catch(e){
   $("modelSummary").textContent="模型目录连接失败："+humanError(e);
   // Never invent a catalog. The Worker free-model catalog remains available
@@ -165,7 +165,16 @@ function modelMatches(m){
  const query=S.query.trim().toLowerCase();
  const text=(m.name+" "+m.id+" "+m.provider+" "+(m.description||"")).toLowerCase();
  if(query&&!text.includes(query))return false;
- if(S.source!=="all"&&m.provider!==S.source)return false;
+ if(S.source.startsWith("family:")){
+  const name=S.source.slice(7),id=m.id.toLowerCase();
+  const groups={
+   gpt:/gpt|openai\/|\bo[1-9]-|^o[1-9]-/,
+   grok:/grok|x-ai\/|xai\//,
+   gemini:/gemini|google\//,
+   qwen:/qwen|alibaba|tongyi/
+  };
+  if(!groups[name]?.test(id))return false;
+ }else if(S.source!=="all"&&m.provider!==S.source)return false;
  if(S.filter==="free"&&!m.free)return false;
  if(S.filter==="text"&&m.type!=="text")return false;
  if(S.filter==="image"&&m.type!=="image")return false;
