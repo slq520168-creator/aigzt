@@ -643,7 +643,8 @@ async function workPrompt(env,user,t,index,prior){
  ];
  let project="";
  if(t.project_id){const p=await dbGet(env.DB,"SELECT name,instructions FROM projects WHERE id=? AND user_id=?",t.project_id,user.id);if(p)project=truncate(p.name,80)+"："+truncate(p.instructions,900)}
- const notes=(await env.DB.prepare("SELECT note FROM memory_notes WHERE user_id=? ORDER BY created_at DESC LIMIT 4").bind(user.id).all()).results||[];
+ const prefs=await dbGet(env.DB,"SELECT memory_enabled FROM user_preferences WHERE user_id=?",user.id);
+ const notes=prefs?.memory_enabled===0?[]:(await env.DB.prepare("SELECT note FROM memory_notes WHERE user_id=? ORDER BY created_at DESC LIMIT 4").bind(user.id).all()).results||[];
  return ["你是 AIGZT 工作模式执行器。任务被划分为4个持久步骤，必须使用上一阶段成果继续执行。",
  "只能声称已完成真实执行的操作。目前不具备外部浏览器、仓库提交和服务器 shell 权限；相关操作只能提供脚本或执行指令，不能声称已经上线。",
  "当前阶段 "+WORK_PHASES[index]+"（"+(index+1)+"/4）："+phases[index],
