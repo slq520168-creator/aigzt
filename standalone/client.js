@@ -1,7 +1,7 @@
 "use strict";
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
- modelTitle:"免费自动选择",provider:"free",keys:{},connected:{},
+ modelTitle:"免费模型",provider:"free",keys:{},connected:{},
  allowPaid:false,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[]
@@ -37,7 +37,7 @@ async function api(path,body){
 }
 function setAuthUI(){
  const logged=!!S.user;
- $("accountBtn").textContent=logged?S.user.email+" · 退出":"◯ 登录 / 注册";
+ $("accountBtn").textContent=logged?"我的账号 · 退出":"登录 / 注册";
  const q=S.quota;
  $("quotaLabel").textContent=q&&logged?"免费请求保护配额："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"外部免费 · 登录后使用";
 }
@@ -376,10 +376,11 @@ async function login(event){
 }
 function toggleAuth(){
  S.authRegister=!S.authRegister;
- $("authTitle").textContent=S.authRegister?"注册 AIGZT 独立账号":"登录 AIGZT";
- $("authSubmit").textContent=S.authRegister?"免费注册":"登录";
- $("switchAuth").textContent=S.authRegister?"已有账号？立即登录":"还没有账号？免费注册";
+ $("authTitle").textContent=S.authRegister?"注册":"登录";
+ $("authSubmit").textContent=S.authRegister?"注册":"登录";
+ $("switchAuth").textContent=S.authRegister?"已有账号？登录":"没有账号？注册";
  $("authError").textContent="";
+ $("authPassword").setAttribute("autocomplete",S.authRegister?"new-password":"current-password");
 }
 async function account(){
  if(!S.user){show("authDialog");return}

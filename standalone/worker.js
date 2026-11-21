@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-3-external";
+const VERSION="aigzt-cf-3.1-auth-ui";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -40,7 +40,7 @@ function staticResponse(text,type){
 }
 async function passwordHash(pass,salt){
  const material=await crypto.subtle.importKey("raw",utf(pass),"PBKDF2",false,["deriveBits"]);
- const bits=await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt:Uint8Array.from(salt.match(/../g),h=>parseInt(h,16)),iterations:120000},material,256);
+ const bits=await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt:Uint8Array.from(salt.match(/../g),h=>parseInt(h,16)),iterations:100000},material,256);
  return hex(bits);
 }
 function equal(a,b){
