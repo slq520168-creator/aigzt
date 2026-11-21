@@ -1,17 +1,17 @@
-// AIGZT standalone Cloudflare Worker. Own hosting + D1 + Workers AI.
+// AIGZT standalone Cloudflare Worker. Own hosting + D1 + R2 + external free model routing.
 // Does not depend on Tiniest Cloud SDK or embed its branding.
 // All passwords are PBKDF2-hashed; sessions stored as SHA-256 hashes.
 // API keys are request-scoped, never saved in logs, cookies or the database.
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-2";
+const VERSION="aigzt-cf-3-external";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
- {id:"@cf/meta/llama-3.1-8b-instruct-fast",name:"Llama 3.1 · 免费",provider:"Cloudflare",type:"text",free:true},
- {id:"@cf/zai-org/glm-4.7-flash",name:"GLM 4.7 Flash · 免费",provider:"Cloudflare",type:"text",free:true},
- {id:"@cf/google/gemma-4-26b-a4b-it",name:"Gemma 4 · 免费",provider:"Cloudflare",type:"text",free:true}
+ {id:"free:auto",name:"免费自动 · 多线路",provider:"free",type:"text",free:true},
+ {id:"free:vireonix",name:"Vireonix 免费文本",provider:"free",type:"text",free:true},
+ {id:"free:cehpoint",name:"Cehpoint 免费文本",provider:"free",type:"text",free:true}
 ];
 const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
@@ -36,7 +36,7 @@ function secureHeaders(ext={}){
  "content-security-policy":"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",...ext};
 }
 function staticResponse(text,type){
- return new Response(text,{headers:secureHeaders({"content-type":type,"cache-control":"public, max-age=300"})});
+ return new Response(text,{headers:secureHeaders({"content-type":type,"cache-control":"no-store"})});
 }
 async function passwordHash(pass,salt){
  const material=await crypto.subtle.importKey("raw",utf(pass),"PBKDF2",false,["deriveBits"]);
@@ -74,28 +74,24 @@ async function createSession(env,userId){
  return "aigzt_session="+token+"; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000";
 }
 async function authentication(req,env,action){
- const value=await parseJSON(req);
- const email=String(value.email||"").trim().toLowerCase();
- const pass=String(value.password||"");
+ const value=await parseJSON(req),email=String(value.email||"").trim().toLowerCase(),pass=String(value.password||"");
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>150)return fail("邮箱格式不正确");
- if(pass.length<12||pass.length>160)return fail("密码至少12位，最多160位");
+ if(pass.length<8||pass.length>160)return fail("密码长度须为8至160位");
  if(action==="register"){
-  const day=new Date().toISOString().slice(0,10);
-  const iphash=await sha(req.headers.get("cf-connecting-ip")||"unknown");
-  const attempt=await dbRun(env.DB,"INSERT INTO signup_limits(day,iphash,used) VALUES(?,?,1) ON CONFLICT(day,iphash) DO UPDATE SET used=used+1 WHERE used<2",day,iphash);
-  if(!attempt.meta?.changes)return fail("当前网络今日注册次数达到上限，请明天再试",429);
+  if(await dbGet(env.DB,"SELECT id FROM users WHERE email=?",email))return fail("该邮箱已经注册，请直接登录",409);
+  const day=new Date().toISOString().slice(0,10),iphash=await sha(req.headers.get("cf-connecting-ip")||"unknown");
+  const used=await dbGet(env.DB,"SELECT used FROM signup_limits WHERE day=? AND iphash=?",day,iphash);
+  if((used?.used||0)>=100)return fail("当前网络注册过于频繁，请稍后再试",429);
   const salt=random(16),hash=await passwordHash(pass,salt),id=crypto.randomUUID(),now=Date.now();
-  try{await dbRun(env.DB,"INSERT INTO users(id,email,passhash,salt,created_at) VALUES(?,?,?,?,?)",id,email,hash,salt,now)}
-  catch{return fail("该邮箱已注册，请登录",409)}
-  const cookie=await createSession(env,id);
-  return response({ok:true,user:{id,email}},201,{"set-cookie":cookie});
+  const inserted=await dbRun(env.DB,"INSERT INTO users(id,email,passhash,salt,created_at) VALUES(?,?,?,?,?) ON CONFLICT(email) DO NOTHING",id,email,hash,salt,now);
+  if(!inserted.meta?.changes)return fail("该邮箱已经注册，请直接登录",409);
+  await dbRun(env.DB,"INSERT INTO signup_limits(day,iphash,used) VALUES(?,?,1) ON CONFLICT(day,iphash) DO UPDATE SET used=used+1",day,iphash).catch(()=>{});
+  return response({ok:true,user:{id,email}},201,{"set-cookie":await createSession(env,id)});
  }
  const row=await dbGet(env.DB,"SELECT id,email,passhash,salt FROM users WHERE email=?",email);
- // Keep computation even when the email does not exist to reduce enumeration.
- const attempt=await passwordHash(pass,row?.salt||"e0".repeat(16));
- if(!row||!equal(attempt,row.passhash))return fail("邮箱或密码不正确",401);
- const cookie=await createSession(env,row.id);
- return response({ok:true,user:{id:row.id,email:row.email}},200,{"set-cookie":cookie});
+ const hashed=await passwordHash(pass,row?.salt||"e0".repeat(16));
+ if(!row||!equal(hashed,row.passhash))return fail("邮箱或密码不正确",401);
+ return response({ok:true,user:{id:row.id,email:row.email}},200,{"set-cookie":await createSession(env,row.id)});
 }
 function requireModelId(model){if(typeof model!=="string"||model.length>160||!/^[\w.:/-]+$/.test(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
@@ -202,15 +198,35 @@ async function quota(env,userId,kind="text"){
  }
  return async()=>{await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",day)])};
 }
+async function freeText(env,messages,mode,preferred="free:auto"){
+ const system=mode==="code"?"请用中文提供可靠可运行代码、错误处理和测试。":"请准确用中文回答，不得编造事实。";
+ const m=[{role:"system",content:system},...messages.map(x=>({role:x.role,content:truncate(x.body,3800)}))];
+ const sources=[
+  {id:"vireonix",url:"https://vireonix.ai/v1/chat/completions",model:"auto"},
+  {id:"cehpoint",url:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai"}
+ ];
+ if(env.OPENROUTER_FREE_KEY)sources.push({id:"openrouter",url:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY});
+ const favored=preferred.slice(5),routes=preferred==="free:auto"?sources:[...sources.filter(x=>x.id===favored),...sources.filter(x=>x.id!==favored)];
+ for(const item of routes){
+  try{
+   const res=await fetch(item.url,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...(item.key?{authorization:"Bearer "+item.key}:{})},body:JSON.stringify({model:item.model,messages:m,max_tokens:800,stream:false}),redirect:"manual",signal:AbortSignal.timeout(9000)});
+   if(!res.ok||res.status>=300)continue;
+   const body=await res.json(),reply=body?.choices?.[0]?.message?.content;
+   const value=typeof reply==="string"?reply:Array.isArray(reply)?reply.map(x=>x.text||"").join("\n"):"";
+   if(value.trim())return {content:truncate(value,40000),actualModel:item.id+"/"+(body.model||item.model)};
+  }catch{}
+ }
+ throw Object.assign(new Error("外部免费线路暂时不可用；没有使用 Cloudflare AI 或付费模型"),{status:503});
+}
 async function chat(req,env,user){
  requireUser(user);
- const body=await parseJSON(req),provider=body.provider==="cloudflare"?"cloudflare":String(body.provider||"cloudflare");
+ const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
  const message=truncate(body.message,8000).trim();
  if(!message)throw Error("请填写消息");
  const model=String(body.model||FREE_MODELS[0].id);
  requireModelId(model);
- if(provider==="cloudflare"&&!FREE_MODELS.some(m=>m.id===model))throw Error("此模型不是已经核准的免费模型");
- if(provider!=="cloudflare"&&!HOSTS[provider])throw Error("服务商不支持");
+ if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("此模型不是本站免费线路");
+ if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
  let chatId=typeof body.chatId==="string"?body.chatId:null;
  if(chatId){
   const found=await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
@@ -226,28 +242,11 @@ async function chat(req,env,user){
  const mode=body.mode==="code"?"code":"general";
  let giveBack=null,result;
  try{
-  if(provider==="cloudflare"){
+  if(provider==="free"){
    giveBack=await quota(env,user.id);
-   const system=mode==="code"?"你是 AIGZT 编程助手，请提供完整可用的代码、错误处理及测试步骤，不要声称你已运行代码。":"你是 AIGZT AI 中文助手，请准确回应，不编造事实。";
-   const candidates=[model,...FREE_MODELS.filter(x=>x.id!==model).map(x=>x.id)];
-   const tried=[];
-   for(const id of candidates){
-    const config={messages:[{role:"system",content:system},...messages.map(m=>({role:m.role,content:truncate(m.body,3000)}))],max_tokens:500};
-    if(id.includes("glm-4.7")||id.includes("gemma-4"))config.chat_template_kwargs={enable_thinking:false};
-    try{
-     const out=await env.AI.run(id,config);
-     const candidate=out?.response??out?.result?.response??out?.choices?.[0]?.message?.content??null;
-     const text=typeof candidate==="string"?candidate:null;
-     if(!text||!text.trim())throw Error("没有有效文本");
-     result={content:truncate(text,40000),actualModel:id};
-     break;
-    }catch(error){
-     const message=error instanceof Error?error.message:String(error);
-     tried.push({model:id,reason:/429|3040|rate|capacity|quota|403|5035/i.test(message)?"额度或模型不可用":"响应失败"});
-    }
-   }
-   if(!result)throw Object.assign(new Error("免费模型暂时全部不可用，不会转收费线路"),{status:503});
+   result=await freeText(env,messages,mode,model);
   }else result=await callExternal(provider,model,body.apiKey,messages,body.allowPaid);
+
  }catch(e){
   if(giveBack)await giveBack().catch(()=>{});
   throw e;
@@ -261,12 +260,21 @@ async function createImage(req,env,user){
  requireUser(user);
  const body=await parseJSON(req),prompt=truncate(body.prompt,1400).trim();
  if(!prompt)throw Error("请输入图片描述");
+ if(!env.MEDIA)throw Object.assign(new Error("独立文件存储未绑定"),{status:503});
  const refund=await quota(env,user.id,"image");
  try{
-  const out=await env.AI.run("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4});
-  if(typeof out?.image!=="string"||!out.image)throw Error("免费作图模型没有返回有效图片");
-  if(out.image.length>6500000)throw Error("生成图片太大，请修改描述重试");
-  return {ok:true,model:"@cf/black-forest-labs/flux-1-schnell",image:"data:image/jpeg;base64,"+out.image};
+  const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({prompt,model:"hd",preference:"quality"}),signal:AbortSignal.timeout(19000)});
+  if(!res.ok)throw Error("外部免费作图接口暂时不可用");
+  const result=await res.json(),url=new URL(String(result.proxy_url||""));
+  if(result.success!==true||result.model!=="hd"||result.source!=="deepai.org"||url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/"))throw Error("外部免费作图未返回有效图片");
+  const image=await fetch(url.href,{signal:AbortSignal.timeout(19000)});
+  if(!image.ok||!String(image.headers.get("content-type")||"").startsWith("image/"))throw Error("图片获取失败");
+  if(Number(image.headers.get("content-length")||0)>6_000_000)throw Error("生成图片过大");
+  const data=await image.arrayBuffer();
+  if(data.byteLength>6_000_000||data.byteLength<1024)throw Error("生成图片无效");
+  const id=crypto.randomUUID();
+  await env.MEDIA.put(user.id+"/"+id,data,{httpMetadata:{contentType:"image/jpeg"},customMetadata:{name:"AI 生成图片.jpg"}});
+  return {ok:true,image:"/api/files/"+id,model:"Vexa HD / DeepAI 外部免费"};
  }catch(e){await refund().catch(()=>{});throw e}
 }
 async function createVideo(req,user){
@@ -308,7 +316,7 @@ async function main(req,env){
  if(req.method==="GET"&&(path==="/"||path==="/index.html"))return staticResponse(HTML,"text/html; charset=utf-8");
  if(req.method==="GET"&&path==="/style.css")return staticResponse(CSS,"text/css; charset=utf-8");
  if(req.method==="GET"&&path==="/app.js")return staticResponse(CLIENT,"application/javascript; charset=utf-8");
- if(req.method==="GET"&&path==="/health")return response({ok:true,app:"AIGZT 独立工作台",version:VERSION,ownHosting:true,database:Boolean(env.DB),freeAI:Boolean(env.AI),limits:{perUserDaily:USER_DAILY,siteDaily:SITE_DAILY}});
+ if(req.method==="GET"&&path==="/health")return response({ok:true,app:"AIGZT 独立工作台",version:VERSION,ownHosting:true,database:Boolean(env.DB),externalFreeOnly:true,storage:Boolean(env.MEDIA),limits:{perUserDaily:USER_DAILY,siteDaily:SITE_DAILY}});
  if(!path.startsWith("/api/"))return fail("路径不存在",404);
  if(req.method==="POST"){
   const origin=req.headers.get("origin");
