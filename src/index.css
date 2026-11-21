@@ -95,3 +95,70 @@ body { background-image:radial-gradient(ellipse 70vw 46vh at 98% -13%,color-mix(
 @media(width < 40rem) { body { background-image:radial-gradient(ellipse 100vw 33vh at 100% 0%,color-mix(in oklch,var(--primary) 6%,transparent),transparent 90%); } .workspace-surface { box-shadow:0 8px 23px -19px oklch(0.29 0.03 220 / 25%); } }
 ::view-transition-old(root),::view-transition-new(root){animation-duration:260ms;animation-timing-function:ease-out;}
 @media(prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation-duration:0s;}}
+
+/* Chat layout is a single vertical flex viewport on phone/tablet, not a
+   fixed-height card inside a scrolling page. The message list is the only
+   flexible scroller, preserving readable chat when the keyboard opens. */
+@media (max-width: 1023px) {
+  body:has(.aigzt-chat-active) { overflow: hidden; }
+  body:has(.aigzt-chat-active) #root {
+    height: var(--aigzt-visible-height, 100dvh);
+    min-height: 0;
+    overflow: hidden;
+  }
+  body:has(.aigzt-chat-active) [data-app-shell] {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body:has(.aigzt-chat-active) [data-app-main] {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: 8px;
+    padding-bottom: calc(var(--nav-h) + 8px);
+  }
+  .aigzt-chat-active {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 0;
+  }
+  .aigzt-chat-active .aigzt-chat-layout {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 0;
+  }
+  .aigzt-chat-active .aigzt-chat-card {
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  .aigzt-chat-card > .workspace-scroll {
+    min-height: 0;
+    flex: 1 1 0%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Navigation must never float above the iOS/Android on-screen keyboard. */
+  body:has(.aigzt-chat-input:focus) [data-bottom-nav],
+  body:has(.aigzt-chat-input:focus) [data-app-header] {
+    display: none;
+  }
+  :root:has(.aigzt-chat-input:focus) { --nav-h: 0px; }
+  body:has(.aigzt-chat-input:focus) .aigzt-chat-tools,
+  body:has(.aigzt-chat-input:focus) .aigzt-chat-caption { display: none; }
+  body:has(.aigzt-chat-input:focus) .aigzt-chat-composer {
+    padding: 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  body:has(.aigzt-chat-input:focus) .workspace-editor {
+    min-height: 42px;
+    max-height: 94px;
+  }
+}

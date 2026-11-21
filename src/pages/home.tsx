@@ -33,6 +33,7 @@ export default function Home() {
  const [projectForNew,setProjectForNew]=useState<string|null>(null)
  const [modeForNew,setModeForNew]=useState<Mode>("general")
  const [draft,setDraft]=useState("")
+ const [inputFocused,setInputFocused]=useState(false)
  const [busy,setBusy]=useState(false)
  const [notice,setNotice]=useState("")
  const [showHistory,setShowHistory]=useState(false)
@@ -61,11 +62,28 @@ export default function Home() {
  const visibleMessages=pending&&pending.key===selected&&(current?.value.messages?.length??0)<pending.messages.length ? pending.messages : current?.value.messages??[]
  const chats=useMemo(()=>entries?.filter(e=>e.value.title.toLowerCase().includes(search.toLowerCase()))??[],[entries,search])
  const quickTools=tools.filter(t=>t.id!=="translate")
+ const chatActive=Boolean(selected||inputFocused||draft.trim()||selectedImages.length||busy)
  const matchedModels=gatewayModels.filter(m=>m.id.toLowerCase().includes(modelQuery.toLowerCase()))
 
  useEffect(()=>{
    if(visibleMessages.length || busy){const el=chatScroll.current;if(el)el.scrollTop=el.scrollHeight}
  },[visibleMessages.length,busy,selected,streaming?.text.length])
+ useEffect(()=>{
+  // Mobile Safari keyboard resizes visualViewport, not necessarily the CSS viewport.
+  const viewport=window.visualViewport
+  function updateHeight(){
+   const height=Math.round(viewport?.height??window.innerHeight)
+   if(height>0)document.documentElement.style.setProperty("--aigzt-visible-height",height+"px")
+  }
+  updateHeight()
+  viewport?.addEventListener("resize",updateHeight)
+  window.addEventListener("resize",updateHeight)
+  return ()=>{
+   viewport?.removeEventListener("resize",updateHeight)
+   window.removeEventListener("resize",updateHeight)
+   document.documentElement.style.removeProperty("--aigzt-visible-height")
+  }
+ },[])
  useEffect(()=>{
   if(current&&pending&&pending.key===selected&&current.value.messages.length>=pending.messages.length)setPending(null)
  },[current,pending,selected])
@@ -223,8 +241,8 @@ export default function Home() {
   </div>}
  </>
 
- return <div className="space-y-3 sm:space-y-5">
-  <div className={(selected?"hidden lg:flex":"flex")+" items-center justify-between gap-3"}>
+ return <div className={"aigzt-chat-home "+(chatActive?"aigzt-chat-active ":"")+"space-y-3 sm:space-y-5"}>
+  <div className={(chatActive?"hidden lg:flex":"flex")+" items-center justify-between gap-3"}>
    <div className="min-w-0">
     <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.16em] text-primary"><span className="size-1.5 rounded-full bg-primary"/>AIGZT / AI WORKSPACE</div>
     <h1 className="text-[24px] font-bold leading-tight tracking-tight sm:text-[30px]">一个空间，连接你的 AI</h1>
@@ -248,7 +266,7 @@ export default function Home() {
    </div>
   </div>
 
-  <div className="grid items-start gap-4 lg:grid-cols-[225px_minmax(0,1fr)] xl:grid-cols-[225px_minmax(0,1fr)_240px]">
+  <div className="aigzt-chat-layout grid min-h-0 items-start gap-4 lg:grid-cols-[225px_minmax(0,1fr)] xl:grid-cols-[225px_minmax(0,1fr)_240px]">
    <aside className="workspace-surface sticky top-[90px] hidden min-h-[570px] rounded-2xl p-3 lg:block">
     {histories}
     <div className="mt-5 border-t border-border/70 px-2 pt-4">
@@ -256,7 +274,7 @@ export default function Home() {
     </div>
    </aside>
 
-   <section className={"workspace-surface flex min-w-0 flex-col overflow-hidden rounded-[22px] "+(selected?"h-[calc(100dvh-172px)] min-h-[410px]":"h-[calc(100dvh-250px)] min-h-[455px]")+" lg:h-[calc(100dvh-222px)] lg:min-h-[525px]"}>
+   <section className={"aigzt-chat-card workspace-surface flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[22px] "+(chatActive?"h-[calc(100dvh-172px)]":"h-[calc(100dvh-250px)] min-h-[455px]")+" lg:h-[calc(100dvh-222px)] lg:min-h-[525px]"}>
     <div className="flex items-center justify-between gap-2 border-b border-border/70 px-4 py-3.5 sm:px-5">
      <div className="min-w-0"><div className="flex items-center gap-2"><span className="size-2 rounded-full bg-primary"/><span className="truncate text-[13px] font-semibold sm:text-sm">{current?.value.title||"新建对话"}</span></div><p className="ml-4 mt-0.5 text-[10px] text-muted-foreground">选择任务模式，开始使用你的 AI 工具箱</p></div>
      <div className="flex items-center gap-1">
@@ -264,13 +282,13 @@ export default function Home() {
       <Button size="icon" variant="secondary" aria-label="新建对话" onClick={startNew} className="rounded-lg"><Plus className="size-4"/></Button>
      </div>
     </div>
-    <div className="workspace-scroll flex items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-3 sm:px-5">
+    <div className="aigzt-chat-tools workspace-scroll flex items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-3 sm:px-5">
      <span className="shrink-0 text-[11px] text-muted-foreground">引擎</span>
      <Button size="sm" variant={engine==="native"?"default":"secondary"} onClick={()=>setEngine("native")} className="h-8 shrink-0 rounded-lg text-xs"><Check className="size-3"/>内置 AI</Button>
      <Button size="sm" variant={engine==="gateway"?"default":"secondary"} disabled={!gatewayReady} onClick={()=>setEngine("gateway")} className="h-8 shrink-0 rounded-lg text-xs"><Sparkles className="size-3"/>FreeLLMAPI</Button>
      <Button size="sm" variant="ghost" disabled={checking} onClick={()=>void checkGateway()} className="h-8 shrink-0 text-xs">{checking?"连接检测中…":gatewayReady?"重新检测":"连接网关"}<ChevronRight className="size-3"/></Button>
     </div>
-    <div className={(selected?"flex":"hidden sm:flex")+" workspace-scroll items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-2.5 sm:px-5"}>
+    <div className={(chatActive?"flex":"hidden sm:flex")+" aigzt-chat-tools workspace-scroll items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-2.5 sm:px-5"}>
      <span className="shrink-0 text-[11px] text-muted-foreground">任务</span>
      {tools.map(t=><Button key={t.id} size="sm" variant={activeMode===t.id?"secondary":"ghost"} className={"h-8 shrink-0 rounded-lg px-3 text-[11px] "+(activeMode===t.id?"text-foreground":"text-muted-foreground")} onClick={()=>void changeMode(t.id)}>{t.label}</Button>)}
     </div>
@@ -291,18 +309,18 @@ export default function Home() {
      </div>)}
      {streaming?.key===selected&&streaming.text?<div className="max-w-[96%] whitespace-pre-wrap rounded-2xl bg-muted/70 p-3 text-sm leading-6">{streaming.text}<span className="ml-1 inline-block size-1.5 animate-pulse rounded-full bg-primary"/></div>:busy?<div className="flex items-center gap-2 rounded-xl px-2 py-3 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin text-primary"/>{uploading||"正在生成回复…"}</div>:null}
     </div>
-    <div className="space-y-2 border-t border-border/70 bg-card p-3 sm:p-4">
-     <div className="workspace-scroll flex items-center gap-2 overflow-x-auto pb-1"><span className="shrink-0 text-[11px] text-muted-foreground"><FolderKanban className="mr-1 inline size-3.5"/>项目</span><Button size="sm" variant={!projectId?"secondary":"ghost"} className="h-7 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(null)}>未关联</Button>{projects?.slice(0,5).map(p=><Button key={p.key} size="sm" variant={projectId===p.key?"secondary":"ghost"} className="h-7 max-w-36 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(p.key)}><span className="truncate">{p.value.name}</span></Button>)}<Link to="/projects" className="ml-auto shrink-0 text-[11px] font-medium text-primary">管理项目</Link></div>
+    <div className="aigzt-chat-composer shrink-0 space-y-2 border-t border-border/70 bg-card p-3 sm:p-4">
+     <div className="aigzt-chat-tools workspace-scroll flex items-center gap-2 overflow-x-auto pb-1"><span className="shrink-0 text-[11px] text-muted-foreground"><FolderKanban className="mr-1 inline size-3.5"/>项目</span><Button size="sm" variant={!projectId?"secondary":"ghost"} className="h-7 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(null)}>未关联</Button>{projects?.slice(0,5).map(p=><Button key={p.key} size="sm" variant={projectId===p.key?"secondary":"ghost"} className="h-7 max-w-36 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(p.key)}><span className="truncate">{p.value.name}</span></Button>)}<Link to="/projects" className="ml-auto shrink-0 text-[11px] font-medium text-primary">管理项目</Link></div>
      {engine==="gateway"&&<div className="flex items-center gap-1 overflow-x-auto py-1"><Button size="sm" variant="secondary" className="h-8 max-w-full shrink-0 text-xs" onClick={()=>setShowModels(true)}><span className="max-w-44 truncate">{strategy==="auto"?"智能调度":strategy==="auto:fast"?"快速优先":strategy==="auto:smart"?"深度优先":strategy}</span><ChevronDown className="size-3"/></Button><span className="text-[11px] text-muted-foreground">选择真实模型</span></div>}
      {selectedImages.length>0&&<div className="flex flex-wrap gap-1.5">{selectedImages.map((file,i)=><span key={i} className="inline-flex max-w-full items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-[11px]"><ImageIcon className="size-3.5"/><span className="max-w-28 truncate">{file.name}</span><Button size="icon" variant="ghost" className="size-6" aria-label={"移除图片："+file.name} onClick={()=>setSelectedImages(list=>list.filter((_,j)=>j!==i))}><X className="size-3"/></Button></span>)}</div>}{notice&&<div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-[11px] text-foreground"><span className="flex-1">{notice}</span><Button size="icon" variant="ghost" aria-label="关闭消息" onClick={()=>setNotice("")} className="size-6"><X className="size-3"/></Button></div>}
      {current?.value.messages.at(-1)?.role==="user"&&!busy&&<Button variant="outline" size="sm" className="h-8 text-xs" onClick={()=>void retry()}><RotateCcw className="size-3.5"/>重试回复</Button>}
      <form onSubmit={e=>{e.preventDefault();void send()}} className="flex items-end gap-1 rounded-2xl border border-border bg-background/45 p-1.5 focus-within:border-primary/50">
       <input ref={imageInput} type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" multiple aria-label="选择图片" onChange={e=>void addImages(e.target.files)}/>
       <Button type="button" size="icon" variant="ghost" aria-label="添加图片" disabled={!me||busy||converting||engine==="gateway"} className="mb-0.5 size-10 shrink-0 rounded-xl" onClick={()=>imageInput.current?.click()}><ImagePlus className="size-5"/></Button>
-      <Textarea ref={editor} aria-label="输入聊天内容" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia("(min-width:640px)").matches){e.preventDefault();void send()}}} placeholder={me?"给 AI 发送消息，Shift + Enter 换行…":"请先登录工作台"} disabled={!me||busy} className="workspace-editor min-h-11 flex-1 resize-none border-0 bg-transparent p-2 text-[14px] shadow-none focus-visible:border-0 focus-visible:ring-0"/>
+      <Textarea ref={editor} onFocus={()=>setInputFocused(true)} onBlur={()=>setInputFocused(false)} aria-label="输入聊天内容" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia("(min-width:640px)").matches){e.preventDefault();void send()}}} placeholder={me?"给 AI 发送消息，Shift + Enter 换行…":"请先登录工作台"} disabled={!me||busy} className="aigzt-chat-input workspace-editor min-h-11 flex-1 resize-none border-0 bg-transparent p-2 text-[16px] shadow-none focus-visible:border-0 focus-visible:ring-0"/>
       <Button size="icon" type="submit" aria-label="发送消息" disabled={!me||busy||converting||(!draft.trim()&&!selectedImages.length)} className="size-10 shrink-0 rounded-xl"><ArrowUp className="size-5"/></Button>
      </form>
-     <p className="flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground"><span>{engine==="native"?"平台内置 AI":"FreeLLMAPI · "+strategy}{selectedProject?" · "+selectedProject.value.name:""}</span><span>{converting?"正在转换图片…":selectedImages.length?"可发送图片":"会话自动保存"}</span></p>
+     <p className="aigzt-chat-caption flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground"><span>{engine==="native"?"平台内置 AI":"FreeLLMAPI · "+strategy}{selectedProject?" · "+selectedProject.value.name:""}</span><span>{converting?"正在转换图片…":selectedImages.length?"可发送图片":"会话自动保存"}</span></p>
     </div>
    </section>
 

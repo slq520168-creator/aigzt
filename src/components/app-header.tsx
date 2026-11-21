@@ -32,7 +32,7 @@ export function AppHeader({ name, logo, screens, me }: {
   const nav = screens.filter(s => !s.hidden)
   const [accountOpen,setAccountOpen]=useState(false)
   return <>
-    <header className="sticky top-0 z-40 border-b border-border/65 bg-card/96 backdrop-blur-lg shadow-[0_2px_14px_-12px_rgba(19,78,79,0.22)]">
+    <header data-app-header className="sticky top-0 z-40 border-b border-border/65 bg-card/96 backdrop-blur-lg shadow-[0_2px_14px_-12px_rgba(19,78,79,0.22)]">
       <div className={cn(PAGE,"flex h-[62px] items-center gap-3 sm:h-[70px]")}>
         <NavLink to="/" className="flex min-w-0 shrink-0 items-center gap-2.5" aria-label="返回 AIGZT 工作台">
           <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[13px] bg-primary/10 ring-1 ring-primary/10">{logo || <Menu className="size-5 text-primary"/>}</span>
