@@ -253,10 +253,10 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  return {content:truncate(text,40000),actualModel:out.model||model};
 }
 async function quota(env,userId,kind="text"){
- const day=new Date().toISOString().slice(0,10)+(kind==="image"?":image":kind==="upload"?":upload":"");
- const userLimit=kind==="image"?2:kind==="upload"?15:USER_DAILY,siteLimit=kind==="image"?25:kind==="upload"?180:SITE_DAILY;
+ const day=new Date().toISOString().slice(0,10)+(kind==="upload"?":upload":"");
+ const userLimit=kind==="upload"?15:USER_DAILY,siteLimit=kind==="upload"?180:SITE_DAILY;
  const a=await dbRun(env.DB,"INSERT INTO usage_user(day,user_id,used) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET used=used+1 WHERE used<?",day,userId,userLimit);
- if(!a.meta?.changes)throw Object.assign(new Error(kind==="image"?"今日免费图片次数已用完":kind==="upload"?"今日上传次数已用完":"今日免费聊天次数已用完"),{status:429});
+ if(!a.meta?.changes)throw Object.assign(new Error(kind==="upload"?"今日上传次数已用完":"今日免费聊天次数已用完"),{status:429});
  const b=await dbRun(env.DB,"INSERT INTO usage_site(day,used) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used<?",day,siteLimit);
  if(!b.meta?.changes){
   await dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId);
