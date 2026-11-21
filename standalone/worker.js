@@ -624,7 +624,7 @@ async function workView(env,user,id){
  if(!/^[0-9a-f-]{36}$/i.test(id))return fail("任务号无效",400);
  const t=await dbGet(env.DB,"SELECT * FROM work_tasks WHERE id=? AND user_id=?",id,user.id);
  if(!t)return fail("任务不存在",404);
- const steps=(await env.DB.prepare("SELECT step_idx,phase,body,provider,model,attempts_json,created_at FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 4").bind(id,user.id).all()).results||[];
+ const steps=(await env.DB.prepare("SELECT step_idx,phase,body,provider,model,attempts_json,created_at FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 12").bind(id,user.id).all()).results||[];
  return response({ok:true,task:workSummary(t),steps:steps.map(x=>({step:x.step_idx,phase:x.phase,body:x.body,provider:x.provider,model:x.model,attempts:JSON.parse(x.attempts_json||"[]"),createdAt:x.created_at}))});
 }
 async function workCreate(req,env,user){
@@ -750,7 +750,7 @@ async function workAdvance(env,user,id){
  if(!claim.meta?.changes)return response({ok:true,busy:true,task:workSummary(t)});
  const stagePlan=workStepPlan(t),step=Math.min(stagePlan.length-1,Math.max(0,Number(t.next_step)||0));
  try{
-  const prior=(await env.DB.prepare("SELECT step_idx,body FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 4").bind(id,user.id).all()).results||[];
+  const prior=(await env.DB.prepare("SELECT step_idx,body FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 12").bind(id,user.id).all()).results||[];
   const r=await workStepWithFailover(env,user,{...t,blocked_json:t.status==="paused"?"[]":t.blocked_json},step,prior);
   if(!r.answer){
    const reason=r.attempts.length?r.attempts.map(a=>a.provider+"："+a.reason).join("；").slice(0,400):"当前没有可使用的授权模型";
@@ -850,7 +850,7 @@ async function main(req,env){
  if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));
 
  if(path==="/api/work/tasks"&&req.method==="GET"){
-  const rows=(await env.DB.prepare("SELECT id,user_id,project_id,title,prompt,status,next_step,last_provider,last_model,last_error,attempts_json,created_at,updated_at FROM work_tasks WHERE user_id=? ORDER BY updated_at DESC LIMIT 25").bind(user.id).all()).results||[];
+  const rows=(await env.DB.prepare("SELECT id,user_id,project_id,title,prompt,status,next_step,last_provider,last_model,last_error,attempts_json,created_at,updated_at,steps_json,routes_json,fallback_enabled FROM work_tasks WHERE user_id=? ORDER BY updated_at DESC LIMIT 25").bind(user.id).all()).results||[];
   return response({ok:true,tasks:rows.map(workSummary)});
  }
  if(path==="/api/work/tasks"&&req.method==="POST")return workCreate(req,env,user);
