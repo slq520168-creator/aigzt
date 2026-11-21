@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
- <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
  <meta name="theme-color" content="#ffffff">
  <meta name="description" content="AIGZT 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
  <title>AIGZT · AI 聚合工作台</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='17' fill='%2312242a'/%3E%3Cpath d='M14 44L32 13l18 31H14Z' fill='none' stroke='white' stroke-width='6'/%3E%3C/svg%3E">
@@ -9,42 +9,96 @@
 </head>
 <body>
  <div class="shell" id="shell">
-  <aside class="sidebar" id="sidebar" aria-label="聊天与导航">
-   <div class="identity"><div class="mark">A</div><div><strong>AIGZT</strong></div><button class="icon-btn sidebar-close" id="closeSide" title="关闭侧栏">×</button></div>
-   <button class="new-chat" id="newChat"><span>＋</span> 新建对话</button>
-   <div class="side-nav">
-    <button class="nav-item active" id="navChat">◉ <span>AI 对话</span></button>
-    <button class="nav-item" id="navModels">▦ <span>模型大厅</span></button>
-    <button class="nav-item" id="navCreate">◇ <span>聊天内创作</span></button>
-    <button class="nav-item" id="navKeys">♢ <span>我的 AI 连接</span></button>
+  <aside class="sidebar" id="sidebar" aria-label="聊天与项目">
+   <div class="sidebar-top"><strong class="brand">AIGZT</strong><button class="icon-btn sidebar-close" id="closeSide" aria-label="关闭侧栏"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+   <div class="sidebar-primary">
+    <button class="nav-row new-chat" id="newChat"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span><span>新聊天</span></button>
+    <button class="nav-row" id="searchBtn"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><span>搜索聊天</span></button>
    </div>
-   <div class="aside-caption">历史会话 <span id="chatCount"></span></div>
-   <div class="history" id="history"><div class="hint">登录后可跨设备保存历史对话。</div></div>
-   <div class="side-bottom"><span id="quotaLabel" hidden></span><button id="accountBtn" class="account-btn">登录 / 注册</button></div>
+   <div class="sidebar-links">
+    <button class="nav-row" id="navChat"><span class="ui-icon" data-icon="message-circle" aria-hidden="true"></span><span>全部聊天</span></button>
+    <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="compass" aria-hidden="true"></span><span>探索模型</span></button>
+    <button class="nav-row" id="navFiles"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>已上传文件</span></button>
+    <button class="nav-row" id="navKeys"><span class="ui-icon" data-icon="link" aria-hidden="true"></span><span>连接 AI</span></button>
+   </div>
+   <div class="side-heading"><span>项目</span><button id="newProject" class="icon-btn small-btn" aria-label="新建项目"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button></div>
+   <div id="projectsList" class="project-list" aria-label="项目列表"></div>
+   <div class="side-heading"><span id="historyHeading">最近聊天</span><span id="chatCount"></span></div>
+   <div id="history" class="history" aria-label="历史会话"></div>
+   <div class="side-bottom"><button id="accountBtn" class="nav-row account-btn"><span class="ui-icon" data-icon="circle-user" aria-hidden="true"></span><span id="accountName">登录 / 注册</span></button><button class="icon-btn small-btn" id="settingsBtn" aria-label="设置"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></button></div>
+   <span id="quotaLabel" hidden></span>
   </aside>
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏">☰</button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="chevron">⌄</span></button></div>
-    <div class="top-right"><button class="icon-btn" id="themeToggle" title="七彩呼吸主题" aria-pressed="true">◌</button><button class="icon-btn" id="headerNew" title="新建对话">✎</button></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="menu" aria-hidden="true"></span></button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
+    <div class="top-right"><button class="icon-btn" id="themeToggle" title="切换呼吸主题" aria-label="切换呼吸主题"><span class="ui-icon" data-icon="palette" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
-   <div class="conversation" id="conversation" aria-live="polite">
-    <div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div>
-    <div id="messageList" class="messages"></div>
-   </div>
+   <div class="conversation" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
    <div class="composer-area">
     <div class="error-banner" id="errorBanner" role="alert" hidden></div>
+    <div class="attach-menu" id="attachMenu" hidden role="menu">
+     <button type="button" id="cameraAction"><span class="ui-icon" data-icon="camera" aria-hidden="true"></span><span>相机</span></button>
+     <button type="button" id="photosAction"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>照片</span></button>
+     <button type="button" id="filesAction"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>文件</span></button>
+     <button type="button" id="toolsAction"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>工具与连接</span></button>
+    </div>
     <form class="composer" id="chatForm">
-     <textarea id="prompt" rows="1" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea><div id="attachmentPreview" class="attachment-preview"></div><input id="attachmentInput" type="file" multiple accept="image/*,.pdf,.txt,.md,.csv" hidden>
-     <div class="compose-bottom">
-      <div class="compose-left"><button type="button" class="subtle plus-tool" id="attachButton">＋</button><button type="button" class="subtle" id="composeModels">▦ 模型</button><button type="button" class="subtle" id="imageMode" aria-pressed="false">◈ 作图</button><button type="button" class="subtle" id="videoMode" aria-pressed="false">▷ 视频</button><button type="button" class="subtle" id="codeToggle" aria-pressed="false">⌘ 代码</button></div>
-      <button type="submit" class="send" id="sendBtn" aria-label="发送消息">↑</button>
+     <div id="attachmentPreview" class="attachment-preview"></div>
+     <div class="composer-inner">
+      <button type="button" class="plus-tool icon-btn" id="attachButton" aria-label="添加附件或工具"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button>
+      <textarea id="prompt" rows="1" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea>
+      <button type="button" class="icon-btn" id="voiceInput" aria-label="语音输入" hidden><span class="ui-icon" data-icon="mic" aria-hidden="true"></span></button>
+      <button type="submit" class="send" id="sendBtn" aria-label="发送消息"><span class="ui-icon" data-icon="arrow-up" aria-hidden="true"></span></button>
+     </div>
+     <div class="tool-tray" id="toolTray" hidden>
+      <button type="button" class="subtle" id="composeModels"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span><span>模型</span></button>
+      <button type="button" class="subtle" id="imageMode" aria-pressed="false"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>作图</span></button>
+      <button type="button" class="subtle" id="videoMode" aria-pressed="false"><span class="ui-icon" data-icon="video" aria-hidden="true"></span><span>视频</span></button>
+      <button type="button" class="subtle" id="codeToggle" aria-pressed="false"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>代码</span></button>
      </div>
     </form>
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+    <input id="photosInput" type="file" accept="image/*,.heic,.heif" multiple hidden>
+    <input id="attachmentInput" type="file" multiple accept="image/*,.heic,.heif,.pdf,.txt,.md,.csv" hidden>
    </div>
   </main>
  </div>
 
+ <dialog id="actionsDialog" class="modal small-dialog" aria-label="会话操作">
+  <div class="modal-head"><h2>聊天操作</h2><button class="close-modal" data-close="actionsDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="action-list" id="chatActionList"></div>
+ </dialog>
+ <dialog id="projectDialog" class="modal" aria-label="项目">
+  <div class="modal-head"><h2 id="projectTitle">新建项目</h2><button class="close-modal" data-close="projectDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <form id="projectForm"><label>名称<input id="projectName" maxlength="60" required placeholder="项目名称"></label>
+   <label>项目说明<textarea id="projectInstructions" maxlength="1500" rows="3" placeholder="目标、要求与长期规则（可选）"></textarea></label>
+   <button type="submit" class="primary full" id="projectSave">保存项目</button>
+  </form><button class="danger-link" id="deleteProject" hidden>删除此项目</button>
+ </dialog>
+ <dialog id="moveDialog" class="modal small-dialog" aria-label="移动到项目">
+  <div class="modal-head"><h2>添加到项目</h2><button class="close-modal" data-close="moveDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="action-list" id="moveProjectList"></div>
+ </dialog>
+ <dialog id="searchDialog" class="modal">
+  <div class="modal-head"><h2>搜索聊天</h2><button class="close-modal" data-close="searchDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <form id="searchForm" class="search-form"><input id="chatSearchInput" type="search" maxlength="60" placeholder="搜索标题与消息" required><button class="primary" type="submit">搜索</button></form>
+  <div id="searchResults" class="result-list"></div>
+ </dialog>
+ <dialog id="filesDialog" class="modal">
+  <div class="modal-head"><h2>已上传文件</h2><button class="close-modal" data-close="filesDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div id="savedFiles" class="result-list"></div>
+ </dialog>
+ <dialog id="settingsDialog" class="modal settings-dialog" aria-label="设置">
+  <div class="modal-head"><h2>设置</h2><button class="close-modal" data-close="settingsDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="settings-group"><h3>账号</h3><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
+  <div class="settings-group"><h3>外观</h3><label class="setting-switch">七彩呼吸效果<input type="checkbox" id="settingRainbow"></label></div>
+  <div class="settings-group"><h3>跨会话记忆</h3><label class="setting-switch">在新对话中引用历史上下文<input type="checkbox" id="settingMemory"></label>
+   <form id="memoryForm" class="memory-form"><input id="memoryInput" maxlength="450" placeholder="保存需要长期记住的内容" required><button class="primary" type="submit">保存</button></form>
+   <div id="memoryList" class="result-list"></div>
+  </div>
+  <div class="settings-group"><h3>聊天管理</h3><button class="outline full" id="archivedChats">查看归档聊天</button></div>
+ </dialog>
  <dialog id="authDialog" class="modal" aria-labelledby="authTitle">
   <div class="modal-head"><h2 id="authTitle">登录</h2><button type="button" class="close-modal" data-close="authDialog" aria-label="关闭">×</button></div>
   <form id="authForm">
