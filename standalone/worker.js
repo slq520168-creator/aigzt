@@ -214,7 +214,9 @@ async function freeText(env,messages,mode,preferred="free:auto"){
  const preferredId=preferred.split(":")[1],order=preferredId==="auto"?sources:[...sources.filter(x=>x.id===preferredId),...sources.filter(x=>x.id!==preferredId)];
  for(const source of order){
   try{
-   const payload=source.query?{prompt:[system,...history.slice(-7).map(m=>(m.role==="assistant"?"助手":m.role==="system"?"记忆":"用户")+"："+m.content)].join("\n").slice(-6000),model:source.model}:{model:source.model,messages:[{role:"system",content:system},...history],max_tokens:800,stream:false};
+   const notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\\n").slice(0,2200);
+   const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\\n").slice(-3000);
+   const payload=source.query?{prompt:system+"\\n"+notes+"\\n"+recent,model:source.model}:{model:source.model,messages:[{role:"system",content:system},...history],max_tokens:800,stream:false};
    const res=await fetch(source.endpoint,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(source.ms)});
    if(!res.ok||res.status>=300)continue;
    const out=await res.json(),content=source.query?(out.success===true?out.response:null):out?.choices?.[0]?.message?.content;
