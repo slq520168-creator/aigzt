@@ -8,7 +8,7 @@
     <script>
       (function () {
         var saved = document.cookie.match(/(?:^|; )theme=(light|dark)/);
-        var dark = saved ? saved[1] === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var dark = saved ? saved[1] === "dark" : true;
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       })();
