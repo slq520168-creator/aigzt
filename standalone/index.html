@@ -55,7 +55,7 @@
      <button type="button" id="cameraAction"><span class="ui-icon" data-icon="camera" aria-hidden="true"></span><span>相机</span></button>
      <button type="button" id="photosAction"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>照片</span></button>
      <button type="button" id="filesAction"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>文件</span></button>
-     <button type="button" id="toolsAction"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>工具与连接</span></button>
+     <button type="button" id="toolsAction"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>工具</span></button>
     </div>
     <form class="composer" id="chatForm">
      <div id="attachmentPreview" class="attachment-preview"></div>
@@ -130,7 +130,7 @@
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="free">外部免费</button><button class="chip" data-source="openrouter">OpenRouter</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button></div>
   <div class="model-quick">
    <button type="button" class="quick-entry" id="groqQuick"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span><strong>Groq 免费额度</strong><small>用个人免费 Key 连接</small></span></button>
-   <button type="button" class="quick-entry" id="imageQuick"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span><strong>免费作图</strong><small>在聊天中生成图片</small></span></button>
+   <button type="button" class="quick-entry" id="imageQuick"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span><strong>作图</strong><small>聊天内生成</small></span></button>
   </div>
   <div class="model-count" id="modelCount">正在读取真实模型目录…</div>
   <div class="model-list" id="modelList"></div>
@@ -141,26 +141,23 @@
   <div class="modal-head"><div><h2>连接 AI</h2></div><button class="close-modal" data-close="keyDialog" aria-label="关闭">×</button></div>
   <form id="keyForm"><label>服务商
    <select id="keyProvider"><option value="openrouter">OpenRouter（数百模型）</option><option value="groq">Groq（快速免费额度）</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option></select></label>
-   <div class="groq-key-guide" id="groqKeyGuide" hidden>
-    <strong>Groq 免费额度</strong>
-    <span>使用你自己的 Groq 免费 API 配额。</span>
-    <a class="plain-link" href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">获取 Groq API Key ↗</a>
-   </div>
+   <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">获取官方 API Key</a><span id="providerHelp">在服务商控制台创建密钥。</span></div>
+   
    <button id="openrouterLogin" type="button" class="outline full">使用 OpenRouter 账号授权我的额度</button>
-   <label>自己的 API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="密钥不会保存到服务器或浏览器持久存储"></label>
+   <label>API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 API Key"></label>
    <label class="check-row"><input type="checkbox" id="allowPaid"><span>授权使用我的服务商额度（若账户启用计费，可能产生费用）。</span></label>
-   <p class="small-note">密钥仅用于当前页面，不会长期保存。</p>
+   <p class="small-note">加密保存到当前账号，重新登录自动恢复，可随时删除。</p>
    <p id="keyStatus" class="form-message"></p>
-   <button class="primary full" type="submit">验证密钥并读取真实模型</button>
+   <button class="primary full" id="keySaveLabel" type="submit">验证并保存</button><button type="button" class="outline full" id="disconnectProvider" hidden>删除已保存密钥</button>
   </form>
  </dialog>
 
  <dialog id="createDialog" class="modal workspace-view">
   <div class="modal-head"><div><h2>图片与视频</h2></div><button class="close-modal" data-close="createDialog" aria-label="关闭">×</button></div>
-  <div class="creation-tabs"><button id="imageTab" class="active">免费 AI 作图</button><button id="videoTab">Grok 视频</button></div>
+  <div class="creation-tabs"><button id="imageTab" class="active">作图</button><button id="videoTab">Grok 视频</button></div>
   <label>创作描述<textarea id="createPrompt" rows="4" maxlength="1400" placeholder="用中文或英文描述想生成的画面…"></textarea></label>
   <div id="videoSettings" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">视频可能按秒收费，必须使用自己的 Grok API Key，并明确确认费用。</p><label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok 额度，可能产生费用。</label></div>
-  <button class="primary full" id="createButton">生成免费图片</button>
+  <button class="primary full" id="createButton">生成图片</button>
   <p id="createStatus" class="form-message"></p>
   <div class="media-preview" id="mediaPreview"></div>
   <button id="refreshVideo" class="outline full" hidden>查询视频任务</button>

@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费模型",provider:"free",keys:{},connected:{},
- allowPaid:false,freeModels:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -91,6 +91,53 @@ function setAuthUI(){
  const q=S.quota;
  $("quotaLabel").textContent=q&&logged?"免费请求保护配额："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"外部免费 · 登录后使用";
 }
+
+const KEY_SITES={
+ openrouter:{url:"https://openrouter.ai/settings/keys",name:"获取 OpenRouter 密钥"},
+ groq:{url:"https://console.groq.com/keys",name:"获取 Groq 密钥"},
+ cerebras:{url:"https://cloud.cerebras.ai/",name:"打开 Cerebras 控制台"},
+ openai:{url:"https://platform.openai.com/api-keys",name:"获取 OpenAI 密钥"},
+ grok:{url:"https://console.x.ai/",name:"打开 xAI 控制台"},
+ gemini:{url:"https://aistudio.google.com/apikey",name:"获取 Gemini 密钥"},
+ qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"}
+};
+function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
+function refreshKeyPanel(){
+ const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
+ const a=$("providerKeyLink");a.href=site.url;a.textContent=site.name;
+ $("providerHelp").textContent=provider==="qwen"?"请选择新加坡地区的密钥。":provider==="openrouter"?"可用官方账号授权，或创建 API Key。":"登录服务商账号创建 API Key，再返回粘贴。";
+ $("personalKey").value="";
+ $("personalKey").placeholder=rec?"已加密保存，留空即可":"粘贴 API Key";
+ $("keySaveLabel").textContent=rec?"更换密钥":"验证并保存";
+ $("disconnectProvider").hidden=!rec;
+ $("allowPaid").checked=Boolean(rec?.consent);
+ $("keyStatus").textContent=rec?"已连接 · 密钥已保存":"";
+ $("openrouterLogin").hidden=provider!=="openrouter";
+}
+async function fetchConnections(){
+ if(!S.user){S.savedProviders={};S.connected={};return}
+ const d=await api("/api/connections"),saved={};
+ for(const item of d.connections||[]){
+  saved[item.provider]={model:item.model,consent:!!item.consent,updatedAt:item.updatedAt};
+  if(!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model}];
+ }
+ S.savedProviders=saved;refreshSourceChips();
+ if(S.provider!=="free"&&!connected(S.provider)){S.provider="free";S.model="free:auto";S.modelTitle="免费模型"}
+ S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);
+ updateModelTitle();refreshKeyPanel();
+}
+async function removeSavedKey(){
+ const p=$("keyProvider").value;
+ if(!S.savedProviders[p])return;
+ if(!confirm("删除已保存的 "+p+" 密钥？"))return;
+ try{
+  await api("/api/connections/"+p+"/delete",{});
+  delete S.savedProviders[p];delete S.connected[p];delete S.keys[p];
+  if(S.provider===p){S.provider="free";S.model="free:auto";S.modelTitle="免费模型";S.allowPaid=false;updateModelTitle()}
+  refreshKeyPanel();$("keyStatus").textContent="已断开";
+ }catch(e){$("keyStatus").textContent=humanError(e)}
+}
+
 async function fetchMe(){
  try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;setAuthUI()}
  catch(e){flashError("账号状态读取失败："+humanError(e))}
@@ -260,10 +307,15 @@ function showWelcome(){$("welcome").hidden=false}
 
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
- const label=node("span","image-job-label","Krea 免费作图排队中…");
- const btn=node("button","image-job-refresh","查询进度");btn.type="button";
- btn.addEventListener("click",()=>void pollImageJob(bubble,id,true));
- bubble.replaceChildren(label,btn);void pollImageJob(bubble,id,false);
+ const label=node("span","image-job-label","作图中 1秒");
+ bubble.dataset.imageStart=String(Date.now());
+ bubble.replaceChildren(label);
+ const interval=window.setInterval(()=>{
+  if(!bubble.isConnected||bubble.dataset.imageTask!==id){window.clearInterval(interval);return}
+  const elapsed=Math.max(1,Math.floor((Date.now()-Number(bubble.dataset.imageStart||Date.now()))/1000)+1);
+  label.textContent="作图中 "+elapsed+"秒";
+ },1000);
+ window.setTimeout(()=>void pollImageJob(bubble,id,false),0);
 }
 async function pollImageJob(bubble,id,manual){
  if(!bubble.isConnected||bubble.dataset.imageTask!==id||bubble.dataset.imageBusy==="1")return;
@@ -274,19 +326,19 @@ async function pollImageJob(bubble,id,manual){
  try{
   const r=await api("/api/image/task/"+id);
   if(!bubble.isConnected||bubble.dataset.imageTask!==id)return;
+  if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
    if(r.failed){bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
-   const img=node("img","chat-generated-image");img.src=r.image;img.alt="AI 生成图片";img.loading="lazy";
+   const img=node("img","chat-generated-image");img.src=r.image;img.alt="生成图片";img.loading="lazy";
    const link=node("a","chat-download","打开图片");link.href=r.image;link.target="_blank";link.rel="noopener";
    bubble.replaceChildren(img,link);return;
   }
-  const label=bubble.querySelector(".image-job-label");if(label)label.textContent=r.notice||"Krea 生成中…";
   delay=Math.max(9000,Math.min(18000,Number(r.waitSeconds||10)*1000));
- }catch(e){const label=bubble.querySelector(".image-job-label");if(label)label.textContent="暂时无法查询，请点击查询进度"}
+ }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
  finally{
   bubble.dataset.imageBusy="0";if(!bubble.dataset.imageStart)bubble.dataset.imageStart=String(Date.now());
-  if(bubble.isConnected&&bubble.dataset.imageTask===id&&Date.now()-Number(bubble.dataset.imageStart)<240000)window.setTimeout(()=>void pollImageJob(bubble,id,false),delay);
+  if(bubble.isConnected&&bubble.dataset.imageTask===id&&Date.now()-Number(bubble.dataset.imageStart)<1860000)window.setTimeout(()=>void pollImageJob(bubble,id,false),delay);
  }
 }
 
@@ -330,7 +382,7 @@ async function loadChat(id){
   for(const m of v.messages)appendMessage(m.role,m.body,m.model);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
-  if(c&&c.model&&c.provider){S.model=c.provider==="cloudflare"?"free:auto":c.model;S.provider=c.provider==="cloudflare"?"free":c.provider;S.modelTitle=c.provider==="cloudflare"?"免费自动 · 外部模型":c.model;updateModelTitle()}
+  if(c&&c.model&&c.provider){S.model=c.provider==="cloudflare"?"free:auto":c.model;S.provider=c.provider==="cloudflare"?"free":c.provider;S.modelTitle=c.provider==="cloudflare"?"免费自动":c.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);updateModelTitle()}
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
@@ -341,12 +393,14 @@ function updateModelTitle(){
 }
 function setModel(row){
  if(row.type!=="text"){setComposerMode(row.type==="video"?"video":"image");hide("modelDialog");return}
- if(row.provider!=="free"&&!S.keys[row.provider]){
+ if(row.provider!=="free"&&!connected(row.provider)){
   const provider=row.provider==="openrouter"?"openrouter":row.provider;
   hide("modelDialog");openKeyPanel(provider);$("keyStatus").textContent="请连接个人 API Key 后使用该模型。";
   return;
  }
  S.provider=row.provider;S.model=row.id;S.modelTitle=row.name||row.id;
+ S.allowPaid=Boolean(S.savedProviders[row.provider]?.consent);
+ if(S.savedProviders[row.provider])void api("/api/connections/"+row.provider+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
  updateModelTitle();hide("modelDialog");
  flashError("");
 }
@@ -357,7 +411,7 @@ function setComposerMode(mode){
  $("videoMode").classList.toggle("active",mode==="video");
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
  $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
- $("prompt").placeholder=mode==="image"?"描述要生成的图片…":mode==="video"?"描述要生成的视频（使用本人Grok额度）…":"向 AI 提问…";
+ $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":"向 AI 提问…";
  $("prompt").focus();
 }
 function renderAttachments(){
@@ -390,7 +444,7 @@ async function sendMessage(){
  if(S.busy)return;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
- if(S.composerMode==="text"&&S.provider!=="free"&&!S.keys[S.provider]){
+ if(S.composerMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
  }
  const freeRoute=S.provider==="free"||(S.provider==="openrouter"&&(S.model==="openrouter/free"||S.model.endsWith(":free")));
@@ -406,27 +460,33 @@ async function sendMessage(){
  const loading=appendMessage("assistant","");
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status"),dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));dots.setAttribute("aria-hidden","true");
- status.append(dots,node("span","",S.composerMode==="image"?"正在提交 Krea 作图…":S.composerMode==="video"?"正在提交视频…":"正在思考…"));loadingBubble.replaceChildren(status);
+ const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考…");
+ status.append(dots,waitLabel);loadingBubble.replaceChildren(status);
+ const startedAt=Date.now();
+ const imageTimer=S.composerMode==="image"?window.setInterval(()=>{
+  if(!loading.isConnected){window.clearInterval(imageTimer);return}
+  waitLabel.textContent="作图中 "+Math.max(1,Math.floor((Date.now()-startedAt)/1000)+1)+"秒";
+ },1000):null;
  try{
   let result;
   if(S.composerMode==="text")result=await api("/api/chat",{chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),
-   mode:S.code?"code":"general",projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:S.provider==="free"?undefined:S.keys[S.provider]});
+   mode:S.code?"code":"general",projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined});
   else{
-   if(S.composerMode==="video"&&!S.keys.grok){openKeyPanel();$("keyProvider").value="grok";throw Error("请先连接自己的Grok账号或Key");}
+   if(S.composerMode==="video"&&!connected("grok")){openKeyPanel("grok");throw Error("请先连接 Grok 密钥");}
    const confirmed=S.composerMode==="video"?confirm("视频可能收费。确定使用自己的Grok API额度生成吗？"):false;
    if(S.composerMode==="video"&&!confirmed)throw Error("已取消视频请求");
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:S.composerMode,prompt,apiKey:S.composerMode==="video"?S.keys.grok:undefined,confirmed});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:S.composerMode,prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
   S.chatId=result.chatId;loading.remove();appendMessage("assistant",result.reply,result.model);
   if(isNew)await fetchChats();else await fetchChats();
   void fetchMe();
  }catch(e){loading.remove();flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e))}
- finally{S.busy=false;$("sendBtn").disabled=false;$("prompt").focus()}
+ finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;$("prompt").focus()}
 }
 async function loadCatalog(){
  if(S.loadedCatalog)return;
- $("modelCount").textContent="正在获取真实模型列表…";
+ $("modelCount").textContent="加载中…";
  try{
   const d=await api("/api/models");
   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
@@ -491,6 +551,12 @@ function activateSource(name){
  S.source=name;S.modelPage=0;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===name);
  renderModels();
+ if(S.savedProviders[name]&&S.connected[name]?.length<2){
+  void api("/api/connections/"+name+"/models",{}).then(result=>{
+   S.connected[name]=result.models||S.connected[name];
+   if(S.source===name)renderModels();
+  }).catch(e=>flashError(humanError(e)));
+ }
 }
 function refreshSourceChips(){
  const container=$("sourceChips");
@@ -508,12 +574,8 @@ function openModels(){
  show("modelDialog");void loadCatalog();
 }
 function openKeyPanel(provider){
- const selected=typeof provider==="string"?provider:$("keyProvider").value;
- if(selected&&$("keyProvider").querySelector('option[value="'+selected+'"]'))$("keyProvider").value=selected;
- $("openrouterLogin").hidden=$("keyProvider").value!=="openrouter";
- $("groqKeyGuide").hidden=$("keyProvider").value!=="groq";
- $("keyStatus").textContent="";
- show("keyDialog");
+ if(typeof provider==="string"&&$("keyProvider").querySelector('option[value="'+provider+'"]'))$("keyProvider").value=provider;
+ refreshKeyPanel();show("keyDialog");
 }
 function setCreationMode(mode){
  S.createMode=mode;
@@ -539,10 +601,9 @@ async function generateMedia(){
    $("mediaPreview").append(img,link);
    $("createStatus").textContent="生成成功 · "+d.model;void fetchMe();
   }else{
-   const key=S.keys.grok;
-   if(!key)throw Error("请先在「我的 AI 连接」填写并验证 Grok API Key");
+   if(!connected("grok"))throw Error("请先连接 Grok 密钥");
    if(!$("confirmVideo").checked)throw Error("视频可能收费，请先勾选费用确认");
-   const d=await api("/api/video",{prompt,model:$("videoModel").value,apiKey:key,confirmed:true});
+   const d=await api("/api/video",{prompt,model:$("videoModel").value,confirmed:true});
    S.videoTask=d.requestId;
    $("createStatus").textContent="视频请求已提交，任务编号 "+d.requestId+"。点击「查询视频任务」获取结果。";
    $("refreshVideo").hidden=false;
@@ -551,10 +612,10 @@ async function generateMedia(){
  finally{btn.disabled=false}
 }
 async function queryVideo(){
- if(!S.videoTask||!S.keys.grok)return;
+ if(!S.videoTask||!connected("grok"))return;
  $("refreshVideo").disabled=true;$("createStatus").textContent="正在查询真实视频任务…";
  try{
-  const d=await api("/api/video/status",{requestId:S.videoTask,apiKey:S.keys.grok});
+  const d=await api("/api/video/status",{requestId:S.videoTask});
   $("createStatus").textContent="任务状态："+d.status;
   if(d.url){
    const video=node("video");video.controls=true;video.src=d.url;video.playsInline=true;
@@ -589,12 +650,12 @@ async function finishOpenRouterOAuth(){
  if(!S.user){flashError("请先登录 AIGZT 后重新授权 OpenRouter");return}
  try{
   const result=await api("/api/openrouter/exchange",{code,verifier:saved.verifier});
-  S.keys.openrouter=result.key;
-  const d=await api("/api/provider-models",{provider:"openrouter",apiKey:result.key});
+  const d=await api("/api/connections",{provider:"openrouter",apiKey:result.key,consent:false});
+  S.savedProviders.openrouter={model:d.connection.model,consent:false,updatedAt:d.connection.updatedAt};
   S.connected.openrouter=d.models||[];
-  refreshSourceChips();
-  $("keyProvider").value="openrouter";show("keyDialog");
-  $("keyStatus").textContent="OpenRouter 官方账号授权成功，已发现 "+S.connected.openrouter.length+" 个模型。个人密钥只保存在当前页面内存中。";
+  S.provider="openrouter";S.model=d.connection.model;S.modelTitle="OpenRouter · "+S.model;S.allowPaid=false;updateModelTitle();
+  refreshSourceChips();$("keyProvider").value="openrouter";refreshKeyPanel();show("keyDialog");
+  $("keyStatus").textContent="授权成功，密钥已加密保存";
  }catch(e){flashError("OpenRouter 授权失败："+humanError(e))}
 }
 async function login(event){
@@ -604,7 +665,7 @@ async function login(event){
  try{
   const d=await api(S.authRegister?"/api/register":"/api/login",{email,password});
   S.user=d.user;hide("authDialog");form.reset();newChat();
-  await Promise.all([fetchMe(),fetchProjects(),fetchChats()]);
+  await Promise.all([fetchMe(),fetchProjects(),fetchChats(),fetchConnections()]);
  }catch(e){$("authError").textContent=humanError(e)}
  finally{$("authSubmit").disabled=false}
 }
@@ -619,37 +680,27 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;S.keys={};S.connected={};S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;S.keys={};S.connected={};S.savedProviders={};S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
  event.preventDefault();
  if(!S.user){show("authDialog");return}
- const provider=$("keyProvider").value,key=$("personalKey").value.trim();
- if(!key){$("keyStatus").textContent="请输入自己的 API Key";return}
- const submit=event.submitter||$("keyForm").querySelector('button[type="submit"]');
+ const p=$("keyProvider").value,key=$("personalKey").value.trim();
+ if(!key){$("keyStatus").textContent=S.savedProviders[p]?"已经保存；更换密钥才需要填写":"请先从官方页面获取 API Key";return}
+ const submit=event.submitter||$("keyForm").querySelector('[type="submit"]');
  if(submit)submit.disabled=true;
- $("keyStatus").textContent="正在验证服务商连接…";
+ $("keyStatus").textContent="验证连接中…";
  try{
-  const data=await api("/api/provider-models",{provider,apiKey:key});
-  if(!Array.isArray(data.models)||!data.models.length)throw Error("服务商未返回可用模型");
-  S.keys[provider]=key;S.connected[provider]=data.models;
-  S.allowPaid=$("allowPaid").checked;
-  if(provider==="groq"){
-   const goodIds=["openai/gpt-oss-20b","openai/gpt-oss-120b","qwen/qwen3.6-27b","qwen/qwen3.8-27b"];
-   const selected=goodIds.map(id=>data.models.find(m=>m.id===id)).find(Boolean)||
-     data.models.find(m=>/(gpt-oss|qwen|llama)/i.test(m.id)&&!/guard|audio|tts|whisper|deprecated/i.test(m.id));
-   if(!selected)throw Error("Groq 已连接，但没有适用于文字聊天的有效模型");
-   S.provider="groq";S.model=selected.id;S.modelTitle="Groq · "+(selected.name||selected.id);updateModelTitle();
-  }
-  refreshSourceChips();
-  if(provider==="groq"){
-   if(S.allowPaid){$("personalKey").value="";hide("keyDialog");$("prompt").focus()}
-   else $("keyStatus").textContent="Groq 已连接。请勾选确认使用个人额度，无需再次输入密钥。";
-  }else{
-   $("keyStatus").textContent=provider+" 已连接 · "+data.models.length+" 个模型";
-   $("personalKey").value="";
-  }
+  const data=await api("/api/connections",{provider:p,apiKey:key,consent:$("allowPaid").checked});
+  const rec=data.connection;
+  if(!rec||!Array.isArray(data.models)||!data.models.length)throw Error("服务商未返回可用模型");
+  S.savedProviders[p]={model:rec.model,consent:!!rec.consent,updatedAt:rec.updatedAt};
+  S.connected[p]=data.models;delete S.keys[p];
+  S.provider=p;S.model=rec.model;S.modelTitle=p+" · "+(data.models.find(m=>m.id===rec.model)?.name||rec.model);
+  S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
+  refreshKeyPanel();$("keyStatus").textContent="已加密保存，下次登录自动恢复";
+  if(rec.consent){hide("keyDialog");$("prompt").focus()}
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
 }
@@ -699,17 +750,17 @@ function wire(){
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
  $("allowPaid").addEventListener("change",()=>{
-  S.allowPaid=$("allowPaid").checked;
-  const provider=$("keyProvider").value;
-  if(provider==="groq"&&S.allowPaid&&S.keys.groq&&S.provider==="groq"){
-   $("personalKey").value="";hide("keyDialog");$("prompt").focus();
-  }
+  const provider=$("keyProvider").value,consent=$("allowPaid").checked;
+  if(!S.savedProviders[provider])return;
+  void api("/api/connections/"+provider+"/consent",{consent}).then(()=>{
+    S.savedProviders[provider].consent=consent;
+    if(S.provider===provider)S.allowPaid=consent;
+    $("keyStatus").textContent=consent?"已授权使用个人额度":"已关闭个人额度授权";
+  }).catch(e=>{$("allowPaid").checked=!consent;$("keyStatus").textContent=humanError(e)});
  });
  $("openrouterLogin").addEventListener("click",()=>void beginOpenRouterOAuth().catch(e=>{$("keyStatus").textContent=humanError(e)}));
- $("keyProvider").addEventListener("change",e=>{
-  $("openrouterLogin").hidden=e.target.value!=="openrouter";
-  $("groqKeyGuide").hidden=e.target.value!=="groq";
- });
+ $("keyProvider").addEventListener("change",refreshKeyPanel);
+ $("disconnectProvider").addEventListener("click",()=>void removeSavedKey());
  $("modelSearch").addEventListener("input",e=>{S.query=e.target.value;S.modelPage=0;renderModels()});
  $("modelFilter").addEventListener("change",e=>{S.filter=e.target.value;S.modelPage=0;renderModels()});
  for(const btn of els("#sourceChips .chip"))btn.addEventListener("click",()=>activateSource(btn.dataset.source));
@@ -725,6 +776,6 @@ function hideAttachMenu(){$("attachMenu").hidden=true}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
- applyTheme(enabled?"rainbow":"plain");await fetchMe();await Promise.all([fetchProjects(),fetchChats()]);await finishOpenRouterOAuth();
+ applyTheme(enabled?"rainbow":"plain");await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections()]);await finishOpenRouterOAuth();
  updateModelTitle();
 });

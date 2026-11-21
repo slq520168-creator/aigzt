@@ -273,3 +273,8 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 @media(prefers-reduced-motion:reduce){.thinking-dots i{animation:none}}
 .image-job-label{font-size:13px;color:#698189}.image-job-refresh{margin-left:10px;padding:5px 9px;color:#3e7484;border:1px solid #dce7e8;border-radius:10px;font-size:12px}
 .image-job-error{font-size:13px;color:#b44545}
+
+.key-provider-guide{display:flex;align-items:flex-start;flex-direction:column;gap:5px;background:#f7fafb;border:1px solid #e6ebee;border-radius:12px;padding:11px 13px}
+.key-provider-guide a{color:#266a84;font-weight:600;font-size:14px;text-decoration:none}
+.key-provider-guide a:hover{text-decoration:underline}
+.key-provider-guide span{color:#78888d;font-size:12px}
