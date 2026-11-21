@@ -683,8 +683,11 @@ function workRoutes(t,saved,index=0){
 }
 async function workFree(route,prompt,timeout){
  let url,init={method:"GET",headers:{accept:"application/json"},redirect:"manual",signal:AbortSignal.timeout(timeout)};
- if(route.model==="vexa")url="https://vexa-ai.pages.dev/query?q="+encodeURIComponent(truncate(prompt,2800));
- else{
+ if(route.model==="vexa"){
+  url="https://vexa-ai.pages.dev/query";
+  init.method="POST";init.headers["content-type"]="application/json";
+  init.body=JSON.stringify({prompt:truncate(prompt,3500)});
+ }else{
   url=route.model==="cehpoint"?"https://ai-api.cehpoint.co.in/v1/chat/completions":"https://vireonix.ai/v1/chat/completions";
   init.method="POST";init.headers["content-type"]="application/json";
   init.body=JSON.stringify({model:route.model==="cehpoint"?"cehpoint-ai":"auto",messages:[{role:"user",content:truncate(prompt,4200)}],max_tokens:1200,stream:false});
@@ -749,7 +752,7 @@ async function workStepWithFailover(env,user,t,index,prior){
     result=await workFree(route,route.model==="vexa"?prompts.compact:prompts.full,Math.min(7700,available-500));freeOK=true;
    }else{
     const key=await revealKey(env,user.id,route.provider,route.entry.iv,route.entry.ciphertext);
-    result=await callExternal(route.provider,route.model,key,[{role:"system",body:"请如实执行文本/代码工作，不虚构外部操作。继续用户现有任务。"}, {role:"user",body:prompts.full}],true,Math.min(7700,available-500),index===3?1300:1000);
+    result=await callExternal(route.provider,route.model,key,[{role:"system",body:"请如实执行文本/代码工作，不虚构外部操作。继续用户现有任务。"}, {role:"user",body:prompts.full}],true,Math.min(7700,available-500),index>=workStepPlan(t).length-1?1300:1000);
    }
    if(!result?.content?.trim())throw Error("模型没有返回内容");
    answer={body:truncate(result.content,12000),provider:route.label,model:result.actualModel||route.model};break;
