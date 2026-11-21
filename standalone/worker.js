@@ -265,6 +265,8 @@ async function chat(req,env,user){
 
  }catch(e){
   if(giveBack)await giveBack().catch(()=>{});
+  await dbRun(env.DB,"DELETE FROM messages WHERE id=? AND user_id=?",messageId,user.id).catch(()=>{});
+  if(!body.chatId)await dbRun(env.DB,"DELETE FROM chats WHERE id=? AND user_id=?",chatId,user.id).catch(()=>{});
   throw e;
  }
  const stamp=Date.now();
@@ -277,7 +279,17 @@ async function uploadFile(req,env,user){
  requireUser(user);
  if(!env.MEDIA)throw Object.assign(new Error("文件存储未配置"),{status:503});
  if(Number(req.headers.get("content-length")||0)>8500000)throw Object.assign(new Error("附件最多8MB"),{status:413});
- const form=await req.formData(),file=form.get("file");
+ const reader=req.body?.getReader();
+ if(!reader)throw Error("上传文件为空");
+ const parts=[];let total=0;
+ for(;;){
+  const {done,value}=await reader.read();if(done)break;
+  total+=value.byteLength;
+  if(total>8500000){await reader.cancel().catch(()=>{});throw Object.assign(new Error("附件最多8MB"),{status:413})}
+  parts.push(value);
+ }
+ const formReq=new Request(req.url,{method:"POST",headers:{"content-type":req.headers.get("content-type")||""},body:new Blob(parts)});
+ const form=await formReq.formData(),file=form.get("file");
  if(!(file instanceof File))throw Error("请选择文件");
  const type=String(file.type||"").toLowerCase();
  if(!["image/jpeg","image/png","image/webp","image/gif","text/plain","text/markdown","text/csv","application/pdf"].includes(type))throw Error("仅支持常见图片、PDF、TXT、MD、CSV");
@@ -327,8 +339,15 @@ async function createImage(req,env,user){
   const image=await fetch(url.href,{signal:AbortSignal.timeout(19000)});
   if(!image.ok||!String(image.headers.get("content-type")||"").startsWith("image/"))throw Error("图片获取失败");
   if(Number(image.headers.get("content-length")||0)>6_000_000)throw Error("生成图片过大");
-  const data=await image.arrayBuffer();
-  if(data.byteLength>6_000_000||data.byteLength<1024)throw Error("生成图片无效");
+  const reader=image.body?.getReader();if(!reader)throw Error("外部图片为空");
+  const chunks=[];let total=0;
+  for(;;){
+   const {done,value}=await reader.read();if(done)break;
+   total+=value.byteLength;if(total>6_000_000){await reader.cancel().catch(()=>{});throw Error("图片超过6MB")}
+   chunks.push(value);
+  }
+  if(total<1024)throw Error("生成图片无效");
+  const data=new Uint8Array(total);let at=0;for(const ch of chunks){data.set(ch,at);at+=ch.byteLength}
   const id=crypto.randomUUID();
   await env.MEDIA.put(user.id+"/"+id,data,{httpMetadata:{contentType:"image/jpeg"},customMetadata:{name:"AI 生成图片.jpg"}});
   return {ok:true,image:"/api/files/"+id,model:"Vexa HD / DeepAI 外部免费"};

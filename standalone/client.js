@@ -107,7 +107,7 @@ async function loadChat(id){
   S.chatId=id;$("messageList").replaceChildren();hideWelcome();
   for(const m of v.messages)appendMessage(m.role,m.body,m.model);
   const c=S.chats.find(c=>c.id===id);
-  if(c&&c.model&&c.provider){S.model=c.model;S.provider=c.provider;S.modelTitle=c.model;updateModelTitle()}
+  if(c&&c.model&&c.provider){S.model=c.provider==="cloudflare"?"free:auto":c.model;S.provider=c.provider==="cloudflare"?"free":c.provider;S.modelTitle=c.provider==="cloudflare"?"免费自动 · 外部模型":c.model;updateModelTitle()}
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
@@ -255,7 +255,7 @@ function renderModels(){
   const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费·额度有限":item.free?"免费·需个人Key":"需授权·可能收费");
   title.append(tag);info.append(title,node("small","",item.provider+" · "+item.id));
   const actionable=["text","image","video"].includes(item.type);
-  const button=node("button","model-action",actionable?(S.model===item.id?"当前模型":item.type==="text"?"选择模型":"聊天内创作"):"暂不支持");
+  const button=node("button","model-action",actionable?(item.type!=="text"?"选择聊天创作":S.model===item.id?"当前模型":"选择模型"):"暂不支持");
   button.disabled=!actionable||S.model===item.id;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
