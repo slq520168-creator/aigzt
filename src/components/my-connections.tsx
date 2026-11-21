@@ -23,11 +23,13 @@ export default function MyConnections({initial="openrouter",inline=false,onClose
   if(busy)return
   setBusy(true);setNotice("")
   try{
-   if(encrypted&&pass.length<12)throw Error("加密口令至少需要 12 个字符")
    const options=await discoverProviderModels(source,key.trim())
    if(!options.length)throw Error("此密钥没有任何兼容聊天模型")
    addPersonalKey(source,key)
-   if(encrypted)await encryptPersonalKey(source,pass)
+   if(encrypted){
+    if(!pass||pass.length<12)throw Error("请填写至少 12 字符的加密口令")
+    await encryptPersonalKey(source,pass)
+   }
    setKey("");setPass("")
    setNotice("已验证 "+options.length+" 个可用模型"+(encrypted?"，加密保存到你的个人云端":"；仅当前页面会话有效"))
    onReady?.(source)
@@ -69,12 +71,12 @@ export default function MyConnections({initial="openrouter",inline=false,onClose
   <div className="relative"><input type={reveal?"text":"password"} autoComplete="off" spellCheck={false} value={key} onChange={e=>setKey(e.target.value)} placeholder="仅填写你个人账户的 API Key" aria-label="我的 API Key" className="h-11 w-full rounded-xl border bg-background px-3 pr-12 text-[16px]"/><button type="button" aria-label={reveal?"隐藏密钥":"显示密钥"} onClick={()=>setReveal(x=>!x)} className="absolute right-1 top-1 grid size-9 place-items-center text-muted-foreground">{reveal?<EyeOff className="size-4"/>:<Eye className="size-4"/>}</button></div>
   <label className="flex items-start gap-2 text-xs leading-5"><input type="checkbox" checked={encrypted} onChange={e=>setEncrypted(e.target.checked)} className="mt-1 size-4"/><span>用我设置的加密口令保存密文到个人云端（可跨设备解锁）。不选则只在当前页面会话使用。</span></label>
   {encrypted&&<input type="password" autoComplete="new-password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="独立加密口令，至少 12 字符" className="h-11 w-full rounded-xl border bg-background px-3 text-[16px]" aria-label="云端加密口令"/>}
-  <button type="button" disabled={!key.trim()||busy||(encrypted&&pass.length<12)} onClick={()=>void add()} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-3 text-sm font-semibold text-background disabled:opacity-45">{busy?<LoaderCircle className="size-4 animate-spin"/>:<KeyRound className="size-4"/>}验证模型并连接</button>
+  <button type="button" disabled={!key.trim()||busy||!((encrypted&&!pass)||true)} onClick={()=>void add()} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-3 text-sm font-semibold text-background disabled:opacity-45">{busy?<LoaderCircle className="size-4 animate-spin"/>:<KeyRound className="size-4"/>}验证模型并连接</button>
   {saved&&<div className="space-y-2 border-t pt-3"><p className="text-xs font-semibold">已有加密密钥 · 解锁使用</p><input type="password" autoComplete="off" value={pass} onChange={e=>setPass(e.target.value)} placeholder="输入之前的加密口令" className="h-10 w-full rounded-xl border bg-background px-3 text-[16px]" aria-label="解锁口令"/><button type="button" onClick={()=>void unlock()} disabled={busy||pass.length<12} className="inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs disabled:opacity-50"><LockKeyhole className="size-4"/>解锁个人云端密钥</button></div>}
   {connected&&<button type="button" disabled={busy} onClick={()=>void forget(false)} className="rounded-xl border px-3 py-2 text-xs">断开当前会话密钥</button>}
   {saved&&<button type="button" disabled={busy} onClick={()=>void forget(true)} className="inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs text-destructive"><Trash2 className="size-4"/>删除我的云端加密密钥</button>}
   {notice&&<p role="status" className="rounded-xl bg-muted p-3 text-xs leading-5">{notice}</p>}
-  <p className="flex gap-2 text-[11px] leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0"/>个人文字模型调用通过 AIGZT 专用 Cloudflare 中转访问固定服务商 API，中转不保存个人密钥，也不借用站长密钥。图片和视频接口依服务商权限使用。登录 ChatGPT、Grok 等官网不等于授权 API；目前仅 OpenRouter 支持已实现的真正网站授权。个人付费模型可能按你的账户计费。</p>
+  <p className="flex gap-2 text-[11px] leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0"/>个人密钥通过浏览器直接访问官方 HTTPS API，不会使用站长密钥。部分服务商会限制浏览器跨域请求。登录 ChatGPT、Grok 等官网不等于授权 API；目前仅 OpenRouter 支持已实现的真正网站授权。个人付费模型可能按你的账户计费。</p>
  </div>
  return inline?<section className="rounded-2xl border bg-card p-4 sm:p-5">{panel}</section>:
   <div className="fixed inset-0 z-[120] flex items-end justify-center sm:items-center"><button type="button" onClick={onClose} className="absolute inset-0 bg-foreground/20" aria-label="关闭连接窗口"/><div role="dialog" aria-modal="true" aria-label="连接我的 AI" className="relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border bg-card p-4 shadow-xl sm:max-h-[85dvh] sm:rounded-2xl sm:p-5">{panel}</div></div>

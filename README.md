@@ -44,3 +44,14 @@ npm run build
 ## 上游与版权
 
 FreeLLMAPI 原项目：[tashfeenahmed/freellmapi](https://github.com/tashfeenahmed/freellmapi)。本仓库为独立工作台前端、并未分发其源码。
+
+
+## 免费额度聚合进度
+
+- 默认入口先选择 FREE 智能调度：站点免费线路优先，故障时只切有限配额的内置 AI 备用，不自动走付费线路。
+- 当前真实免费来源不能等同 FreeLLMAPI 理论声称的 87 家与 1313 个端点。OpenRouter 免费路由尚需有效服务商密钥，Groq/Cerebras 公共应用许可未核准，所以不会假报全部在线。
+- 普通用户可以在设置中通过 OpenRouter 账号授权，或使用个人 OpenAI/Grok/Gemini/千问等 API Key；密钥只在本人浏览器内存中，选择加密保存后才写入本人云端密文。
+- GPT/Grok 等文本与创作媒体调用通过独立的 Cloudflare BYOK Worker 中转，不借用站长付费密钥；媒体请求需要单次费用确认。
+- 免费池 Tiniest Cloud 后端函数重命名为 `freerouter`，以避免下划线函数文件未被部署平台识别的问题。该改动已提交源代码，但还需发布并完成 `run_function` 实测；不要把构建通过当作正式验证。
+- Tiniest Cloud 免费每日源码构建次数已达上限，本轮不再重复尝试；当前源码修复放在 GitHub main，正式版本继续保持已有发布状态。
+- 英文 `Preview of version ...` 提示来自 Tiniest Cloud 预览宿主，不是网站弹窗，正式 live URL 不显示这条预览提示。

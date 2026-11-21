@@ -11,5 +11,5 @@ User BYOK is truly independent of the owner's seven Tiniest connections. Each ke
 ## V25 个人图像视频
 Grok / GPT 图片、Grok 视频通过 Cloudflare 无存储 BYOK 中转；用户显式同意可能收费才请求媒体端点。模型从本人授权 API 实时读取；视频通过任务编号手动查询。无后台轮询、不存个人密钥在媒体任务记录中。站点免费池仍默认用于聊天，个人付费媒体不会自动触发。
 
-## Atomic quota / hosted sign-in (GitHub staged)
-The free-router function now reserves fixed daily and minute slots with atomic database create rather than count-then-write. All uses of free_router, including the duplicate function location used for platform function discovery, have the exact same code. Only enabled approved free providers are probed. Rules enforce server-function-only writes to pool-day/pool-minute. Hosted sign-in branding is white/AIGZT/Chinese, while Tiniest preview badges remain platform-owned. Personal keys are memory-only by default or stored using AES-GCM with a user-owned passphrase; provider media relay from V25 is preserved. Tiniest builder quota exhausted (30 per 24 hours): these changes are committed to GitHub but NOT a confirmed deploy; the function healthcheck must run after backend activation before declaring free pool usable.
+## Function name diagnosis
+A valid minimal healthcheck function is detected in V26, but `free_router` is absent from the Tiniest Cloud function list. Source no longer includes a filename with an underscore; rename to `public/_functions/freerouter.js`, and change all tiny.call references accordingly. This is ready for next platform build; not runtime-verified due the platform's 30 builds/day limit.
