@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-1";
+const VERSION="aigzt-cf-2";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -229,16 +229,24 @@ async function chat(req,env,user){
   if(provider==="cloudflare"){
    giveBack=await quota(env,user.id);
    const system=mode==="code"?"你是 AIGZT 编程助手，请提供完整可用的代码、错误处理及测试步骤，不要声称你已运行代码。":"你是 AIGZT AI 中文助手，请准确回应，不编造事实。";
-   const config={messages:[{role:"system",content:system},...messages.map(m=>({role:m.role,content:truncate(m.body,3000)}))],max_tokens:900};
-   // Some Cloudflare models return OpenAI-compatible choices, not .response.
-   // Disable hidden reasoning for models whose free quota would otherwise be
-   // consumed by thinking tokens before the user sees an answer.
-   if(model.includes("glm-4.7")||model.includes("gemma-4"))config.chat_template_kwargs={enable_thinking:false};
-   const out=await env.AI.run(model,config);
-   const candidate=out?.response??out?.result?.response??out?.choices?.[0]?.message?.content??null;
-   const text=typeof candidate==="string"?candidate:null;
-   if(!text||!text.trim())throw Error("免费模型没有返回有效内容");
-   result={content:truncate(text,40000),actualModel:model};
+   const candidates=[model,...FREE_MODELS.filter(x=>x.id!==model).map(x=>x.id)];
+   const tried=[];
+   for(const id of candidates){
+    const config={messages:[{role:"system",content:system},...messages.map(m=>({role:m.role,content:truncate(m.body,3000)}))],max_tokens:500};
+    if(id.includes("glm-4.7")||id.includes("gemma-4"))config.chat_template_kwargs={enable_thinking:false};
+    try{
+     const out=await env.AI.run(id,config);
+     const candidate=out?.response??out?.result?.response??out?.choices?.[0]?.message?.content??null;
+     const text=typeof candidate==="string"?candidate:null;
+     if(!text||!text.trim())throw Error("没有有效文本");
+     result={content:truncate(text,40000),actualModel:id};
+     break;
+    }catch(error){
+     const message=error instanceof Error?error.message:String(error);
+     tried.push({model:id,reason:/429|3040|rate|capacity|quota|403|5035/i.test(message)?"额度或模型不可用":"响应失败"});
+    }
+   }
+   if(!result)throw Object.assign(new Error("免费模型暂时全部不可用，不会转收费线路"),{status:503});
   }else result=await callExternal(provider,model,body.apiKey,messages,body.allowPaid);
  }catch(e){
   if(giveBack)await giveBack().catch(()=>{});
@@ -246,7 +254,7 @@ async function chat(req,env,user){
  }
  const stamp=Date.now();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",crypto.randomUUID(),chatId,user.id,"assistant",result.content,result.actualModel,stamp);
- await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,stamp,chatId,user.id);
+ await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,result.actualModel,stamp,chatId,user.id);
  return {ok:true,chatId,reply:result.content,model:result.actualModel,provider};
 }
 async function createImage(req,env,user){
