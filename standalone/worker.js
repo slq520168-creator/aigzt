@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4.1-unified";
+const VERSION="aigzt-cf-4.2-sidebar";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
