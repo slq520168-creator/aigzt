@@ -221,8 +221,22 @@ async function freeText(env,messages,mode,preferred="free:auto"){
 async function chat(req,env,user){
  requireUser(user);
  const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
- const message=truncate(body.message,8000).trim();
- if(!message)throw Error("请填写消息");
+ const typed=truncate(body.message,8000).trim(),attachments=Array.isArray(body.attachments)?body.attachments:[];
+ if(attachments.length>4)throw Error("一次最多四个附件");
+ const lines=[],context=[];
+ for(const id of attachments){
+  if(typeof id!=="string"||!/^[0-9a-f-]{36}$/.test(id))throw Error("附件编号无效");
+  const key=user.id+"/"+id,obj=await env.MEDIA?.head(key);
+  if(!obj)throw Error("附件不存在或无权访问");
+  const name=String(obj.customMetadata?.name||"附件").replace(/[\[\]()\r\n]/g," ").slice(0,100);
+  lines.push("[文件："+name+"](/api/files/"+id+")");
+  if(["text/plain","text/markdown","text/csv"].includes(obj.httpMetadata?.contentType)&&obj.size<100000){
+   const entry=await env.MEDIA.get(key);
+   context.push("附件 "+name+" 内容：\n"+(await entry.text()).slice(0,14000));
+  }
+ }
+ const message=typed+(lines.length?"\n"+lines.join("\n"):"");
+ if(!message.trim())throw Error("请输入消息或添加附件");
  const model=String(body.model||FREE_MODELS[0].id);
  requireModelId(model);
  if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("此模型不是本站免费线路");
@@ -239,6 +253,8 @@ async function chat(req,env,user){
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
  const previous=await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT 12").bind(chatId,user.id).all();
  const messages=(previous.results||[]).reverse();
+ if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
+ if(lines.length&&!context.length&&provider==="free"&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n提示：外部免费文字模型不能直接解析图片或PDF像素，不要虚构文件内容。"};
  const mode=body.mode==="code"?"code":"general";
  let giveBack=null,result;
  try{
@@ -256,6 +272,47 @@ async function chat(req,env,user){
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,result.actualModel,stamp,chatId,user.id);
  return {ok:true,chatId,reply:result.content,model:result.actualModel,provider};
 }
+
+async function uploadFile(req,env,user){
+ requireUser(user);
+ if(!env.MEDIA)throw Object.assign(new Error("文件存储未配置"),{status:503});
+ if(Number(req.headers.get("content-length")||0)>8500000)throw Object.assign(new Error("附件最多8MB"),{status:413});
+ const form=await req.formData(),file=form.get("file");
+ if(!(file instanceof File))throw Error("请选择文件");
+ const type=String(file.type||"").toLowerCase();
+ if(!["image/jpeg","image/png","image/webp","image/gif","text/plain","text/markdown","text/csv","application/pdf"].includes(type))throw Error("仅支持常见图片、PDF、TXT、MD、CSV");
+ if(!file.size||file.size>8000000)throw Error("单文件上限8MB");
+ const name=String(file.name||"附件").replace(/[<>\x00-\x1f]/g,"").slice(0,110)||"附件";
+ const id=crypto.randomUUID();
+ await env.MEDIA.put(user.id+"/"+id,file.stream(),{httpMetadata:{contentType:type},customMetadata:{name}});
+ return {ok:true,id,name,type,size:file.size,url:"/api/files/"+id};
+}
+async function readFile(env,user,id){
+ requireUser(user);
+ const obj=await env.MEDIA?.get(user.id+"/"+id);
+ if(!obj)return fail("文件不存在或无权访问",404);
+ const type=obj.httpMetadata?.contentType||"application/octet-stream";
+ return new Response(obj.body,{headers:{"content-type":type,"cache-control":"private, no-store","x-content-type-options":"nosniff","content-security-policy":"default-src 'none'; sandbox","content-disposition":type.startsWith("image/")?"inline":"attachment"}});
+}
+async function mediaChat(req,env,user){
+ requireUser(user);
+ const b=await parseJSON(req),mode=String(b.mode||""),prompt=truncate(b.prompt,1400).trim();
+ if(mode!=="image"&&mode!=="video")throw Error("创作模式无效");
+ if(!prompt)throw Error("请输入创作描述");
+ const exists=b.chatId?await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",b.chatId,user.id):null;
+ if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
+ const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
+ const result=mode==="image"?await createImage(mediaReq,env,user):await createVideo(mediaReq,user);
+ const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply=mode==="image"?"![生成图片]("+result.image+")":"视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
+ if(!exists)await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now);
+ await env.DB.batch([
+  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"user",prompt,mode,now),
+  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"assistant",reply,result.model||mode,now+1),
+  env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id)
+ ]);
+ return {ok:true,chatId,reply,model:result.model||mode,...(result.requestId?{requestId:result.requestId}:{})};
+}
+
 async function createImage(req,env,user){
  requireUser(user);
  const body=await parseJSON(req),prompt=truncate(body.prompt,1400).trim();
@@ -346,6 +403,10 @@ async function main(req,env){
  if(path==="/api/provider-models"&&req.method==="POST")return response(await providerModels(await parseJSON(req)));
  if(path==="/api/openrouter/exchange"&&req.method==="POST")return response(await exchangeOpenRouter(await parseJSON(req)));
  if(path==="/api/image"&&req.method==="POST")return response(await createImage(req,env,user));
+ if(path==="/api/chat/media"&&req.method==="POST")return response(await mediaChat(req,env,user));
+ if(path==="/api/files/upload"&&req.method==="POST")return response(await uploadFile(req,env,user));
+ const fm=path.match(/^\/api\/files\/([0-9a-f-]{36})$/);
+ if(fm&&req.method==="GET")return readFile(env,user,fm[1]);
  if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,user));
  if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,user));
  if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));

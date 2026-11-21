@@ -15,7 +15,7 @@
    <div class="side-nav">
     <button class="nav-item active" id="navChat">◉ <span>AI 对话</span></button>
     <button class="nav-item" id="navModels">▦ <span>模型大厅</span></button>
-    <button class="nav-item" id="navCreate">◇ <span>图片与视频创作</span></button>
+    <button class="nav-item" id="navCreate">◇ <span>聊天内创作</span></button>
     <button class="nav-item" id="navKeys">♢ <span>我的 AI 连接</span></button>
    </div>
    <div class="aside-caption">历史会话 <span id="chatCount"></span></div>
@@ -26,12 +26,12 @@
   <main class="main">
    <header class="topbar">
     <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏">☰</button><button class="model-select" id="pickModel"><span class="model-emoji">✧</span><span id="modelTitle">免费自动选择</span><span class="chevron">⌄</span></button></div>
-    <div class="top-right"><span class="online-dot" title="网站独立运行"></span><span class="badge-lite">独立版</span><button class="icon-btn" id="headerNew" title="新建对话">✎</button></div>
+    <div class="top-right"><span class="online-dot" title="网站独立运行"></span><span class="badge-lite">独立版</span><button class="icon-btn" id="themeToggle" title="七彩呼吸主题" aria-pressed="true">◌</button><button class="icon-btn" id="headerNew" title="新建对话">✎</button></div>
    </header>
    <div class="conversation" id="conversation" aria-live="polite">
     <div class="welcome" id="welcome">
      <div class="welcome-symbol">✧</div><h1>有什么可以帮你？</h1>
-     <p>先使用真实可用的免费模型。需要更多模型时，自行连接个人额度。</p>
+     <p>优先使用外部免费模型。聊天、文件、作图与视频都在这里完成。</p><p class="privacy-note">免费服务可能保存或使用输入内容来改进模型；请勿提交敏感资料。</p>
      <div class="suggestions">
       <button data-suggestion="帮我用中文分析这个问题，并给出具体解决步骤。">问题分析</button>
       <button data-suggestion="请为我编写一份可运行的代码，包含异常处理和测试。">编程助手</button>
@@ -44,13 +44,13 @@
    <div class="composer-area">
     <div class="error-banner" id="errorBanner" role="alert" hidden></div>
     <form class="composer" id="chatForm">
-     <textarea id="prompt" rows="2" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea>
+     <textarea id="prompt" rows="2" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea><div id="attachmentPreview" class="attachment-preview"></div><input id="attachmentInput" type="file" multiple accept="image/*,.pdf,.txt,.md,.csv" hidden>
      <div class="compose-bottom">
-      <div class="compose-left"><button type="button" class="subtle" id="composeModels">▦ 选择模型</button><button type="button" class="subtle" id="codeToggle" aria-pressed="false">⌘ 编程</button></div>
+      <div class="compose-left"><button type="button" class="subtle plus-tool" id="attachButton">＋</button><button type="button" class="subtle" id="composeModels">▦ 模型</button><button type="button" class="subtle" id="imageMode" aria-pressed="false">◈ 作图</button><button type="button" class="subtle" id="videoMode" aria-pressed="false">▷ 视频</button><button type="button" class="subtle" id="codeToggle" aria-pressed="false">⌘ 代码</button></div>
       <button type="submit" class="send" id="sendBtn" aria-label="发送消息">↑</button>
      </div>
     </form>
-    <p class="footer-note">AIGZT 独立运行 · 免费额度有限 · 输出内容请自行核实</p>
+    <p class="footer-note">外部免费优先 · 独立账号和文件存储 · 付费必须确认</p>
    </div>
   </main>
  </div>
@@ -58,7 +58,7 @@
  <dialog id="authDialog" class="modal">
   <div class="modal-head"><div><h2 id="authTitle">登录 AIGZT</h2><p>独立账号，不依赖其他平台登录。</p></div><button class="close-modal" data-close="authDialog" aria-label="关闭">×</button></div>
   <form id="authForm"><label>邮箱地址<input type="email" name="email" autocomplete="username" required placeholder="邮箱地址"></label>
-   <label>登录密码<input type="password" name="password" autocomplete="current-password" minlength="12" maxlength="160" required placeholder="至少 12 位"></label>
+   <label>登录密码<input type="password" name="password" autocomplete="current-password" minlength="8" maxlength="160" required placeholder="至少 8 位"></label>
    <p class="form-message" id="authError"></p>
    <button class="primary full" type="submit" id="authSubmit">登录</button>
    <button type="button" class="text-button" id="switchAuth">还没有账号？免费注册</button>
@@ -69,7 +69,7 @@
  <dialog id="modelDialog" class="modal wide-modal">
   <div class="modal-head"><div><h2>模型大厅</h2><p id="modelSummary">免费模型与各家真实模型分开展示，不虚报可用额度。</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
   <div class="model-tools"><input id="modelSearch" placeholder="搜索 GPT、Grok、Gemini、Qwen、编程模型…" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
-  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="cloudflare">本站免费</button><button class="chip" data-source="openrouter">OpenRouter</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button></div>
+  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="free">外部免费</button><button class="chip" data-source="openrouter">OpenRouter</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button></div>
   <div class="model-count" id="modelCount">正在读取真实模型目录…</div>
   <div class="model-list" id="modelList"></div>
   <button class="outline full" id="moreModels" type="button" hidden>加载更多模型</button>

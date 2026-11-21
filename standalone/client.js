@@ -1,10 +1,10 @@
 "use strict";
 const S={
- user:null,quota:null,chats:[],chatId:null,model:"@cf/meta/llama-3.1-8b-instruct-fast",
- modelTitle:"免费自动选择",provider:"cloudflare",keys:{},connected:{},
+ user:null,quota:null,chats:[],chatId:null,model:"free:auto",
+ modelTitle:"免费自动选择",provider:"free",keys:{},connected:{},
  allowPaid:false,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
- authRegister:false,createMode:"image",videoTask:null
+ authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[]
 };
 const $=id=>document.getElementById(id);
 const els=id=>document.querySelectorAll(id);
@@ -39,7 +39,7 @@ function setAuthUI(){
  const logged=!!S.user;
  $("accountBtn").textContent=logged?S.user.email+" · 退出":"◯ 登录 / 注册";
  const q=S.quota;
- $("quotaLabel").textContent=q&&logged?"我的免费次数："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"免费额度：登录后查看";
+ $("quotaLabel").textContent=q&&logged?"免费请求保护配额："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"外部免费 · 登录后使用";
 }
 async function fetchMe(){
  try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;setAuthUI()}
@@ -74,14 +74,29 @@ function appendMessage(role,content,model){
  const row=node("div","message "+role),bubble=node("div","bubble",content);
  if(role==="assistant"){
   const icon=node("span","avatar-ai","✧");row.append(icon,bubble);
+  const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
+  if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";const a=node("a","chat-download","打开图片");a.href=picture[1];a.target="_blank";a.rel="noopener";bubble.append(im,a)}
+
   if(model)bubble.append(node("div","message-model",model));
- }else row.append(bubble);
+ }else{
+  const lines=String(content||"").split(/\n(?=\[文件：)/);
+  if(lines.length>1){
+   bubble.textContent=lines.shift();
+   for(const line of lines){
+    const f=line.match(/^\[文件：([^\]]+)\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
+    if(!f)continue;
+    const a=node("a","chat-file",f[1]);a.href=f[2];a.target="_blank";a.rel="noopener";bubble.append(a);
+    if(/\.(jpg|jpeg|png|webp|gif)$/i.test(f[1])){const img=node("img","chat-upload-image");img.src=f[2];img.alt=f[1];img.loading="lazy";bubble.append(img)}
+   }
+  }
+  row.append(bubble);
+ }
  $("messageList").append(row);
  $("conversation").scrollTop=$("conversation").scrollHeight;
  return row;
 }
 function newChat(){
- S.chatId=null;$("messageList").replaceChildren();showWelcome();
+ S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";flashError("");renderHistory();closeMenu();
  $("prompt").focus();
 }
@@ -98,12 +113,12 @@ async function loadChat(id){
 }
 function updateModelTitle(){
  let label=S.modelTitle;
- if(S.provider==="cloudflare"&&!label.includes("免费"))label="免费 · "+label;
+ if(S.provider==="free"&&!label.includes("免费"))label="免费 · "+label;
  $("modelTitle").textContent=label;
 }
 function setModel(row){
- if(row.type!=="text"){flashError("该条是媒体模型目录，请到图片与视频创作入口；不把媒体模型当作聊天模型调用。");return}
- if(row.provider!=="cloudflare"&&!S.keys[row.provider]){
+ if(row.type!=="text"){setComposerMode(row.type==="video"?"video":"image");hide("modelDialog");return}
+ if(row.provider!=="free"&&!S.keys[row.provider]){
   $("keyProvider").value=row.provider==="openrouter"?"openrouter":row.provider;
   show("keyDialog");$("keyStatus").textContent="此模型需要先验证你自己的 API Key。";
   return;
@@ -112,25 +127,71 @@ function setModel(row){
  updateModelTitle();hide("modelDialog");
  flashError("");
 }
+
+function setComposerMode(mode){
+ S.composerMode=mode;
+ $("imageMode").classList.toggle("active",mode==="image");
+ $("videoMode").classList.toggle("active",mode==="video");
+ $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
+ $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
+ $("prompt").placeholder=mode==="image"?"描述要生成的图片…":mode==="video"?"描述要生成的视频（使用本人Grok额度）…":"向 AI 提问…";
+ $("prompt").focus();
+}
+function renderAttachments(){
+ const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
+ for(const item of S.attachments){
+  const badge=node("span","attachment-item"),title=node("span","",item.name),del=node("button","","×");
+  del.type="button";del.title="取消附件";
+  del.addEventListener("click",()=>{S.attachments=S.attachments.filter(x=>x.id!==item.id);renderAttachments()});
+  badge.append(title,del);el.append(badge);
+ }
+}
+async function uploadSelected(files){
+ if(!S.user){show("authDialog");return}
+ if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
+ for(const file of files){
+  if(file.size>8000000){flashError("单文件最大8MB："+file.name);continue}
+  const body=new FormData();body.append("file",file);
+  try{
+   $("attachButton").disabled=true;
+   const r=await fetch("/api/files/upload",{method:"POST",credentials:"same-origin",body});
+   const d=await r.json().catch(()=>null);
+   if(!r.ok||!d?.ok)throw Error(d?.error||"HTTP "+r.status);
+   S.attachments.push(d);renderAttachments();
+  }catch(e){flashError("上传失败："+humanError(e))}
+  finally{$("attachButton").disabled=false}
+ }
+}
+
 async function sendMessage(){
  if(S.busy)return;
- const prompt=$("prompt").value.trim();if(!prompt)return;
+ const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
- if(S.provider!=="cloudflare"&&!S.keys[S.provider]){
+ if(S.composerMode==="text"&&S.provider!=="free"&&!S.keys[S.provider]){
   $("keyProvider").value=S.provider;show("keyDialog");return;
  }
- const freeRoute=S.provider==="cloudflare"||(S.provider==="openrouter"&&(S.model==="openrouter/free"||S.model.endsWith(":free")));
- if(!freeRoute&&!S.allowPaid){
+ const freeRoute=S.provider==="free"||(S.provider==="openrouter"&&(S.model==="openrouter/free"||S.model.endsWith(":free")));
+ if(S.composerMode==="text"&&!freeRoute&&!S.allowPaid){
   flashError("已选择的模型可能产生费用，请在「我的 AI 连接」中明确确认。");
   show("keyDialog");$("keyProvider").value=S.provider;return;
  }
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
- appendMessage("user",prompt);$("prompt").value="";
+ const attached=S.attachments.slice();
+ const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
+ appendMessage("user",sentBody);$("prompt").value="";S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","正在获取真实回复…");
  try{
-  const result=await api("/api/chat",{chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,
-   mode:S.code?"code":"general",allowPaid:S.allowPaid,apiKey:S.provider==="cloudflare"?undefined:S.keys[S.provider]});
+  let result;
+  if(S.composerMode==="text")result=await api("/api/chat",{chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),
+   mode:S.code?"code":"general",allowPaid:S.allowPaid,apiKey:S.provider==="free"?undefined:S.keys[S.provider]});
+  else{
+   if(S.composerMode==="video"&&!S.keys.grok){openKeyPanel();$("keyProvider").value="grok";throw Error("请先连接自己的Grok账号或Key");}
+   const confirmed=S.composerMode==="video"?confirm("视频可能收费。确定使用自己的Grok API额度生成吗？"):false;
+   if(S.composerMode==="video"&&!confirmed)throw Error("已取消视频请求");
+   result=await api("/api/chat/media",{chatId:S.chatId,mode:S.composerMode,prompt,apiKey:S.composerMode==="video"?S.keys.grok:undefined,confirmed});
+   if(result.requestId)S.videoTask=result.requestId;
+  }
   S.chatId=result.chatId;loading.remove();appendMessage("assistant",result.reply,result.model);
   if(isNew)await fetchChats();else await fetchChats();
   void fetchMe();
@@ -142,7 +203,7 @@ async function loadCatalog(){
  $("modelCount").textContent="正在获取真实模型列表…";
  try{
   const d=await api("/api/models");
-  S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"cloudflare"}));
+  S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
   $("modelSummary").textContent=d.catalogError?"外部目录暂不可用，本站免费模型正常保留。":"从真实接口获取 "+S.remoteModels.length+" 个 OpenRouter 模型；其中免费与付费按实际价格标记。";
@@ -191,10 +252,10 @@ function renderModels(){
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的真实模型，请切换筛选。":"模型目录尚未连接成功。"));return}
  for(const item of shown){
   const row=node("div","model-row"),info=node("div","model-info"),title=node("strong","",item.name||item.id);
-  const tag=node("span","price-tag"+(item.free?" free":""),item.free?"免费":"按账户计费");
+  const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费·额度有限":item.free?"免费·需个人Key":"需授权·可能收费");
   title.append(tag);info.append(title,node("small","",item.provider+" · "+item.id));
-  const actionable=item.type==="text";
-  const button=node("button","model-action",actionable?(S.model===item.id?"当前模型":"选择模型"):"媒体目录");
+  const actionable=["text","image","video"].includes(item.type);
+  const button=node("button","model-action",actionable?(S.model===item.id?"当前模型":item.type==="text"?"选择模型":"聊天内创作"):"暂不支持");
   button.disabled=!actionable||S.model===item.id;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
@@ -345,12 +406,17 @@ function wire(){
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",closeMenu);
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
- $("navCreate").addEventListener("click",openCreate);
+ $("navCreate").addEventListener("click",()=>{closeMenu();setComposerMode("image")});
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
  $("newChat").addEventListener("click",newChat);$("headerNew").addEventListener("click",newChat);
  $("accountBtn").addEventListener("click",()=>void account());
  $("pickModel").addEventListener("click",openModels);
  $("composeModels").addEventListener("click",openModels);
+ $("attachButton").addEventListener("click",()=>$("attachmentInput").click());
+ $("attachmentInput").addEventListener("change",e=>{void uploadSelected(Array.from(e.target.files||[]));e.target.value=""});
+ $("imageMode").addEventListener("click",()=>setComposerMode(S.composerMode==="image"?"text":"image"));
+ $("videoMode").addEventListener("click",()=>setComposerMode(S.composerMode==="video"?"text":"video"));
+ $("themeToggle").addEventListener("click",()=>{const active=!document.body.classList.contains("rainbow-enabled");document.body.classList.toggle("rainbow-enabled",active);$("themeToggle").setAttribute("aria-pressed",String(active));localStorage.setItem("aigzt:rainbow",active?"1":"0")});
  $("codeToggle").addEventListener("click",()=>{
   S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);
   $("codeToggle").setAttribute("aria-pressed",String(S.code));
@@ -374,6 +440,6 @@ function wire(){
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
 }
 document.addEventListener("DOMContentLoaded",async()=>{
- wire();await fetchMe();await fetchChats();await finishOpenRouterOAuth();
+ wire();document.body.classList.toggle("rainbow-enabled",localStorage.getItem("aigzt:rainbow")!=="0");$("themeToggle").setAttribute("aria-pressed",String(document.body.classList.contains("rainbow-enabled")));await fetchMe();await fetchChats();await finishOpenRouterOAuth();
  updateModelTitle();
 });
