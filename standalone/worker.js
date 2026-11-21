@@ -461,20 +461,18 @@ async function submitKrea(req,env,user){
  requireUser(user);const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(!prompt)throw Error("请输入图片描述");
  if(!env.MEDIA)throw Object.assign(new Error("独立图片存储未绑定"),{status:503});
- const pending=await dbGet(env.DB,"SELECT COUNT(*) AS n FROM image_jobs WHERE user_id=? AND status='pending' AND created_at>?",user.id,Date.now()-35*60000);
- if((pending?.n||0)>=2)throw Object.assign(new Error("同时最多生成2张图片，完成后可继续，不限每日次数"),{status:429});
- const rollback=async()=>{};
+
  try{
   const seed=Math.floor(Math.random()*2147483647);
   const payload={prompt,negative_prompt:"",model:"Turbo",steps:8,guidance:0,width:1024,height:1024,seed,randomize:false};
   const res=await fetch(KREA+"/gradio_api/call/v2/generate",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(12000)});
-  if(!res.ok||res.status>=300)throw Error(res.status===429?"今日免费次数已用完":"Krea 任务提交 HTTP "+res.status);
+  if(!res.ok||res.status>=300)throw Object.assign(new Error(res.status===429?"作图服务当前限流，请稍后重试":"作图服务请求失败 HTTP "+res.status),{status:res.status===429?429:503});
   const data=await res.json(),eid=String(data?.event_id||"");
   if(!/^[A-Za-z0-9_-]{8,128}$/.test(eid))throw Error("作图提交失败");
   const id=crypto.randomUUID(),day="image-unmetered";
   await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,eid,Date.now(),day);
   return {ok:true,pending:true,jobId:id,model:"免费作图"};
- }catch(e){await rollback().catch(()=>{});throw Object.assign(new Error("作图暂不可用："+(e?.name==="TimeoutError"?"提交超时":e.message||"网络失败")),{status:503})}
+ }catch(e){throw Object.assign(new Error("作图暂不可用："+(e?.name==="TimeoutError"?"提交超时":e.message||"网络失败")),{status:e?.status===429?429:503})}
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",message,Date.now(),job.id,job.user_id);
