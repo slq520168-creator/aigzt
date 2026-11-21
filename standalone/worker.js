@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-5.3.2-clean-header";
+const VERSION="aigzt-cf-5.4-vault-ui";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -171,7 +171,7 @@ async function revealKey(env,userId,provider,iv,ciphertext){
 }
 async function loadUserProvider(env,userId,provider){
  if(!HOSTS[provider])throw Object.assign(new Error("服务商不支持"),{status:400});
- return dbGet(env.DB,"SELECT provider,iv,ciphertext,model_id,consent,updated_at FROM user_api_keys WHERE user_id=? AND provider=?",userId,provider);
+ return dbGet(env.DB,"SELECT provider,iv,ciphertext,model_id,consent,updated_at,verified FROM user_api_keys WHERE user_id=? AND provider=?",userId,provider);
 }
 async function keyForProvider(env,user,provider,provided){
  if(typeof provided==="string"&&provided.length>=12)return {key:provided,consent:false};
@@ -183,16 +183,28 @@ async function saveUserProvider(env,user,body){
  requireUser(user);
  const provider=String(body?.provider||""),plain=String(body?.apiKey||"").trim();
  if(!HOSTS[provider])throw Object.assign(new Error("服务商不支持"),{status:400});
- if(plain.length<12||plain.length>1500||/[\r\n\0]/.test(plain))throw Object.assign(new Error("API Key 不正确"),{status:400});
- const {models,verified}=await providerModels({provider,apiKey:plain,model:body.model});
- if(!models?.length)throw Object.assign(new Error("服务商未提供可用模型"),{status:502});
- const preferred=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(m=>m.id===id)).find(Boolean):
- provider==="novai"||provider==="novai_pro"?models.find(x=>x.free===true&&x.type==="text"):null;
- const requested=String(body.model||""),selected=(requested&&models.find(m=>m.id===requested))||preferred||models.find(m=>!/audio|tts|whisper|guard|embed|image|video|realtime|transcri/i.test(m.id))||models[0];
- if(!selected?.id)throw Object.assign(new Error("找不到适用的模型"),{status:502});
- const vault=await protectKey(env,user.id,provider,plain),now=Date.now(),consent=body.consent===true?1:0;
- await dbRun(env.DB,"INSERT INTO user_api_keys(user_id,provider,iv,ciphertext,model_id,consent,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(user_id,provider) DO UPDATE SET iv=excluded.iv,ciphertext=excluded.ciphertext,model_id=excluded.model_id,consent=excluded.consent,updated_at=excluded.updated_at",user.id,provider,vault.iv,vault.ciphertext,selected.id,consent,now);
- return {ok:true,connection:{provider,model:selected.id,consent:consent===1,updatedAt:now,verified:verified===true},models};
+ if(plain.length<12||plain.length>1500||/[\r\n\0]/.test(plain))
+  throw Object.assign(new Error("请输入有效格式的 API Key"),{status:400});
+ const older=await loadUserProvider(env,user.id,provider);
+ const desired=validModelIdentifier(body?.model)?String(body.model):older?.model_id||"";
+ const sealed=await protectKey(env,user.id,provider,plain),now=Date.now(),consent=body.consent===true?1:0;
+ // Save ciphertext before any external API request. Upstream outages must not lose a user key.
+ await dbRun(env.DB,"INSERT INTO user_api_keys(user_id,provider,iv,ciphertext,model_id,consent,updated_at,verified) VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(user_id,provider) DO UPDATE SET iv=excluded.iv,ciphertext=excluded.ciphertext,model_id=excluded.model_id,consent=excluded.consent,updated_at=excluded.updated_at,verified=0",
+  user.id,provider,sealed.iv,sealed.ciphertext,desired,consent,now);
+ let models=[],verified=false,model=desired,warning="";
+ try{
+  const catalog=await providerModels({provider,apiKey:plain,model:desired||undefined});
+  models=Array.isArray(catalog.models)?catalog.models:[];
+  verified=catalog.verified===true;
+  const favorite=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(x=>x.id===id)).find(Boolean):
+   ["novai","novai_pro"].includes(provider)?models.find(x=>x.free===true&&x.type==="text"):null;
+  const selected=models.find(x=>x.id===desired)||favorite||models.find(x=>x.type==="text"||!/audio|tts|guard|embed|video/i.test(x.id))||models[0];
+  model=selected?.id||desired;
+  await dbRun(env.DB,"UPDATE user_api_keys SET model_id=?,verified=? WHERE user_id=? AND provider=?",model,verified?1:0,user.id,provider);
+ }catch(error){
+  warning="密钥已加密保存，模型目录尚未验证："+truncate(error?.message||"服务商连接失败",120);
+ }
+ return {ok:true,connection:{provider,model,consent:consent===1,updatedAt:now,verified},models,warning};
 }
 
 async function providerModels(body){
@@ -864,8 +876,8 @@ async function main(req,env){
  
  if(path==="/api/connections"&&req.method==="GET"){
   requireUser(user);
-  const res=await env.DB.prepare("SELECT provider,model_id,consent,updated_at FROM user_api_keys WHERE user_id=? ORDER BY updated_at DESC LIMIT 10").bind(user.id).all();
-  return response({ok:true,connections:(res.results||[]).map(r=>({provider:r.provider,model:r.model_id,consent:r.consent===1,updatedAt:r.updated_at}))});
+  const res=await env.DB.prepare("SELECT provider,model_id,consent,updated_at,verified FROM user_api_keys WHERE user_id=? ORDER BY updated_at DESC LIMIT 30").bind(user.id).all();
+  return response({ok:true,connections:(res.results||[]).map(r=>({provider:r.provider,model:r.model_id,consent:r.consent===1,updatedAt:r.updated_at,verified:r.verified===1}))});
  }
  if(path==="/api/connections"&&req.method==="POST")return response(await saveUserProvider(env,user,await parseJSON(req)));
  const providerAction=path.match(/^\/api\/connections\/([a-z0-9_-]+)\/(delete|consent|selected|models)$/);
@@ -877,7 +889,14 @@ async function main(req,env){
    await dbRun(env.DB,"DELETE FROM user_api_keys WHERE user_id=? AND provider=?",user.id,provider);
    return response({ok:true});
   }
-  if(action==="models")return response(await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext)}));
+  if(action==="models"){
+   const catalog=await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext),model:row.model_id||undefined});
+   if(catalog.verified&&catalog.models?.length){
+    const next=catalog.models.some(x=>x.id===row.model_id)?row.model_id:catalog.models.find(x=>x.type==="text")?.id||catalog.models[0].id;
+    await dbRun(env.DB,"UPDATE user_api_keys SET verified=1,model_id=? WHERE user_id=? AND provider=?",next,user.id,provider);
+   }
+   return response(catalog);
+  }
   const data=await parseJSON(req);
   if(action==="consent"){
    if(typeof data.consent!=="boolean")return fail("授权状态无效",400);
