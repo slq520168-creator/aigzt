@@ -1,4 +1,5 @@
 import type {WorkspaceMessage} from "@/lib/workspace"
+import {requestPersonal} from "@/lib/user-keys"
 export type ExternalProvider = "openai"|"grok"|"gemini"|"qwen"|"openrouter"|"groq"|"cerebras"
 export type ModelEngine = "free"|"native"|"gateway"|ExternalProvider
 export type ModelRecord={id:string;name?:string;description?:string}
@@ -22,12 +23,8 @@ function errStatus(status:number,id:ExternalProvider):string{
  if(status>=500)return name+" 上游出现 HTTP "+status
  return name+" 返回 HTTP "+status+"；请检查模型与账户"
 }
-export async function providerRequest(id:ExternalProvider,path:string,method:"GET"|"POST"="GET",json?:unknown){
- let result:Awaited<ReturnType<typeof tiny.fetch>>
- try{result=await tiny.fetch(id,{path,method,...(json===undefined?{}:{json})})}
- catch(e){throw Error(id+" 安全连接未就绪或请求超时："+(e instanceof Error?e.message:String(e)))}
- if(!result.ok)throw Error(errStatus(result.status,id))
- return result.json
+export function providerRequest(id:ExternalProvider,path:string,method:"GET"|"POST"="GET",json?:unknown,overrideKey?:string){
+ return requestPersonal(id,path,method,json,overrideKey)
 }
 export async function listNativeModels(){
  const limits=await tiny.ai.limits()
@@ -41,8 +38,8 @@ function parseEntries(body:unknown):ModelRecord[]{
  return data.filter(v=>v&&typeof v==="object"&&(typeof v.id==="string"||typeof v.name==="string"))
   .map(v=>({id:String(v.id||v.name),name:typeof v.name==="string"?v.name:undefined}))
 }
-export async function discoverProviderModels(id:ExternalProvider):Promise<ModelRecord[]>{
- const data=await providerRequest(id,getDef(id).modelsPath)
+export async function discoverProviderModels(id:ExternalProvider,overrideKey?:string):Promise<ModelRecord[]>{
+ const data=await providerRequest(id,getDef(id).modelsPath,"GET",undefined,overrideKey)
  let models:ModelRecord[]
  if(id==="gemini"){
   const list=(data as {models?:{name?:string;displayName?:string;supportedGenerationMethods?:string[]}[]})?.models

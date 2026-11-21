@@ -1,4 +1,4 @@
-import {providerRequest} from "@/lib/providers"
+import {personalMediaModels,personalMediaGenerate,personalMediaStatus} from "@/lib/user-keys"
 export type MediaKind="image"|"video"
 export type MediaProvider="grok"|"openai"
 export type MediaJob={
@@ -27,21 +27,7 @@ export function parseMediaResponse(
   createdAt:previous?.createdAt||now,updatedAt:now
  }
 }
-export async function availableMediaModels(provider:MediaProvider,kind:MediaKind):Promise<{id:string;name:string}[]>{
- if(provider==="openai"){
-  if(kind==="video")throw Error("OpenAI 视频下载超出当前代理文件限制，暂时只开放 Grok 视频")
-  const r=await providerRequest("openai","/v1/models") as {data?:{id?:string}[]}
-  if(!Array.isArray(r.data))throw Error("OpenAI 没有返回模型目录")
-  const ids=r.data.map(x=>x.id).filter((id):id is string=>typeof id==="string"&&(/^(gpt-image-|chatgpt-image-)/.test(id)))
-  if(!ids.length)throw Error("你的 OpenAI API Key 暂无图片生成模型权限")
-  return ids.map(id=>({id,name:id}))
- }
- const r=await providerRequest("grok",kind==="image"?"/v1/image-generation-models":"/v1/video-generation-models") as {models?:{id?:string}[]}
- if(!Array.isArray(r.models))throw Error("Grok 未返回媒体模型目录")
- const items=r.models.filter(x=>typeof x.id==="string").map(x=>({id:x.id!,name:x.id!}))
- if(!items.length)throw Error("Grok 账户未提供此类型的媒体模型")
- return items
-}
+export async function availableMediaModels(provider:MediaProvider,kind:MediaKind){return personalMediaModels(provider,kind)}
 function validatePrompt(prompt:string){
  if(!prompt.trim())throw Error("请填写创作内容")
  if(prompt.trim().length>1500)throw Error("创作内容最多 1500 字")
@@ -49,18 +35,7 @@ function validatePrompt(prompt:string){
 export async function generateMedia(job:{kind:MediaKind;provider:MediaProvider;model:string;prompt:string;id:string}):Promise<MediaJob>{
  validatePrompt(job.prompt)
  if(!/^[\w.-]+$/.test(job.model))throw Error("模型 ID 不合法")
- const payload=job.kind==="image"?{model:job.model,prompt:job.prompt.trim(),n:1}:{
-  model:job.model,prompt:job.prompt.trim(),duration:6,aspect_ratio:"16:9",resolution:"720p"
- }
- let raw:unknown
- if(job.provider==="openai"){
-  if(job.kind!=="image")throw Error("该连接不支持视频生成")
-  raw=await providerRequest("openai","/v1/images/generations","POST",{
-   model:job.model,prompt:job.prompt.trim(),n:1,quality:"low",output_format:"jpeg",size:"1024x1024"
-  })
- }else{
-  raw=await providerRequest("grok",job.kind==="image"?"/v1/images/generations":"/v1/videos/generations","POST",payload)
- }
+ const raw=await personalMediaGenerate({kind:job.kind,provider:job.provider,model:job.model,prompt:job.prompt.trim()})
  const parsed=parseMediaResponse(raw,job.kind,job.provider,job.model,job.prompt,job.id)
  const imageData=(raw as {data?:{b64_json?:string}[]})?.data?.[0]?.b64_json
  if(job.kind==="image"&&job.provider==="openai"&&typeof imageData==="string"){
@@ -78,7 +53,7 @@ export async function generateMedia(job:{kind:MediaKind;provider:MediaProvider;m
 export async function queryMediaStatus(job:MediaJob):Promise<MediaJob>{
  if(job.provider!=="grok"||!job.requestId)throw Error("这个任务没有可查询的异步编号")
  if(!/^[A-Za-z0-9_-]{4,200}$/.test(job.requestId))throw Error("任务编号无效")
- const response=await providerRequest("grok",(job.kind==="image"?"/v1/images/":"/v1/videos/")+job.requestId)
+ const response=await personalMediaStatus(job.requestId)
  const parsed=parseMediaResponse(response,job.kind,job.provider,job.model,job.prompt,job.id,job)
  return parsed
 }

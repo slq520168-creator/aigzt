@@ -1,0 +1,13 @@
+{
+  "name": "AIGZT AI 工作台",
+  "description": "免费 AI 聚合 · 个人模型授权 · 聊天编程与图像视频",
+  "layout": "centered",
+  "radius": "rounded",
+  "font": "Inter",
+  "colors": {
+    "primary": "#15665B",
+    "background": "#FFFFFF",
+    "text": "#20262B",
+    "panel": "#F2F7F6"
+  }
+}

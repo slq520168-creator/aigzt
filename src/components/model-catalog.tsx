@@ -3,6 +3,9 @@ import {Link} from "react-router"
 import {ArrowRight,Check,KeyRound,LoaderCircle,RefreshCw,Search,Star,X} from "lucide-react"
 import {Input} from "@/components/ui/input"
 import {useEntries} from "@/lib/tiny"
+import MyConnections from "@/components/my-connections"
+import {hasPersonalKey,watchPersonalKeys} from "@/lib/user-keys"
+import type {ExternalProvider} from "@/lib/providers"
 import {discoverGatewayModels} from "@/lib/gateway"
 import {KEY_PANEL,PROVIDERS,discoverProviderModels,engineName,listNativeModels,type ModelEngine,type ModelRecord} from "@/lib/providers"
 import {issueText} from "@/lib/workspace"
@@ -21,6 +24,9 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
  const [pending,setPending]=useState("")
  const [query,setQuery]=useState("")
  const [error,setError]=useState("")
+ const [personalOpen,setPersonalOpen]=useState(false)
+ const [,setKeyChanged]=useState(0)
+ useEffect(()=>watchPersonalKeys(()=>setKeyChanged(v=>v+1)),[])
  const [remaining,setRemaining]=useState<{user_hour:number;app_day:number}|null>(null)
  const {entries,error:favError}=useEntries<Favorite>("model-fav:",{order:"-$updated_at",limit:150})
  const favorites=useMemo(()=>entries?.map(v=>v.value)??[],[entries])
@@ -37,7 +43,10 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
     records=limits.models.map(id=>({id}))
     setRemaining(limits.remaining)
    }else if(id==="gateway")records=(await discoverGatewayModels()).map(v=>({id:v.id}))
-   else records=await discoverProviderModels(id)
+   else{
+    if(!hasPersonalKey(id)){setPersonalOpen(true);throw Error("该服务商需要你的个人 API Key。网站免费池不要求你提供密钥。")}
+    records=await discoverProviderModels(id)
+   }
    if(!records.length)throw Error("此连接暂时没有可用模型")
    setLoaded(x=>({...x,[id]:records}))
   }catch(e){setLoaded(x=>({...x,[id]:undefined}));setError(issueText(e))}
@@ -52,6 +61,9 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
  },[view,onClose])
  function selectSource(id:ModelEngine){
   setTab("browse")
+  if(id!=="free"&&id!=="native"&&id!=="gateway"&&!hasPersonalKey(id)){
+   setSource(id);setPersonalOpen(true);setError("请先连接自己的 "+engineName(id)+" 账号或 API Key");return
+  }
   if(loaded[id]){setSource(id);setError("");setQuery("")}
   else void verify(id)
  }
@@ -83,6 +95,7 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
    <button type="button" className="model-tab model-tab-active" onClick={()=>{setTab("browse");void verify("free")}}>免费自动路由</button>
    <button type="button" onClick={()=>{setTab("favorites");setQuery("");setError("")}} className={"model-tab "+(tab==="favorites"?"model-tab-active":"")}><Star className="size-4"/>常用 {favorites.length}</button>
    <button type="button" onClick={()=>{setTab("browse");setQuery("");setError("")}} className={"model-tab "+(tab==="browse"?"model-tab-active":"")}><Search className="size-4"/>浏览与添加</button>
+   <button type="button" onClick={()=>setPersonalOpen(true)} className="model-tab"><KeyRound className="size-4"/>我的密钥 / 授权</button>
   </div>
   {tab==="favorites"&&<div className="flex shrink-0 flex-wrap gap-1.5 border-b px-4 py-2">{(["openai","grok","gemini","qwen"] as const).map(id=><button type="button" key={id} onClick={()=>selectSource(id)} className="inline-flex h-8 items-center rounded-xl border border-border/60 px-3 text-xs hover:bg-muted">{engineName(id)}</button>)}<Link to="/create" className="inline-flex h-8 items-center rounded-xl border border-border/60 px-3 text-xs hover:bg-muted">画图 · 视频</Link></div>}
   {tab==="browse"&&<div className="model-source-list flex shrink-0 gap-1 overflow-x-auto border-b px-4 py-2">
@@ -99,7 +112,7 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
    {filtered.slice(0,250).map(model=>{
     const key=favKey(model.source,model.id),isSaved=saved.has(key)
     return <div key={key} role="listitem" className="model-list-row flex min-w-0 items-center gap-2 rounded-xl px-2 py-1.5">
-     <button type="button" className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left" onClick={()=>{onChoose(model.source,model.id);onClose?.()}}>
+     <button type="button" className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left" onClick={()=>{if(model.source!=="free"&&model.source!=="native"&&model.source!=="gateway"&&!hasPersonalKey(model.source)){setSource(model.source);setPersonalOpen(true);return}onChoose(model.source,model.id);onClose?.()}}>
       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold">{engineName(model.source).slice(0,1)}</span>
       <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{model.name}</span><span className="block truncate text-[11px] text-muted-foreground">{engineName(model.source)}{model.name!==model.id?" · "+model.id:""}</span></span>
       {currentSource===model.source&&currentModel===model.id&&<Check className="size-4 shrink-0 text-primary"/>}
@@ -117,8 +130,9 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
    {tab==="browse"&&source==="gateway"&&<p className="mt-2">FreeLLMAPI 需要独立 HTTPS 网关。</p>}
   </div>
  </div>
- if(view==="page")return <div className="mx-auto w-full max-w-[760px] py-3 sm:py-6"><section className="h-[min(720px,calc(100dvh-130px))] min-h-[540px] overflow-hidden rounded-2xl border border-border/70 bg-card">{body}</section></div>
+ const connector=personalOpen&&<MyConnections initial={source==="free"||source==="native"||source==="gateway"?"openrouter":source} onClose={()=>setPersonalOpen(false)} onReady={id=>{setSource(id);setPersonalOpen(false);setTab("browse");void verify(id)}}/>
+ if(view==="page")return <><div className="mx-auto w-full max-w-[760px] py-3 sm:py-6"><section className="h-[min(720px,calc(100dvh-130px))] min-h-[540px] overflow-hidden rounded-2xl border border-border/70 bg-card">{body}</section></div>{connector}</>
  return <div className="fixed inset-0 z-[100]"><button className="absolute inset-0 bg-foreground/12" aria-label="关闭模型菜单" onClick={onClose}/>
-  <section role="dialog" aria-modal="true" aria-label="选择与添加模型" className="model-picker-sheet absolute left-2 right-2 top-[60px] flex h-[min(680px,calc(100dvh-76px))] min-h-[370px] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xl md:left-[270px] md:right-auto md:w-[min(490px,calc(100vw-290px))]">{body}</section>
+  <section role="dialog" aria-modal="true" aria-label="选择与添加模型" className="model-picker-sheet absolute left-2 right-2 top-[60px] flex h-[min(680px,calc(100dvh-76px))] min-h-[370px] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-xl md:left-[270px] md:right-auto md:w-[min(490px,calc(100vw-290px))]">{body}</section>{connector}
  </div>
 }

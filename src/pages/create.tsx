@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from "react"
-import {useSearchParams} from "react-router"
+import {Link,useSearchParams} from "react-router"
 import {CheckCircle2,Download,ExternalLink,ImagePlus,LoaderCircle,RefreshCw,Video,ShieldCheck} from "lucide-react"
 import {useEntries,useMe} from "@/lib/tiny"
 import {availableMediaModels,generateMedia,queryMediaStatus,type MediaJob,type MediaKind,type MediaProvider} from "@/lib/media"
@@ -72,6 +72,7 @@ export default function Create(){
    </div>
    <div className="flex flex-wrap items-center gap-2">
     <button type="button" disabled={!me||checking||creating} onClick={()=>void loadModels()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-secondary px-4 text-xs font-semibold disabled:opacity-50">{checking?<LoaderCircle className="size-4 animate-spin"/>:<RefreshCw className="size-4"/>}{checking?"检测中…":verified?"重新检测":"检测账户可用模型"}</button>
+    <Link to="/settings" className="inline-flex h-8 items-center rounded-lg border px-3 text-xs text-primary">连接自己的 API Key</Link>
     {verified?<span className="flex items-center gap-1 text-xs text-primary"><CheckCircle2 className="size-4"/>读取到 {options.length} 个模型</span>:<span className="text-xs text-muted-foreground">需要实际服务商 API Key</span>}
    </div>
    {verified&&<div><label htmlFor="media-model" className="mb-2 block text-xs font-semibold">生成模型</label>
@@ -81,7 +82,7 @@ export default function Create(){
    <textarea id="media-prompt" aria-label="创作描述" value={prompt} onChange={e=>setPrompt(e.target.value)} rows={4} maxLength={1500} placeholder={kind==="image"?"描述想要画出的画面、风格、构图…":"描述镜头、场景、人物动作、运镜和氛围…"} className="w-full resize-y rounded-xl border bg-background p-3 text-[16px] leading-6 outline-none focus:border-primary/50"/>
    <label className="flex items-start gap-2 rounded-xl bg-muted/50 p-3 text-[12px] leading-5"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-current"/><span>我确认本次调用真实外部图片 / 视频生成 API，可能扣除服务商余额。**不自动重复执行、不自动付费切换。**</span></label>
    <button type="button" onClick={()=>void create()} disabled={!me||creating||!verified||!model||!prompt.trim()||!consent} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-45">{creating?<LoaderCircle className="size-4 animate-spin"/>:kind==="image"?<ImagePlus className="size-4"/>:<Video className="size-4"/>}{creating?"正在提交…":kind==="image"?"生成图片":"提交视频生成任务"}</button>
-   <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0"/>服务商图像链接可能过期，及时下载保存。视频通过任务 ID 手动查询，避免后台重复请求。OpenAI 图像响应受 Tiniest Cloud 的 2MB 代理响应上限限制。</p>
+   <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0"/>服务商图像链接可能过期，及时下载保存。视频通过任务 ID 手动查询，避免后台重复请求。个人密钥经独立 HTTPS 中转发送，不使用站长的付费 API Key。</p>
   </section>
   {notice&&<p role="status" className="rounded-xl border bg-card p-3 text-xs leading-6">{notice}</p>}
   <section className="space-y-3">

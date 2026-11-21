@@ -39,17 +39,33 @@ async function sourceStatus(tiny,p){
 }
 async function usage(tiny){
  const date=timestamp().slice(0,10);
- const used=await tiny.db.count("pool-use:"+date+":");
+ const used=await tiny.db.count("pool-day:"+date+":");
  return {day:date,used,remaining:Math.max(0,LIMIT_DAY-used),dailyLimit:LIMIT_DAY,minuteLimit:LIMIT_MIN};
 }
+// DB-enforced fixed slots prevent the count-then-write race across devices.
+async function takeSlot(tiny,prefix,limit){
+ for(let n=0;n<limit;n++){
+  const key=prefix+n;
+  try{await tiny.db.create(key,{at:timestamp(),status:"reserved"});return key;}
+  catch(e){
+   if(e?.status===409||e?.statusCode===409||/409|conflict|already exists/i.test(String(e?.message||e)))continue;
+   throw e;
+  }
+ }
+ return null;
+}
 async function reserve(tiny){
- const t=timestamp(),day=t.slice(0,10),minute=t.slice(11,16).replace(":","");
- const [d,m]=await Promise.all([tiny.db.count("pool-use:"+day+":"),tiny.db.count("pool-use:"+day+":"+minute+":")]);
- if(d>=LIMIT_DAY)throw Error("今日免费调用次数已用完，不会转用收费模型");
- if(m>=LIMIT_MIN)throw Error("操作太快，每分钟最多调用 "+LIMIT_MIN+" 次");
- const key="pool-use:"+day+":"+minute+":"+Date.now()+"-"+Math.random().toString(36).slice(2);
- await tiny.db.create(key,{at:t,status:"reserved"});
- return key;
+ const t=timestamp(),day=t.slice(0,10),minute=t.slice(11,16).replace(":");
+ const minKey=await takeSlot(tiny,"pool-minute:"+day+":"+minute+":",LIMIT_MIN);
+ if(!minKey)throw Error("操作太快，每分钟最多调用 "+LIMIT_MIN+" 次");
+ try{
+  const dayKey=await takeSlot(tiny,"pool-day:"+day+":",LIMIT_DAY);
+  if(!dayKey)throw Error("今日免费调用次数已用完，不会转用收费模型");
+  return dayKey;
+ }catch(e){
+  try{await tiny.db.delete(minKey)}catch{}
+  throw e;
+ }
 }
 function parseAnswer(r){
  const content=r.json?.choices?.[0]?.message?.content;
@@ -93,7 +109,7 @@ export default async function freeRouter(input,tiny){
  const req=input&&typeof input==="object"?input:{};
  if(req.action==="role")return {isAdmin:!!tiny.caller?.roles?.some(x=>x==="owner"||x==="admin")};
  if(req.action==="status"){
-  const sources=req.verify===true?await Promise.all(SOURCES.map(p=>sourceStatus(tiny,p))):
+  const sources=req.verify===true?await Promise.all(SOURCES.map(p=>p.enabled?sourceStatus(tiny,p):Promise.resolve({id:p.id,name:p.name,enabled:false,status:"未启用",verifiedAt:null,modelCount:null,remainingRequests:null,note:"公共免费线路尚未核准"}))):
    SOURCES.map(p=>{
     const s=state.get(p.id);
     return {id:p.id,name:p.name,enabled:p.enabled,status:s?.status||"未验证",

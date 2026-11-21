@@ -11,6 +11,28 @@
       "write": [
         "function"
       ]
+    },
+    {
+      "prefix": "pool-day:",
+      "read": [
+        "user",
+        "owner",
+        "admin"
+      ],
+      "write": [
+        "function"
+      ]
+    },
+    {
+      "prefix": "pool-minute:",
+      "read": [
+        "user",
+        "owner",
+        "admin"
+      ],
+      "write": [
+        "function"
+      ]
     }
   ]
 }

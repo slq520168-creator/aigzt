@@ -237,6 +237,7 @@ export default function Home() {
  }
  async function send(){
   const input=draft.trim()
+  if(/^\s*(?:sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{20,}|gsk_[0-9A-Za-z_-]{20,})\s*$/.test(input)){setNotice("检测到疑似 API Key，请到「我的密钥 / 授权」输入，聊天记录不会保存密钥。");return}
   if((!input&&!selectedImages.length)||busy||inFlight.current||converting||!me)return
   inFlight.current=true;setBusy(true);setNotice("")
   const key=selected||"chat:"+crypto.randomUUID()
