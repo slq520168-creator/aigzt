@@ -10,7 +10,7 @@ const steps=[
 ]
 export default function Settings(){
  return <div className="mx-auto max-w-5xl space-y-5">
-  <div><p className="mb-1 text-[11px] font-bold tracking-[.16em] text-primary">SYSTEM / CONNECTIONS</p><h1 className="text-[25px] font-bold sm:text-[30px]">工作台设置</h1><p className="mt-1 text-xs leading-6 text-muted-foreground sm:text-sm">统一管理 AI 引擎、网关授权和云端数据。所有状态以真实连接为准。</p></div>
+  <div><p className="mb-1 text-[11px] font-bold tracking-[.16em] text-primary">AIGZT / SETTINGS</p><h1 className="text-[25px] font-bold sm:text-[30px]">工作台设置</h1><p className="mt-1 text-xs leading-6 text-muted-foreground sm:text-sm">统一管理 AI 引擎、网关授权和云端数据。所有状态以真实连接为准。</p></div>
   <div className="grid gap-3 sm:grid-cols-2">
    <section className="workspace-surface rounded-2xl p-4 sm:p-5"><div className="flex items-center justify-between gap-2"><div className="flex size-10 items-center justify-center rounded-xl bg-primary/12 text-primary"><Sparkles className="size-5"/></div><span className="inline-flex items-center gap-1 text-xs text-primary"><CheckCircle2 className="size-4"/>已接入</span></div><h2 className="mt-4 font-semibold">平台内置 AI</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">已集成到现有对话系统。通过 Tiniest Cloud 的授权、限额及应用内生成接口提供回答。</p></section>
    <section className="workspace-surface rounded-2xl p-4 sm:p-5"><div className="flex items-center justify-between gap-2"><div className="flex size-10 items-center justify-center rounded-xl bg-secondary text-foreground"><Server className="size-5"/></div><span className="text-xs text-muted-foreground">待连接</span></div><h2 className="mt-4 font-semibold">FreeLLMAPI 聚合网关</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">接口适配代码已部署到草稿。没有真实 HTTPS 网关和统一密钥前不会显示为可用。</p></section>

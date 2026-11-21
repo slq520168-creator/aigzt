@@ -31,45 +31,45 @@
  --radius-2xl: calc(var(--radius)*1.8);
 }
 :root {
- --background: oklch(0.973 0.008 196);
- --foreground: oklch(0.235 0.021 214);
- --card: oklch(0.997 0.002 196);
+ --background: oklch(0.984 0.006 208);
+ --foreground: oklch(0.245 0.027 218);
+ --card: oklch(1 0 0);
  --card-foreground: var(--foreground);
- --popover: var(--card);
+ --popover: oklch(1 0 0);
  --popover-foreground: var(--foreground);
- --primary: oklch(0.53 0.13 164);
- --primary-foreground: oklch(0.99 0 0);
- --secondary: oklch(0.938 0.015 193);
- --secondary-foreground: var(--foreground);
- --muted: oklch(0.944 0.009 197);
- --muted-foreground: oklch(0.49 0.019 218);
- --accent: oklch(0.92 0.026 169);
- --accent-foreground: var(--foreground);
- --destructive: oklch(0.60 0.205 25);
- --border: oklch(0.87 0.012 203);
- --input: var(--border);
- --ring: oklch(0.62 0.13 164);
+ --primary: oklch(0.48 0.125 170);
+ --primary-foreground: oklch(0.995 0 0);
+ --secondary: oklch(0.954 0.021 174);
+ --secondary-foreground: oklch(0.29 0.048 183);
+ --muted: oklch(0.959 0.007 213);
+ --muted-foreground: oklch(0.50 0.019 226);
+ --accent: oklch(0.94 0.025 175);
+ --accent-foreground: oklch(0.29 0.045 184);
+ --destructive: oklch(0.56 0.193 24);
+ --border: oklch(0.917 0.010 213);
+ --input: oklch(0.875 0.014 211);
+ --ring: oklch(0.67 0.099 170);
  --radius: 0.88rem;
 }
 .dark {
- --background: oklch(0.146 0.016 218);
- --foreground: oklch(0.94 0.009 185);
- --card: oklch(0.181 0.018 218);
+ --background: oklch(0.185 0.019 215);
+ --foreground: oklch(0.944 0.007 180);
+ --card: oklch(0.236 0.018 216);
  --card-foreground: var(--foreground);
- --popover: oklch(0.210 0.018 216);
+ --popover: oklch(0.264 0.023 211);
  --popover-foreground: var(--foreground);
- --primary: oklch(0.80 0.154 152);
- --primary-foreground: oklch(0.16 0.024 195);
- --secondary: oklch(0.244 0.024 210);
+ --primary: oklch(0.78 0.133 161);
+ --primary-foreground: oklch(0.175 0.02 210);
+ --secondary: oklch(0.306 0.025 211);
  --secondary-foreground: var(--foreground);
- --muted: oklch(0.232 0.017 218);
- --muted-foreground: oklch(0.67 0.019 199);
- --accent: oklch(0.270 0.029 180);
+ --muted: oklch(0.290 0.017 215);
+ --muted-foreground: oklch(0.735 0.020 207);
+ --accent: oklch(0.324 0.039 178);
  --accent-foreground: var(--foreground);
- --destructive: oklch(0.67 0.192 23);
- --border: oklch(0.335 0.02 209 / 65%);
- --input: oklch(0.335 0.02 209 / 65%);
- --ring: oklch(0.75 0.135 155);
+ --destructive: oklch(0.69 0.181 25);
+ --border: oklch(0.39 0.017 209 / 65%);
+ --input: oklch(0.423 0.018 207);
+ --ring: oklch(0.735 0.11 163);
 }
 @layer base {
  * { @apply border-border outline-ring/50; }
@@ -81,12 +81,16 @@
  :root:has([data-bottom-nav]) { --nav-h:calc(4.25rem + env(safe-area-inset-bottom)); }
 }
 html,body,#root { min-width:320px; }
-body { background-image:radial-gradient(ellipse at 20% -18%,color-mix(in oklch,var(--primary) 6%,transparent),transparent 45%); background-attachment:fixed; }
-.workspace-surface { background:var(--card); border:1px solid var(--border); box-shadow:0 10px 35px -28px oklch(0.1 0 0 / 48%); }
+body { background-image:radial-gradient(ellipse 70vw 46vh at 98% -13%,color-mix(in oklch,var(--primary) 7%,transparent),transparent 86%),radial-gradient(ellipse 62vw 52vh at -14% 18%,color-mix(in oklch,var(--primary) 3%,transparent),transparent 83%); background-attachment:fixed; }
+.dark body { background-image:none; }
+.workspace-surface { background:var(--card); border:1px solid var(--border); box-shadow:0 14px 46px -30px oklch(0.37 0.025 225 / 26%),0 3px 15px -12px oklch(0.4 0.02 220 / 16%); }
+.dark .workspace-surface { box-shadow:0 14px 30px -22px oklch(0 0 0 / 42%); }
 .workspace-button { transition:background-color 180ms ease,transform 180ms ease; }
 .workspace-button:active { transform:scale(.98); }
 .workspace-scroll::-webkit-scrollbar { width:5px;height:5px; }
 .workspace-scroll::-webkit-scrollbar-thumb { background:var(--border);border-radius:20px; }
-.workspace-editor { field-sizing:content;min-height:64px;max-height:180px; }
+.workspace-editor { field-sizing:content;min-height:60px;max-height:180px; }
+::selection { background: color-mix(in oklch,var(--primary) 24%,transparent); }
+@media(width < 40rem) { body { background-image:radial-gradient(ellipse 100vw 33vh at 100% 0%,color-mix(in oklch,var(--primary) 6%,transparent),transparent 90%); } .workspace-surface { box-shadow:0 8px 23px -19px oklch(0.29 0.03 220 / 25%); } }
 ::view-transition-old(root),::view-transition-new(root){animation-duration:260ms;animation-timing-function:ease-out;}
 @media(prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation-duration:0s;}}

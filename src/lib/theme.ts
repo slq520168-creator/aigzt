@@ -3,7 +3,7 @@ export type Theme = "light" | "dark" | "system"
 const device = window.matchMedia("(prefers-color-scheme: dark)")
 export function getTheme(): Theme {
  const match = document.cookie.match(/(?:^|; )theme=(light|dark)/)
- return match ? (match[1] as Theme) : "dark"
+ return match ? (match[1] as Theme) : "light"
 }
 function apply(theme: Theme) {
  const dark = theme === "dark" || (theme === "system" && device.matches)

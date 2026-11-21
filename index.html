@@ -3,12 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 统一工作台</title>
+    <title>AIGZT · AI 统一工作台</title>
+    <meta name="theme-color" content="#f8fafc" />
     <!-- The saved theme (src/lib/theme.ts), before anything draws. -->
     <script>
       (function () {
         var saved = document.cookie.match(/(?:^|; )theme=(light|dark)/);
-        var dark = saved ? saved[1] === "dark" : true;
+        var dark = saved ? saved[1] === "dark" : false;
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       })();

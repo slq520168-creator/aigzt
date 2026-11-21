@@ -66,14 +66,14 @@ export default function Directory(){
  }
  return <div className="space-y-5">
   <div className="flex flex-wrap items-start justify-between gap-3">
-   <div><p className="mb-1 text-[11px] font-bold tracking-[.16em] text-primary">MODEL HUB / FREE API</p><h1 className="text-[25px] font-bold tracking-tight sm:text-[30px]">AI 模型资源库</h1><p className="mt-1 text-xs leading-6 text-muted-foreground sm:text-sm">发现、验证、管理模型与服务商。连接成功后，统一工作台才会开放自动路由。</p></div>
+   <div><p className="mb-1 text-[11px] font-bold tracking-[.16em] text-primary">AIGZT / MODEL HUB</p><h1 className="text-[25px] font-bold tracking-tight sm:text-[30px]">AI 模型资源库</h1><p className="mt-1 text-xs leading-6 text-muted-foreground sm:text-sm">发现、验证、管理模型与服务商。连接成功后，统一工作台才会开放自动路由。</p></div>
    <a className="inline-flex h-9 items-center gap-2 rounded-xl border bg-card px-3 text-xs font-medium hover:text-primary" href="https://github.com/tashfeenahmed/freellmapi" target="_blank" rel="noopener noreferrer"><Network className="size-4"/>FreeLLMAPI<ExternalLink className="size-3.5"/></a>
   </div>
   <section className="workspace-surface relative overflow-hidden rounded-[20px] p-4 sm:p-6">
    <div className="absolute -right-14 -top-20 size-56 rounded-full bg-primary/7 blur-3xl"/>
    <div className="relative grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
     <div><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary"><RadioTower className="size-3.5"/>统一模型路由</div>
-     <h2 className="text-xl font-bold sm:text-2xl">让可用的 AI，集中到一个入口</h2>
+     <h2 className="text-xl font-bold sm:text-2xl">一个入口，管理更多 AI</h2>
      <p className="mt-2 max-w-2xl text-xs leading-6 text-muted-foreground sm:text-sm">FreeLLMAPI 能连接多个服务商并管理路由。公开目录不等于个人已获得额度；真正可用的模型从你的网关实时发现。</p>
     </div>
     <div className="grid grid-cols-2 gap-2 sm:flex"><div className="rounded-xl border border-border/70 bg-background/60 px-3 py-3 sm:min-w-[132px]"><p className="text-[11px] text-muted-foreground">原生引擎</p><p className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-primary"><CheckCircle2 className="size-4"/>已接入</p></div><div className="rounded-xl border border-border/70 bg-background/60 px-3 py-3 sm:min-w-[132px]"><p className="text-[11px] text-muted-foreground">外部网关</p><p className="mt-1 flex items-center gap-1.5 text-sm font-semibold">{models?"已验证":"待连接"}</p></div></div>

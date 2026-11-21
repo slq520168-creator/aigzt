@@ -32,10 +32,10 @@ export function AppHeader({ name, logo, screens, me }: {
   const nav = screens.filter(s => !s.hidden)
   const [accountOpen,setAccountOpen]=useState(false)
   return <>
-    <header className="sticky top-0 z-40 border-b border-border/65 bg-background/95 backdrop-blur-lg">
+    <header className="sticky top-0 z-40 border-b border-border/65 bg-card/96 backdrop-blur-lg shadow-[0_2px_14px_-12px_rgba(19,78,79,0.22)]">
       <div className={cn(PAGE,"flex h-[62px] items-center gap-3 sm:h-[70px]")}>
         <NavLink to="/" className="flex min-w-0 shrink-0 items-center gap-2.5" aria-label="返回 AIGZT 工作台">
-          <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[13px] bg-primary/12">{logo || <Menu className="size-5 text-primary"/>}</span>
+          <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[13px] bg-primary/10 ring-1 ring-primary/10">{logo || <Menu className="size-5 text-primary"/>}</span>
           <span className="min-w-0 leading-tight">
             <span className="block text-[18px] font-black tracking-[.025em]">aigzt<span className="text-primary">.</span></span>
             <span className="block text-[9px] font-semibold tracking-[.19em] text-muted-foreground">AI WORKSPACE</span>
@@ -64,7 +64,7 @@ export function AppHeader({ name, logo, screens, me }: {
         </div>
       </div>
     </header>
-    <nav data-bottom-nav aria-label="手机底部导航" className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border/80 bg-background/97 px-2 pt-1.5 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+    <nav data-bottom-nav aria-label="手机底部导航" className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border/80 bg-card/97 px-2 pt-1.5 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_28px_-22px_rgba(9,65,62,0.23)] backdrop-blur-xl lg:hidden">
       {nav.slice(0,5).map(({path,label,icon:Icon})=><NavLink key={path} to={path} end={path==="/"}
         className={({isActive})=>cn("flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 pb-2 pt-1.5 text-[10px] font-medium transition-colors",isActive?"text-primary":"text-muted-foreground")}>
         {({isActive})=><><span className={cn("grid h-7 w-12 place-items-center rounded-xl",isActive?"bg-primary/13":"")}><Icon className="size-[19px]"/></span><span className="truncate">{label}</span></>}

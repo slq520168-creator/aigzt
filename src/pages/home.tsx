@@ -155,9 +155,9 @@ export default function Home() {
  return <div className="space-y-4 sm:space-y-5">
   <div className="flex items-center justify-between gap-3">
    <div className="min-w-0">
-    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.16em] text-primary"><span className="size-1.5 rounded-full bg-primary"/>PERSONAL AI COMMAND CENTER</div>
-    <h1 className="text-[24px] font-bold leading-tight tracking-tight sm:text-[30px]">你的 AI 指挥中心</h1>
-    <p className="mt-1 text-[12px] text-muted-foreground sm:text-sm">统一对话 · 多模型接入 · 项目记忆不断线</p>
+    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.16em] text-primary"><span className="size-1.5 rounded-full bg-primary"/>AIGZT / AI WORKSPACE</div>
+    <h1 className="text-[24px] font-bold leading-tight tracking-tight sm:text-[30px]">一个空间，连接你的 AI</h1>
+    <p className="mt-1 text-[12px] text-muted-foreground sm:text-sm">对话、写作、开发与项目资料集中管理</p>
    </div>
    <Button variant="outline" onClick={()=>setShowHistory(true)} className="h-10 shrink-0 rounded-xl lg:hidden"><History className="size-4"/>会话</Button>
   </div>
@@ -185,7 +185,7 @@ export default function Home() {
     </div>
    </aside>
 
-   <section className="workspace-surface flex min-w-0 flex-col overflow-hidden rounded-[20px]">
+   <section className="workspace-surface flex min-w-0 flex-col overflow-hidden rounded-[22px]">
     <div className="flex items-center justify-between gap-2 border-b border-border/70 px-4 py-3.5 sm:px-5">
      <div className="min-w-0"><div className="flex items-center gap-2"><span className="size-2 rounded-full bg-primary"/><span className="truncate text-[13px] font-semibold sm:text-sm">{current?.value.title||"新建对话"}</span></div><p className="ml-4 mt-0.5 text-[10px] text-muted-foreground">选择任务模式，开始使用你的 AI 工具箱</p></div>
      <div className="flex items-center gap-1">
@@ -206,8 +206,8 @@ export default function Home() {
 
     <div ref={chatScroll} className="workspace-scroll min-h-[360px] flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:min-h-[480px] sm:px-6">
      {visibleMessages.length===0&&!busy?<div className="space-y-5 py-1 sm:py-5">
-      <div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-primary/13 text-primary"><WandSparkles className="size-6"/></span><div><h2 className="text-lg font-semibold sm:text-xl">今天，想用 AI 做什么？</h2><p className="mt-1 text-xs leading-6 text-muted-foreground sm:text-sm">从一个任务开始。随时切换模型，历史记录与项目背景持续保留。</p></div></div>
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">{quickTools.map(t=>{const Icon=t.icon;return <Button key={t.id} variant="outline" onClick={()=>useSuggestion(t)} className="workspace-button h-auto min-h-[102px] flex-col items-start justify-between rounded-2xl border-border/75 bg-muted/30 p-3.5 text-left hover:border-primary/40 hover:bg-primary/7 sm:min-h-[115px] sm:p-4">
+      <div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-primary/13 text-primary"><WandSparkles className="size-6"/></span><div><h2 className="text-lg font-semibold sm:text-xl">今天想完成什么？</h2><p className="mt-1 text-xs leading-6 text-muted-foreground sm:text-sm">选择任务即可开始。会话和项目资料自动保留，手机与电脑可接续使用。</p></div></div>
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">{quickTools.map(t=>{const Icon=t.icon;return <Button key={t.id} variant="outline" onClick={()=>useSuggestion(t)} className="workspace-button h-auto min-h-[102px] flex-col items-start justify-between rounded-2xl border-border/75 bg-card p-3.5 text-left hover:border-primary/40 hover:bg-primary/7 sm:min-h-[115px] sm:p-4">
        <span className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="size-4.5"/></span>
        <span className="block w-full"><span className="block text-[13px] font-semibold sm:text-sm">{t.label}</span><span className="mt-0.5 block text-[10px] font-normal text-muted-foreground sm:text-xs">{t.detail}</span></span>
       </Button>})}</div>
