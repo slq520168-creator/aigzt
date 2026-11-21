@@ -434,8 +434,8 @@ function appendMessage(role,content,model){
 function newChat(){
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
- S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
- $("prompt").value="";flashError("");renderHistory();closeMenu();
+ S.chatId=null;S.attachments=[];renderAttachments();setFreeDefault();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
+ $("prompt").value="";resizePrompt();flashError("");renderHistory();closeMenu();
  $("prompt").focus();
 }
 async function loadChat(id){
@@ -448,7 +448,7 @@ async function loadChat(id){
   for(const m of v.messages)appendMessage(m.role,m.body,m.model);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
-  if(c&&c.model&&c.provider){S.model=c.provider==="cloudflare"?"free:auto":c.model;S.provider=c.provider==="cloudflare"?"free":c.provider;S.modelTitle=c.provider==="cloudflare"?"免费自动":c.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);updateModelTitle()}
+  if(c&&c.model&&c.provider){S.model=c.provider==="cloudflare"?"free:auto":c.model;S.provider=c.provider==="cloudflare"?"free":c.provider;S.modelTitle=c.provider==="cloudflare"?"免费自动":c.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);S.selectedFree=isFreeModel(S.provider,S.model);updateModelTitle()}
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
@@ -467,9 +467,19 @@ function setModel(row){
   return;
  }
  S.provider=via;S.model=row.id;S.modelTitle=row.name||row.id;
- S.allowPaid=Boolean(S.savedProviders[via]?.consent);
+ S.allowPaid=Boolean(S.savedProviders[via]?.consent);S.selectedFree=isFreeModel(via,row.id);
  if(S.savedProviders[via])void api("/api/connections/"+via+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
  updateModelTitle();hide("modelDialog");flashError("");
+}
+
+function resizePrompt(){
+ const textarea=$("prompt");
+ if(!textarea)return;
+ textarea.style.height="28px";
+ const max=Math.max(90,Math.min(132,Math.round(window.innerHeight*.22)));
+ const needed=textarea.scrollHeight;
+ textarea.style.height=Math.max(28,Math.min(needed,max))+"px";
+ textarea.style.overflowY=needed>max?"auto":"hidden";
 }
 
 function setComposerMode(mode){
@@ -480,7 +490,7 @@ function setComposerMode(mode){
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
  $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
  $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":"向 AI 提问…";
- $("prompt").focus();
+ resizePrompt();$("prompt").focus();
 }
 function renderAttachments(){
  const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
@@ -775,8 +785,8 @@ function setFreeToolsMode(enabled){
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
-  $("workOpen").classList.remove("active");
-  $("workOpen").setAttribute("aria-pressed","false");
+  
+  
   $("navFreeTools").classList.add("active");renderFreeTools();
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
@@ -789,8 +799,8 @@ const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
  setFreeToolsMode(false);
  S.workMode=on;
- if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("workOpen").setAttribute("aria-pressed","true");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
- else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("workOpen").setAttribute("aria-pressed","false");$("prompt").placeholder="向 AI 提问…";}
+ if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
+ else{$("workBoard").hidden=true;$("conversation").hidden=false;$("prompt").placeholder="向 AI 提问…";}
  closeMenu();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
@@ -857,7 +867,7 @@ async function startWorkTask(){
   const data=await api("/api/work/tasks",{prompt,provider:S.provider,model:S.model,projectId:S.activeProjectId,
    attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback});
   if(epoch!==S.workEpoch)return;
-  $("prompt").value="";S.attachments=[];renderAttachments();
+  $("prompt").value="";resizePrompt();S.attachments=[];renderAttachments();
   S.workTaskId=data.id;S.workDetail=null;
   await selectWorkTask(data.id);await fetchWorkTasks();
  }catch(e){flashError(humanError(e));$("workState").textContent=humanError(e)}
@@ -920,16 +930,16 @@ async function sendMessage(){
  if(S.composerMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
  }
- const freeRoute=S.provider==="free"||(S.provider==="openrouter"&&(S.model==="openrouter/free"||S.model.endsWith(":free")));
+ const freeRoute=isFreeModel(S.provider,S.model);
  if(S.composerMode==="text"&&!freeRoute&&!S.allowPaid){
-  flashError("已选择的模型可能产生费用，请在「我的 AI 连接」中明确确认。");
+  flashError(connected(S.provider)?"密钥已保存，请授权使用此服务商额度；无需再次填写密钥。":"此模型需要服务商密钥。");
   openKeyPanel(S.provider);return;
  }
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
- appendMessage("user",sentBody);$("prompt").value="";S.attachments=[];renderAttachments();
+ appendMessage("user",sentBody);$("prompt").value="";resizePrompt();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status"),dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));dots.setAttribute("aria-hidden","true");
@@ -976,9 +986,13 @@ async function loadCatalog(){
  renderModels();
 }
 function allModels(){
- const result=[...S.freeModels,...S.remoteModels];
+ const result=[...S.freeModels,...S.remoteModels],seen=new Set(result.map(m=>m.provider+"\0"+m.id));
  for(const [provider,items] of Object.entries(S.connected)){
-  for(const x of items)result.push({id:x.id,name:x.name||x.id,provider,type:"text",free:false,ownKey:true})
+  for(const x of items){
+   if(!x.id)continue;const key=provider+"\0"+x.id;
+   if(seen.has(key))continue;
+   result.push({id:x.id,name:x.name||x.id,provider,type:x.type||"text",free:!!x.free,ownKey:true});seen.add(key);
+  }
  }
  return result;
 }
@@ -995,7 +1009,8 @@ function modelMatches(m){
    qwen:/qwen|alibaba|tongyi/
   };
   if(!groups[name]?.test(id))return false;
- }else if(S.source!=="all"&&m.provider!==S.source)return false;
+ }else if(S.source==="connected"&&!S.savedProviders[m.provider])return false;
+ else if(S.source!=="all"&&m.provider!==S.source)return false;
  if(S.filter==="free"&&!m.free)return false;
  if(S.filter==="text"&&m.type!=="text")return false;
  if(S.filter==="image"&&m.type!=="image")return false;
@@ -1006,23 +1021,24 @@ function modelMatches(m){
 function renderModels(){
  const visible=allModels().filter(modelMatches);
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*45);
- $("modelCount").textContent="符合条件 "+count+" 项 · 已显示 "+shown.length+" 项";
+ $("modelCount").textContent="模型 "+count+" 项"+(S.source==="free"?" · 默认免费自动":"");
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList");list.replaceChildren();
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的真实模型，请切换筛选。":"模型目录尚未连接成功。"));return}
  for(const item of shown){
   const row=node("div","model-row"),info=node("div","model-info"),title=node("strong","",item.name||item.id);
-  const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费接口":item.free?"零价模型 · 需密钥":"需授权 · 可能收费");
+  const saved=Boolean(S.savedProviders[item.provider]);
+  const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费线路":saved?"已连接":item.free?"免费 · 需连接":"需连接");
   title.append(tag);info.append(title,node("small","",item.provider==="free"?"平台路由 · 真实模型由上游决定":"接入平台："+item.provider+" · 模型 ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
-  const button=node("button","model-action",actionable?(item.type!=="text"?"选择聊天创作":S.model===item.id?"当前模型":"选择模型"):"暂不支持");
+  const button=node("button","model-action",actionable?(item.type!=="text"?"使用":S.model===item.id?"已选":item.provider==="free"||saved?"选择":"连接"):"暂不支持");
   button.disabled=!actionable||S.model===item.id;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
  }
 }
 function activateSource(name){
- S.source=name;S.modelPage=0;
+ S.source=name;S.modelPage=0;S.filter=name==="free"?"free":"all";$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===name);
  renderModels();
  if(S.savedProviders[name]&&S.connected[name]?.length<2){
@@ -1043,9 +1059,9 @@ function refreshSourceChips(){
  }
 }
 function openModels(){
- S.modelPage=0;S.filter="free";S.source="all";
+ S.modelPage=0;S.filter="free";S.source="free";S.query="";$("modelSearch").value="";
  $("modelFilter").value="free";
- for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="all");
+ for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="free");
  show("modelDialog");void loadCatalog();
 }
 function openKeyPanel(provider){
@@ -1190,7 +1206,7 @@ function wire(){
  $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
- $("workOpen").addEventListener("click",()=>setWorkMode(true));
+ 
  $("domesticProviderList");initDomesticProviderLinks();
  $("workClose").addEventListener("click",()=>setWorkMode(false));
  $("workNewTask").addEventListener("click",newWorkDraft);
@@ -1221,7 +1237,7 @@ function wire(){
  $("settingMemory").addEventListener("change",e=>{S.memoryEnabled=e.target.checked;void persistPrefs().catch(err=>flashError(humanError(err)))});
  $("settingRainbow").addEventListener("change",e=>{applyTheme(e.target.checked?"rainbow":"plain");void persistPrefs().catch(err=>flashError(humanError(err)))});
  $("archivedChats").addEventListener("click",()=>void listArchived());
- $("pickModel").addEventListener("click",openModels);
+ 
  $("composeModels").addEventListener("click",()=>{hideAttachMenu();openModels()});
  $("attachButton").addEventListener("click",()=>{$("attachMenu").hidden=!$("attachMenu").hidden;$("toolTray").hidden=true});
  $("cameraAction").addEventListener("click",()=>{hideAttachMenu();$("cameraInput").click()});
@@ -1234,7 +1250,8 @@ function wire(){
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendMessage()}});
- $("prompt").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,136)+"px"});
+ $("prompt").addEventListener("input",resizePrompt);
+ window.addEventListener("resize",resizePrompt);
  document.addEventListener("click",e=>{if(!$("attachMenu").hidden&&!$("attachMenu").contains(e.target)&&!$("attachButton").contains(e.target))hideAttachMenu()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")hideAttachMenu()});
  for(const btn of els("[data-close]"))btn.addEventListener("click",()=>hide(btn.dataset.close));
@@ -1269,6 +1286,6 @@ function hideAttachMenu(){$("attachMenu").hidden=true}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
- applyTheme(enabled?"rainbow":"plain");await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
+ applyTheme(enabled?"rainbow":"plain");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
  updateModelTitle();
 });
