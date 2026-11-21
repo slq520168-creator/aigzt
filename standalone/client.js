@@ -284,7 +284,6 @@ async function openFiles(){
 function applyTheme(mode){
  S.currentTheme=mode;const enabled=mode==="rainbow";
  document.body.classList.toggle("rainbow-enabled",enabled);
- $("themeToggle").setAttribute("aria-pressed",String(enabled));
  $("settingRainbow").checked=enabled;
  try{localStorage.setItem("aigzt:rainbow",enabled?"1":"0")}catch{}
 }
@@ -726,21 +725,15 @@ function renderFreeTools(){
 function setFreeToolsMode(enabled){
  S.freeToolsMode=!!enabled;
  $("shell").classList.toggle("free-tools-active",S.freeToolsMode);
- $("freeToolsTop").classList.toggle("active",S.freeToolsMode);
- $("freeToolsTop").setAttribute("aria-pressed",String(S.freeToolsMode));
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
-  $("workOpen").classList.remove("active");$("chatTop").classList.remove("active");
-  $("workOpen").setAttribute("aria-pressed","false");$("chatTop").setAttribute("aria-pressed","false");
+  $("workOpen").classList.remove("active");
+  $("workOpen").setAttribute("aria-pressed","false");
   $("navFreeTools").classList.add("active");renderFreeTools();
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
-  if(!S.workMode){
-   $("conversation").hidden=false;
-   $("chatTop").classList.add("active");
-   $("chatTop").setAttribute("aria-pressed","true");
-  }
+  if(!S.workMode)$("conversation").hidden=false;
  }
  closeMenu();
 }
@@ -749,8 +742,8 @@ const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
  setFreeToolsMode(false);
  S.workMode=on;
- if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("chatTop").classList.remove("active");$("workOpen").setAttribute("aria-pressed","true");$("chatTop").setAttribute("aria-pressed","false");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
- else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("chatTop").classList.add("active");$("workOpen").setAttribute("aria-pressed","false");$("chatTop").setAttribute("aria-pressed","true");$("prompt").placeholder="向 AI 提问…";}
+ if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("workOpen").setAttribute("aria-pressed","true");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
+ else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("workOpen").setAttribute("aria-pressed","false");$("prompt").placeholder="向 AI 提问…";}
  closeMenu();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
@@ -1142,13 +1135,11 @@ function wire(){
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
- $("freeToolsTop").addEventListener("click",()=>setFreeToolsMode(true));
  $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
  $("workOpen").addEventListener("click",()=>setWorkMode(true));
  $("domesticProviderList");initDomesticProviderLinks();
- $("chatTop").addEventListener("click",()=>setWorkMode(false));
  $("workClose").addEventListener("click",()=>setWorkMode(false));
  $("workNewTask").addEventListener("click",newWorkDraft);
  $("workAddStage").addEventListener("click",()=>{if(S.workStages.length<12){S.workStages.push({name:"新步骤",instruction:"",provider:"auto",model:""});renderWorkEditor()}});
@@ -1188,7 +1179,6 @@ function wire(){
  for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
  $("imageMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="image"?"text":"image");$("toolTray").hidden=true});
  $("videoMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="video"?"text":"video");$("toolTray").hidden=true});
- $("themeToggle").addEventListener("click",()=>{applyTheme(S.currentTheme==="rainbow"?"plain":"rainbow");void persistPrefs().catch(()=>{})});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendMessage()}});

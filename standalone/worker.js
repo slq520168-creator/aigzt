@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-5.3.1-free-tools";
+const VERSION="aigzt-cf-5.3.2-clean-header";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
