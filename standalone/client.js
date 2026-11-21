@@ -18,6 +18,8 @@ function node(tag,cls,text){
 const ICONS={
  menu:'<path d="M4 6h16M4 12h10M4 18h16"/>',
  'panel-left':'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+ layers:'<path d="m12 2 9 5-9 5-9-5 9-5Zm-9 10 9 5 9-5M3 17l9 5 9-5"/>',
+ zap:'<path d="m13 2-3 8h8l-7 12 2-9H5l8-11Z"/>',
  x:'<path d="M18 6 6 18M6 6l12 12"/>',
  plus:'<path d="M12 5v14M5 12h14"/>',
  'square-pen':'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.37 3.63a1 1 0 0 1 3 3L12 16l-4 1 1-4Z"/>',
@@ -305,8 +307,8 @@ function updateModelTitle(){
 function setModel(row){
  if(row.type!=="text"){setComposerMode(row.type==="video"?"video":"image");hide("modelDialog");return}
  if(row.provider!=="free"&&!S.keys[row.provider]){
-  $("keyProvider").value=row.provider==="openrouter"?"openrouter":row.provider;
-  show("keyDialog");$("keyStatus").textContent="此模型需要先验证你自己的 API Key。";
+  const provider=row.provider==="openrouter"?"openrouter":row.provider;
+  hide("modelDialog");openKeyPanel(provider);$("keyStatus").textContent="请连接个人 API Key 后使用该模型。";
   return;
  }
  S.provider=row.provider;S.model=row.id;S.modelTitle=row.name||row.id;
@@ -598,7 +600,8 @@ async function verifyKey(event){
   refreshSourceChips();
   $("keyStatus").textContent="已验证 "+provider+" · "+S.connected[provider].length+" 个模型";
   if(provider==="groq"&&S.connected.groq.length){
-   hide("keyDialog");closeMenu();flashError("");$("prompt").focus();
+   if(S.allowPaid){hide("keyDialog");closeMenu();flashError("");$("prompt").focus()}
+   else $("keyStatus").textContent="Groq 密钥已验证。确认使用个人账户额度后，再次点击验证以开始聊天。";
   }
   $("personalKey").value="";
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
@@ -608,6 +611,8 @@ function wire(){
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
+ $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq")});
+ $("imageQuick").addEventListener("click",()=>{hide("modelDialog");setComposerMode("image");$("toolTray").hidden=true});
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
  $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));

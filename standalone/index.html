@@ -128,6 +128,10 @@
   <div class="modal-head"><div><h2>选择模型</h2><p id="modelSummary"></p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
   <div class="model-tools"><input id="modelSearch" placeholder="搜索 GPT、Grok、Gemini、Qwen、编程模型…" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="free">外部免费</button><button class="chip" data-source="openrouter">OpenRouter</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button></div>
+  <div class="model-quick">
+   <button type="button" class="quick-entry" id="groqQuick"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span><strong>Groq 免费额度</strong><small>用个人免费 Key 连接</small></span></button>
+   <button type="button" class="quick-entry" id="imageQuick"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span><strong>免费作图</strong><small>在聊天中生成图片</small></span></button>
+  </div>
   <div class="model-count" id="modelCount">正在读取真实模型目录…</div>
   <div class="model-list" id="modelList"></div>
   <button class="outline full" id="moreModels" type="button" hidden>加载更多模型</button>
@@ -144,8 +148,8 @@
    </div>
    <button id="openrouterLogin" type="button" class="outline full">使用 OpenRouter 账号授权我的额度</button>
    <label>自己的 API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="密钥不会保存到服务器或浏览器持久存储"></label>
-   <label class="check-row"><input type="checkbox" id="allowPaid"><span>我理解：使用个人密钥可能产生服务商费用；仅在主动选择该线路时调用。</span></label>
-   <p class="small-note">密钥仅保存在当前浏览器页面内存中，关闭或刷新后需要重新填写。平台不会默认收费，也不会代替你注册其他服务商。</p>
+   <label class="check-row"><input type="checkbox" id="allowPaid"><span>授权使用我的服务商额度（若账户启用计费，可能产生费用）。</span></label>
+   <p class="small-note">密钥仅用于当前页面，不会长期保存。</p>
    <p id="keyStatus" class="form-message"></p>
    <button class="primary full" type="submit">验证密钥并读取真实模型</button>
   </form>
