@@ -309,3 +309,48 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 .work-task-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .work-task-row small{font-size:11px;color:#8a9699;flex:none}
 @media(max-width:900px){.work-board{padding:8px 14px 20px}.work-header h2{font-size:19px}.work-header p{font-size:11px}.work-top{font-size:12px;padding:6px 8px}}
+
+.top-mode-tabs{display:flex;align-items:center;gap:3px;background:#f1f3f4;border:1px solid #e7ecee;border-radius:13px;padding:3px;flex:none}
+.top-mode{min-width:72px;border-radius:10px;padding:7px 12px;color:#687982;font-size:13px;white-space:nowrap;font-weight:550}
+.top-mode.active{color:#253b44;background:#fff;box-shadow:0 1px 4px rgba(35,57,68,.09)}
+.top-mode:hover{color:#244a57}
+.work-top{display:none}
+.top-left{min-width:0;gap:8px}
+.work-header-actions{display:flex;align-items:center;gap:8px}
+.work-header-actions .outline{font-size:12px;padding:7px 11px;border-radius:10px}
+.work-config{border:1px solid #e4e9ec;border-radius:14px;margin-top:15px;background:#fff}
+.work-config>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;cursor:pointer;font-size:14px;font-weight:650;list-style:none}
+.work-config>summary::-webkit-details-marker{display:none}
+.work-config>summary span{font-size:11px;font-weight:400;color:#82939a}
+.work-config-body{padding:0 14px 16px}
+.work-config-section{padding:13px 0;border-top:1px solid #edf0f1}
+.work-section-heading{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:11px}
+.work-section-heading strong{font-size:13px}
+.work-section-heading span{color:#8b989e;font-size:11px}
+.work-stage-editor,.work-route-editor{display:flex;flex-direction:column;gap:10px}
+.work-config-row{padding:12px;border:1px solid #e9edee;border-radius:12px;display:flex;flex-direction:column;gap:9px}
+.work-config-row-head{display:flex;justify-content:space-between;align-items:center}
+.work-config-row-head strong{font-size:13px}
+.work-remove{font-size:11px;color:#86919a;padding:4px 6px}
+.work-config-row input,.work-config-row textarea,.work-route-row input,.work-config-row select,.work-route-row select{border:1px solid #dce3e7;border-radius:8px;padding:9px 10px;background:#fff;color:inherit;min-width:0;font-size:13px;width:100%;box-sizing:border-box}
+.work-config-row textarea{resize:vertical;min-height:64px}
+.work-stage-model{display:grid;grid-template-columns:minmax(140px,1fr) minmax(0,2fr);gap:8px}
+.work-route-row{display:grid;grid-template-columns:minmax(125px,1fr) minmax(0,2fr) 28px 28px 28px;align-items:center;gap:6px}
+.work-route-move{display:grid;place-items:center;border-radius:7px;min-height:30px;font-size:14px;color:#657880;border:1px solid #e5ebed}
+.work-route-move:disabled{opacity:.3}
+.work-add{color:#426d80;padding:8px 11px;font-size:12px;border-radius:9px;margin-top:7px;border:1px dashed #cbdde4}
+.work-add:disabled{opacity:.4}
+.work-no-routes{font-size:12px;color:#8a999f;margin:0}
+.work-checkbox{display:flex;align-items:center;gap:9px;font-size:12px;color:#617b81;margin-top:13px}
+.work-checkbox input{width:17px;height:17px}
+.work-config-foot{display:flex;align-items:center;gap:12px;padding-top:10px;border-top:1px solid #edf0f1}
+.work-config-foot .outline{font-size:12px;padding:8px 11px}
+.work-config-foot span{font-size:11px;color:#6a8c80;overflow-wrap:anywhere}
+.domestic-providers{padding:12px 0 10px;border-bottom:1px solid #e7ecee}
+.domestic-providers>strong{font-size:13px;display:block;margin:0 0 10px}
+.domestic-providers>div{display:flex;flex-wrap:wrap;gap:6px}
+.domestic-provider{border:1px solid #e1e7ec;border-radius:9px;padding:7px 10px;font-size:12px;color:#415c69}
+.domestic-provider:hover{background:#f1f5f7}
+.domestic-providers>p{font-size:11px;color:#9aa6aa;margin:9px 0 0}
+.domestic-providers>p a{color:#5b8291;text-decoration:underline}
+@media(max-width:900px){.top-mode{min-width:52px;padding:7px 8px;font-size:12px}.top-left{gap:5px}.top-mode-tabs{padding:2px}.model-select{max-width:126px}.work-stage-model{grid-template-columns:1fr}.work-route-row{grid-template-columns:minmax(70px,1fr) minmax(0,2fr) 24px 24px 24px;gap:4px}.work-route-row select,.work-route-row input{padding:7px 5px;font-size:11px}.work-config>summary span{font-size:10px}}

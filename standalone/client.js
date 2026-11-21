@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费模型",provider:"free",keys:{},connected:{},
- allowPaid:false,savedProviders:{},workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,freeModels:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -100,7 +100,15 @@ const KEY_SITES={
  openai:{url:"https://platform.openai.com/api-keys",name:"获取 OpenAI 密钥"},
  grok:{url:"https://console.x.ai/",name:"打开 xAI 控制台"},
  gemini:{url:"https://aistudio.google.com/apikey",name:"获取 Gemini 密钥"},
- qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"}
+ qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"},
+ deepseek:{url:"https://platform.deepseek.com/api_keys",name:"获取DeepSeek密钥"},
+ zhipu:{url:"https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys",name:"获取智谱 GLM密钥"},
+ kimi:{url:"https://platform.kimi.com/",name:"获取Kimi密钥"},
+ minimax:{url:"https://platform.minimaxi.com/",name:"获取MiniMax密钥"},
+ siliconflow:{url:"https://cloud.siliconflow.cn/account/ak",name:"获取硅基流动密钥"},
+ doubao:{url:"https://console.volcengine.com/ark/region:cn-beijing/apikey",name:"获取豆包 / 方舟密钥"},
+ qianfan:{url:"https://console.bce.baidu.com/qianfan/overview",name:"获取百度千帆密钥"},
+ hunyuan:{url:"https://console.cloud.tencent.com/hunyuan",name:"获取腾讯混元密钥"}
 };
 function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
 function refreshKeyPanel(){
@@ -111,6 +119,7 @@ function refreshKeyPanel(){
  $("personalKey").placeholder=rec?"已加密保存，留空即可":"粘贴 API Key";
  $("keySaveLabel").textContent=rec?"更换密钥":"验证并保存";
  $("disconnectProvider").hidden=!rec;
+ $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini";
  $("allowPaid").checked=Boolean(rec?.consent);
  $("keyStatus").textContent=rec?"已连接 · 密钥已保存":"";
  $("openrouterLogin").hidden=provider!=="openrouter";
@@ -444,11 +453,116 @@ async function uploadSelected(files){
 }
 
 
+
+const WORK_PROVIDER_NAMES={
+ free:"免费模型",openrouter:"OpenRouter",groq:"Groq",cerebras:"Cerebras",openai:"OpenAI / GPT",
+ grok:"Grok",gemini:"Gemini",qwen:"千问",deepseek:"DeepSeek",zhipu:"智谱 GLM",kimi:"Kimi",
+ minimax:"MiniMax",siliconflow:"硅基流动",doubao:"豆包",qianfan:"百度千帆",hunyuan:"腾讯混元"
+};
+function resetWorkPlan(){
+ S.workStages=[
+  {name:"规划",instruction:"理解需求，明确任务与交付内容",provider:"auto",model:""},
+  {name:"制作",instruction:"根据规划完成可用成果",provider:"auto",model:""},
+  {name:"检查交付",instruction:"核对并修正问题，提供最终成果",provider:"auto",model:""}
+ ];
+ S.workRoutes=[];S.workFallback=true;
+}
+function chooseWorkProvider(value,auto=false){
+ const select=node("select","work-provider");
+ const options=auto?[["auto","自动选择"],...Object.entries(WORK_PROVIDER_NAMES)]:Object.entries(WORK_PROVIDER_NAMES);
+ for(const [id,name] of options){
+  const opt=node("option","",name+(id!=="free"&&id!=="auto"&&!connected(id)?" · 未连接":""));
+  opt.value=id;select.append(opt);
+ }
+ select.value=value;return select;
+}
+function workModelHints(){
+ const d=$("workModelHints");d.replaceChildren();
+ const ids=new Set(["free:auto","free:vexa","free:cehpoint","free:vireonix"]);
+ for(const m of S.freeModels)ids.add(m.id);
+ for(const models of Object.values(S.connected))for(const m of models)if(m?.id)ids.add(m.id);
+ for(const model of S.remoteModels.slice(0,500))ids.add(model.id);
+ for(const id of [...ids].slice(0,750)){const opt=node("option");opt.value=id;d.append(opt)}
+}
+function renderWorkEditor(){
+ const locked=S.workBusy||["completed","cancelled","running"].includes(S.workDetail?.task?.status);
+ const completed=S.workDetail?.task?.nextStep||0;
+ const stageBox=$("workStageEditor");stageBox.replaceChildren();
+ for(const [i,item] of S.workStages.entries()){
+  const row=node("div","work-config-row"),head=node("div","work-config-row-head");
+  head.append(node("strong","",String(i+1)+" · "+(item.name||"步骤")));
+  const del=node("button","work-remove","删除");del.type="button";del.disabled=locked||i<completed||S.workStages.length<=1;
+  del.addEventListener("click",()=>{S.workStages.splice(i,1);renderWorkEditor()});head.append(del);
+  const title=node("input","work-stage-title");title.maxLength=36;title.placeholder="阶段名称";title.value=item.name;
+  title.disabled=locked||i<completed;title.addEventListener("input",()=>{item.name=title.value;head.querySelector("strong").textContent=(i+1)+" · "+title.value});
+  const instructions=node("textarea","work-stage-notes");instructions.rows=2;instructions.maxLength=700;instructions.placeholder="这个 AI 需要完成什么？";instructions.value=item.instruction;
+  instructions.disabled=locked||i<completed;instructions.addEventListener("input",()=>{item.instruction=instructions.value});
+  const rowModel=node("div","work-stage-model"),provider=chooseWorkProvider(item.provider,true);
+  provider.disabled=locked||i<completed;
+  const model=node("input","work-model-id");model.placeholder="模型ID（留空使用当前默认）";model.value=item.model;
+  model.setAttribute("list","workModelHints");model.disabled=locked||i<completed;
+  provider.addEventListener("change",()=>{item.provider=provider.value;item.model="";model.value=""});
+  model.addEventListener("input",()=>{item.model=model.value.trim()});
+  rowModel.append(provider,model);
+  row.append(head,title,instructions,rowModel);stageBox.append(row);
+ }
+ const routeBox=$("workRouteEditor");routeBox.replaceChildren();
+ if(!S.workRoutes.length)routeBox.append(node("p","work-no-routes","未指定候补线路，将优先使用免费模型与已授权的连接"));
+ for(const [i,item] of S.workRoutes.entries()){
+  const row=node("div","work-route-row"),provider=chooseWorkProvider(item.provider,false);
+  provider.disabled=locked;provider.addEventListener("change",()=>{item.provider=provider.value;item.model=provider.value==="free"?"free:auto":S.savedProviders[provider.value]?.model||"";renderWorkEditor()});
+  const model=node("input","work-model-id");model.value=item.model;model.placeholder="输入模型 ID";model.setAttribute("list","workModelHints");model.disabled=locked;
+  model.addEventListener("input",()=>item.model=model.value.trim());
+  const up=node("button","work-route-move","↑");up.type="button";up.title="上移";up.disabled=locked||i===0;
+  up.addEventListener("click",()=>{[S.workRoutes[i-1],S.workRoutes[i]]=[S.workRoutes[i],S.workRoutes[i-1]];renderWorkEditor()});
+  const down=node("button","work-route-move","↓");down.type="button";down.title="下移";down.disabled=locked||i===S.workRoutes.length-1;
+  down.addEventListener("click",()=>{[S.workRoutes[i],S.workRoutes[i+1]]=[S.workRoutes[i+1],S.workRoutes[i]];renderWorkEditor()});
+  const del=node("button","work-route-move","×");del.type="button";del.title="移除";del.disabled=locked;del.addEventListener("click",()=>{S.workRoutes.splice(i,1);renderWorkEditor()});
+  row.append(provider,model,up,down,del);routeBox.append(row);
+ }
+ $("workAddStage").disabled=locked||S.workStages.length>=12;
+ $("workAddRoute").disabled=locked||S.workRoutes.length>=20;
+ $("workSaveConfig").disabled=locked;
+ $("workFallback").disabled=locked;
+ $("workFallback").checked=S.workFallback;
+ $("workConfigSummary").textContent=S.workStages.length+" 个步骤 · "+S.workRoutes.length+" 条自选候补线路";
+ workModelHints();
+}
+function newWorkDraft(){
+ if(S.workBusy)return;
+ S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderWorkEditor();
+ $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=true;$("prompt").focus();
+}
+function loadWorkEditor(task){
+ S.workStages=Array.isArray(task?.steps)&&task.steps.length?task.steps.map(x=>({...x})):[];if(!S.workStages.length)resetWorkPlan();
+ S.workRoutes=Array.isArray(task?.routes)?task.routes.map(x=>({...x})):[];
+ S.workFallback=task?.fallback!==false;
+ renderWorkEditor();
+}
+async function saveWorkConfiguration(){
+ const id=S.workTaskId;
+ if(!id){$("workConfigMessage").textContent="已准备好，新任务发送时自动保存";return}
+ if(!S.workStages.length){$("workConfigMessage").textContent="至少保留一个步骤";return}
+ const payload={steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback};
+ $("workSaveConfig").disabled=true;
+ try{const d=await api("/api/work/tasks/"+id+"/configure",payload);S.workDetail=d;renderWorkDetail();$("workConfigMessage").textContent="已保存到当前任务"}
+ catch(e){$("workConfigMessage").textContent=humanError(e)}
+ finally{renderWorkEditor()}
+}
+function initDomesticProviderLinks(){
+ const el=$("domesticProviderList");el.replaceChildren();
+ for(const id of ["deepseek","zhipu","kimi","qwen","minimax","siliconflow","doubao","qianfan","hunyuan"]){
+  const b=node("button","domestic-provider",WORK_PROVIDER_NAMES[id]+(connected(id)?" · 已连接":""));
+  b.type="button";b.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(id)});
+  el.append(b);
+ }
+}
+
 const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
  S.workMode=on;
- if(on){setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("workModeBtn").classList.add("active");$("workModeBtn").setAttribute("aria-pressed","true");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
- else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("workModeBtn").classList.remove("active");$("workModeBtn").setAttribute("aria-pressed","false");$("prompt").placeholder="向 AI 提问…";}
+ if(on){if(!S.workStages.length)resetWorkPlan();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("chatTop").classList.remove("active");$("workOpen").setAttribute("aria-pressed","true");$("chatTop").setAttribute("aria-pressed","false");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
+ else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("chatTop").classList.add("active");$("workOpen").setAttribute("aria-pressed","false");$("chatTop").setAttribute("aria-pressed","true");$("prompt").placeholder="向 AI 提问…";}
  closeMenu();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
@@ -469,8 +583,12 @@ function renderWorkDetail(){
  $("workTitle").textContent=task.title;
  $("workState").textContent=workStatus(task)+(task.error?" · "+task.error:"");
  const progress=$("workProgress");progress.replaceChildren();
- for(let i=0;i<4;i++){const item=node("span","work-progress-step"+(i<task.nextStep?" done":i===task.nextStep?" current":""),
-  WORK_LABELS[i]);progress.append(item)}
+ for(let i=0;i<task.totalSteps;i++){
+  const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1);
+  const item=node("span","work-progress-step"+(i<task.nextStep?" done":i===task.nextStep?" current":""),name);
+  if(configured?.provider&&configured.provider!=="auto")item.title="执行："+(WORK_PROVIDER_NAMES[configured.provider]||configured.provider)+(configured.model?" / "+configured.model:"");
+  progress.append(item);
+ }
  const list=$("workStepList");list.replaceChildren();
  for(const step of d.steps||[]){
   const section=node("section","work-step");
@@ -485,6 +603,7 @@ function renderWorkDetail(){
  $("workStop").hidden=task.status==="completed"||task.status==="cancelled";
  $("workExport").disabled=!(d.steps||[]).length;
  $("workDelete").disabled=S.workBusy;
+ if(S.workMode)renderWorkEditor();
 }
 async function fetchWorkTasks(){
  if(!S.user){S.workTasks=[];renderWorkTasks();return}
@@ -497,7 +616,7 @@ async function selectWorkTask(id){
  if(S.workBusy&&S.workTaskId!==id)return;
  try{
   const d=await api("/api/work/tasks/"+id);S.workTaskId=id;S.workDetail=d;
-  renderWorkDetail();renderWorkTasks();
+  loadWorkEditor(d.task);renderWorkDetail();renderWorkTasks();
  }catch(e){$("workState").textContent=humanError(e)}
 }
 async function startWorkTask(){
@@ -508,7 +627,7 @@ async function startWorkTask(){
  $("sendBtn").disabled=true;$("workState").textContent="正在创建工作任务…";
  try{
   const data=await api("/api/work/tasks",{prompt,provider:S.provider,model:S.model,projectId:S.activeProjectId,
-   attachments:S.attachments.map(x=>x.id)});
+   attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback});
   if(epoch!==S.workEpoch)return;
   $("prompt").value="";S.attachments=[];renderAttachments();
   S.workTaskId=data.id;S.workDetail=null;
@@ -522,11 +641,11 @@ async function executeWorkTask(id){
  S.workBusy=true;const epoch=++S.workEpoch;
  $("sendBtn").disabled=true;$("workContinue").disabled=true;
  try{
-  for(let i=0;i<4;i++){
+  for(let i=0;i<12;i++){
    if(epoch!==S.workEpoch)break;
    const current=S.workDetail?.task;
    if(!current||current.id!==id||["completed","cancelled","paused"].includes(current.status)&&i>0)break;
-   $("workState").textContent="正在执行 "+WORK_LABELS[current.nextStep] +" · 额度不足自动切换可用模型";
+   $("workState").textContent="正在执行 "+(current.steps?.[current.nextStep]?.name||"步骤 "+(current.nextStep+1))+" · 不可用时切换候补 AI";
    const d=await api("/api/work/tasks/"+id+"/advance",{});
    if(epoch!==S.workEpoch)break;
    if(d.busy){$("workState").textContent="此任务正在其他页面执行";break}
@@ -618,6 +737,7 @@ async function loadCatalog(){
   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
+  if(S.workMode)workModelHints();
   $("modelSummary").textContent=d.catalogError?"模型目录暂不可用，仍可尝试免费线路。":"已读取 "+S.remoteModels.length+" 个模型；实际调用以连接状态为准。";
  }catch(e){
   $("modelSummary").textContent="模型目录连接失败："+humanError(e);
@@ -686,6 +806,7 @@ function activateSource(name){
 }
 function refreshSourceChips(){
  const container=$("sourceChips");
+ initDomesticProviderLinks();
  for(const [p,items] of Object.entries(S.connected)){
   if(container.querySelector('[data-source="'+p+'"]'))continue;
   const btn=node("button","chip",p+" · "+items.length);
@@ -814,14 +935,15 @@ async function verifyKey(event){
  if(submit)submit.disabled=true;
  $("keyStatus").textContent="验证连接中…";
  try{
-  const data=await api("/api/connections",{provider:p,apiKey:key,consent:$("allowPaid").checked});
+  const manualModel=$("manualModel").value.trim();
+  const data=await api("/api/connections",{provider:p,apiKey:key,model:manualModel||undefined,consent:$("allowPaid").checked});
   const rec=data.connection;
   if(!rec||!Array.isArray(data.models)||!data.models.length)throw Error("服务商未返回可用模型");
   S.savedProviders[p]={model:rec.model,consent:!!rec.consent,updatedAt:rec.updatedAt};
   S.connected[p]=data.models;delete S.keys[p];
   S.provider=p;S.model=rec.model;S.modelTitle=p+" · "+(data.models.find(m=>m.id===rec.model)?.name||rec.model);
   S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
-  refreshKeyPanel();$("keyStatus").textContent="已加密保存，下次登录自动恢复";
+  refreshKeyPanel();$("keyStatus").textContent=rec.verified?"已验证并加密保存":"密钥已保存，但此模型调用尚未验证";
   if(rec.consent){hide("keyDialog");$("prompt").focus()}
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
@@ -832,9 +954,15 @@ function wire(){
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navWork").addEventListener("click",()=>setWorkMode(true));
- $("workOpen").addEventListener("click",()=>setWorkMode(!S.workMode));
- $("workModeBtn").addEventListener("click",()=>setWorkMode(!S.workMode));
+ $("workOpen").addEventListener("click",()=>setWorkMode(true));
+ $("domesticProviderList");initDomesticProviderLinks();
+ $("chatTop").addEventListener("click",()=>setWorkMode(false));
  $("workClose").addEventListener("click",()=>setWorkMode(false));
+ $("workNewTask").addEventListener("click",newWorkDraft);
+ $("workAddStage").addEventListener("click",()=>{if(S.workStages.length<12){S.workStages.push({name:"新步骤",instruction:"",provider:"auto",model:""});renderWorkEditor()}});
+ $("workAddRoute").addEventListener("click",()=>{if(S.workRoutes.length<20){S.workRoutes.push({provider:"free",model:"free:vexa"});renderWorkEditor()}});
+ $("workFallback").addEventListener("change",e=>{S.workFallback=e.target.checked});
+ $("workSaveConfig").addEventListener("click",()=>void saveWorkConfiguration());
  $("workContinue").addEventListener("click",()=>void executeWorkTask(S.workTaskId));
  $("workStop").addEventListener("click",()=>void stopWorkTask());
  $("workDelete").addEventListener("click",()=>void deleteWorkTask());
