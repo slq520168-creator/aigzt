@@ -5,13 +5,14 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-3.1-auth-ui";
+const VERSION="aigzt-cf-4-project-memory";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
  {id:"free:auto",name:"免费自动 · 多线路",provider:"free",type:"text",free:true},
  {id:"free:vireonix",name:"Vireonix 免费文本",provider:"free",type:"text",free:true},
- {id:"free:cehpoint",name:"Cehpoint 免费文本",provider:"free",type:"text",free:true}
+ {id:"free:cehpoint",name:"Cehpoint 免费文本",provider:"free",type:"text",free:true},
+ {id:"free:vexa",name:"Vexa · 免费对话",provider:"free",type:"text",free:true}
 ];
 const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
@@ -199,24 +200,26 @@ async function quota(env,userId,kind="text"){
  return async()=>{await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",day)])};
 }
 async function freeText(env,messages,mode,preferred="free:auto"){
- const system=mode==="code"?"请用中文提供可靠可运行代码、错误处理和测试。":"请准确用中文回答，不得编造事实。";
- const m=[{role:"system",content:system},...messages.map(x=>({role:x.role,content:truncate(x.body,3800)}))];
+ const system=mode==="code"?"你是中文编程助手，提供可运行的代码与测试方法。":"你是中文 AI 助手，准确回答，不能编造事实。";
+ const history=messages.map(m=>({role:m.role,content:truncate(m.body,3000)}));
  const sources=[
-  {id:"vireonix",url:"https://vireonix.ai/v1/chat/completions",model:"auto"},
-  {id:"cehpoint",url:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai"}
+  {id:"vireonix",endpoint:"https://vireonix.ai/v1/chat/completions",model:"auto",ms:7000},
+  {id:"cehpoint",endpoint:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai",ms:7000},
+  {id:"vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"vexa",ms:8000,query:true}
  ];
- if(env.OPENROUTER_FREE_KEY)sources.push({id:"openrouter",url:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY});
- const favored=preferred.slice(5),routes=preferred==="free:auto"?sources:[...sources.filter(x=>x.id===favored),...sources.filter(x=>x.id!==favored)];
- for(const item of routes){
+ if(env.OPENROUTER_FREE_KEY)sources.push({id:"openrouter",endpoint:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY,ms:9000});
+ const preferredId=preferred.split(":")[1],order=preferredId==="auto"?sources:[...sources.filter(x=>x.id===preferredId),...sources.filter(x=>x.id!==preferredId)];
+ for(const source of order){
   try{
-   const res=await fetch(item.url,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...(item.key?{authorization:"Bearer "+item.key}:{})},body:JSON.stringify({model:item.model,messages:m,max_tokens:800,stream:false}),redirect:"manual",signal:AbortSignal.timeout(9000)});
+   const payload=source.query?{prompt:[system,...history.slice(-7).map(m=>(m.role==="assistant"?"助手":m.role==="system"?"记忆":"用户")+"："+m.content)].join("\n").slice(-6000),model:source.model}:{model:source.model,messages:[{role:"system",content:system},...history],max_tokens:800,stream:false};
+   const res=await fetch(source.endpoint,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(source.ms)});
    if(!res.ok||res.status>=300)continue;
-   const body=await res.json(),reply=body?.choices?.[0]?.message?.content;
-   const value=typeof reply==="string"?reply:Array.isArray(reply)?reply.map(x=>x.text||"").join("\n"):"";
-   if(value.trim())return {content:truncate(value,40000),actualModel:item.id+"/"+(body.model||item.model)};
+   const out=await res.json(),content=source.query?(out.success===true?out.response:null):out?.choices?.[0]?.message?.content;
+   const txt=typeof content==="string"?content:Array.isArray(content)?content.map(x=>x.text||"").join("\n"):"";
+   if(txt.trim())return {content:truncate(txt,40000),actualModel:source.id+"/"+(out.model||source.model)};
   }catch{}
  }
- throw Object.assign(new Error("外部免费线路暂时不可用；没有使用 Cloudflare AI 或付费模型"),{status:503});
+ throw Object.assign(new Error("免费模型暂时繁忙，请重试或选择其他免费线路"),{status:503});
 }
 async function chat(req,env,user){
  requireUser(user);
@@ -242,17 +245,36 @@ async function chat(req,env,user){
  if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("此模型不是本站免费线路");
  if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
  let chatId=typeof body.chatId==="string"?body.chatId:null;
+ const projectId=typeof body.projectId==="string"&&/^[0-9a-f-]{36}$/.test(body.projectId)?body.projectId:null;
+ if(!chatId&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Error("项目不存在");
  if(chatId){
   const found=await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
   if(!found)throw Error("找不到该聊天，或没有访问权限");
  }else{
   chatId=crypto.randomUUID();
-  await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",chatId,user.id,message.slice(0,36),provider,model,Date.now(),Date.now());
+  await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,message.slice(0,36),provider,model,Date.now(),Date.now(),projectId);
  }
  const messageId=crypto.randomUUID();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
  const previous=await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT 12").bind(chatId,user.id).all();
  const messages=(previous.results||[]).reverse();
+ // Bounded cross-chat context, explicit memory notes and project instructions.
+ const preference=await dbGet(env.DB,"SELECT memory_enabled FROM user_preferences WHERE user_id=?",user.id);
+ if(preference?.memory_enabled!==0){
+  const notes=await env.DB.prepare("SELECT note FROM memory_notes WHERE user_id=? ORDER BY created_at DESC LIMIT 10").bind(user.id).all();
+  const activeProject=await dbGet(env.DB,"SELECT project_id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
+  let project=null;
+  if(activeProject?.project_id)project=await dbGet(env.DB,"SELECT name,instructions FROM projects WHERE id=? AND user_id=?",activeProject.project_id,user.id);
+  const former=activeProject?.project_id?
+    await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.project_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 8").bind(user.id,activeProject.project_id,chatId).all():
+    await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 6").bind(user.id,chatId).all();
+  const contextParts=[];
+  if(project){contextParts.push("项目："+project.name);if(project.instructions)contextParts.push("项目说明："+truncate(project.instructions,1500))}
+  for(const n of notes.results||[])contextParts.push("用户明确保存的记忆："+truncate(n.note,250));
+  const reversed=(former.results||[]).reverse();
+  for(const m of reversed)contextParts.push("其他对话「"+truncate(m.title,50)+"」"+(m.role==="assistant"?"助手":"用户")+"："+truncate(m.body,380));
+  if(contextParts.length)messages.unshift({role:"system",body:"以下是同一用户的相关上下文，仅作为参考；用户当前明确要求优先。\n"+contextParts.join("\n").slice(0,4300)});
+ }
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
  if(lines.length&&!context.length&&provider==="free"&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n提示：外部免费文字模型不能直接解析图片或PDF像素，不要虚构文件内容。"};
  const mode=body.mode==="code"?"code":"general";
@@ -316,7 +338,9 @@ async function mediaChat(req,env,user){
  const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
  const result=mode==="image"?await createImage(mediaReq,env,user):await createVideo(mediaReq,user);
  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply=mode==="image"?"![生成图片]("+result.image+")":"视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
- if(!exists)await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now);
+ if(!exists){const pid=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/.test(b.projectId)?b.projectId:null;
+  if(pid&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",pid,user.id))throw Error("项目不存在");
+  await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now,pid);}
  await env.DB.batch([
   env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"user",prompt,mode,now),
   env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"assistant",reply,result.model||mode,now+1),
@@ -429,14 +453,84 @@ async function main(req,env){
  if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,user));
  if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,user));
  if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));
- if(path==="/api/chats"&&req.method==="GET"){
-  const r=await env.DB.prepare("SELECT id,title,provider,model,updated_at FROM chats WHERE user_id=? ORDER BY updated_at DESC LIMIT 80").bind(user.id).all();
+ 
+ if(path==="/api/projects"&&req.method==="GET"){
+  const d=await env.DB.prepare("SELECT p.id,p.name,p.instructions,p.created_at,p.updated_at,(SELECT count(*) FROM chats c WHERE c.project_id=p.id AND c.user_id=p.user_id) AS chat_count FROM projects p WHERE p.user_id=? ORDER BY p.updated_at DESC LIMIT 40").bind(user.id).all();
+  return response({ok:true,projects:d.results||[]});
+ }
+ if(path==="/api/projects"&&req.method==="POST"){
+  const b=await parseJSON(req),name=truncate(b.name,60).trim();
+  if(!name)return fail("请输入项目名称");
+  const count=await dbGet(env.DB,"SELECT count(*) AS n FROM projects WHERE user_id=?",user.id);
+  if((count?.n||0)>=40)return fail("项目数量达到上限",429);
+  const id=crypto.randomUUID(),now=Date.now(),instructions=truncate(b.instructions,1500).trim();
+  await dbRun(env.DB,"INSERT INTO projects(id,user_id,name,instructions,created_at,updated_at) VALUES(?,?,?,?,?,?)",id,user.id,name,instructions,now,now);
+  return response({ok:true,project:{id,name,instructions,chat_count:0}});
+ }
+ const projHit=path.match(/^\/api\/projects\/([0-9a-f-]{36})\/(edit|delete)$/);
+ if(projHit&&req.method==="POST"){
+  const id=projHit[1],project=await dbGet(env.DB,"SELECT id,name,instructions FROM projects WHERE id=? AND user_id=?",id,user.id);
+  if(!project)return fail("项目不存在",404);
+  if(projHit[2]==="edit"){
+   const b=await parseJSON(req),name=truncate(b.name,60).trim(),instructions=truncate(b.instructions,1500);
+   if(!name)return fail("项目名称不能为空");
+   await dbRun(env.DB,"UPDATE projects SET name=?,instructions=?,updated_at=? WHERE id=? AND user_id=?",name,instructions,Date.now(),id,user.id);
+   return response({ok:true,project:{id,name,instructions}});
+  }
+  await env.DB.batch([
+   env.DB.prepare("UPDATE chats SET project_id=NULL WHERE project_id=? AND user_id=?").bind(id,user.id),
+   env.DB.prepare("DELETE FROM projects WHERE id=? AND user_id=?").bind(id,user.id)
+  ]);
+  return response({ok:true});
+ }
+ if(path==="/api/memory"&&req.method==="GET"){
+  const pref=await dbGet(env.DB,"SELECT memory_enabled,theme FROM user_preferences WHERE user_id=?",user.id);
+  const saved=await env.DB.prepare("SELECT id,note,created_at FROM memory_notes WHERE user_id=? ORDER BY created_at DESC LIMIT 50").bind(user.id).all();
+  return response({ok:true,enabled:pref?.memory_enabled!==0,theme:pref?.theme||"rainbow",notes:saved.results||[]});
+ }
+ if(path==="/api/memory"&&req.method==="POST"){
+  const b=await parseJSON(req),note=truncate(b.note,450).trim();
+  if(!note)return fail("请输入记忆内容");
+  const count=await dbGet(env.DB,"SELECT count(*) AS n FROM memory_notes WHERE user_id=?",user.id);
+  if((count?.n||0)>=50)return fail("最多保存50条记忆",429);
+  const id=crypto.randomUUID(),now=Date.now();
+  await dbRun(env.DB,"INSERT INTO memory_notes(id,user_id,note,created_at) VALUES(?,?,?,?)",id,user.id,note,now);
+  return response({ok:true,note:{id,note,created_at:now}});
+ }
+ const memHit=path.match(/^\/api\/memory\/([0-9a-f-]{36})\/delete$/);
+ if(memHit&&req.method==="POST"){
+  await dbRun(env.DB,"DELETE FROM memory_notes WHERE id=? AND user_id=?",memHit[1],user.id);
+  return response({ok:true});
+ }
+ if(path==="/api/preferences"&&req.method==="POST"){
+  const b=await parseJSON(req);
+  if(typeof b.memoryEnabled!=="boolean"||!["rainbow","plain"].includes(b.theme))return fail("设置无效");
+  await dbRun(env.DB,"INSERT INTO user_preferences(user_id,memory_enabled,theme) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET memory_enabled=excluded.memory_enabled,theme=excluded.theme",user.id,b.memoryEnabled?1:0,b.theme);
+  return response({ok:true});
+ }
+ if(path==="/api/files"&&req.method==="GET"){
+  const listing=await env.MEDIA.list({prefix:user.id+"/",limit:80,include:["customMetadata","httpMetadata"]});
+  return response({ok:true,files:listing.objects.map(x=>({id:x.key.slice(user.id.length+1),name:x.customMetadata?.name||"附件",type:x.httpMetadata?.contentType||"",size:x.size,url:"/api/files/"+x.key.slice(user.id.length+1)}))});
+ }
+ if(path==="/api/chats/search"&&req.method==="GET"){
+  const query=truncate(url.searchParams.get("q"),60).trim();
+  if(!query)return response({ok:true,chats:[]});
+  const escaped=query.replace(/[\\%_]/g,x=>"\\"+x),search="%"+escaped+"%";
+  const r=await env.DB.prepare("SELECT DISTINCT c.id,c.title,c.updated_at,c.project_id,c.pinned_at,c.archived_at FROM chats c LEFT JOIN messages m ON m.chat_id=c.id AND m.user_id=c.user_id WHERE c.user_id=? AND (c.title LIKE ? ESCAPE '\\' OR m.body LIKE ? ESCAPE '\\') ORDER BY c.updated_at DESC LIMIT 35").bind(user.id,search,search).all();
   return response({ok:true,chats:r.results||[]});
  }
- const hit=path.match(/^\/api\/chats\/([0-9a-f-]{36})(?:\/(delete|rename))?$/);
+
+ if(path==="/api/chats"&&req.method==="GET"){
+  const project=url.searchParams.get("project"),archived=url.searchParams.get("archived")==="1";
+  const query=project?"SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND project_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC LIMIT 100":
+   "SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC LIMIT 100";
+  const r=project&&/^[0-9a-f-]{36}$/.test(project)?await env.DB.prepare(query).bind(user.id,project).all():await env.DB.prepare("SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC LIMIT 100").bind(user.id).all();
+  return response({ok:true,chats:r.results||[]});
+ }
+ const hit=path.match(/^\/api\/chats\/([0-9a-f-]{36})(?:\/(delete|rename|pin|archive|project))?$/);
  if(hit){
   const chatId=hit[1],cmd=hit[2];
-  const c=await dbGet(env.DB,"SELECT id,title FROM chats WHERE id=? AND user_id=?",chatId,user.id);
+  const c=await dbGet(env.DB,"SELECT id,title,pinned_at,archived_at,project_id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
   if(!c)return fail("聊天不存在",404);
   if(!cmd&&req.method==="GET"){
    const r=await env.DB.prepare("SELECT id,role,body,model,created_at FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at ASC LIMIT 150").bind(chatId,user.id).all();
@@ -448,6 +542,23 @@ async function main(req,env){
     env.DB.prepare("DELETE FROM chats WHERE id=? AND user_id=?").bind(chatId,user.id)
    ]);
    return response({ok:true});
+  }
+  if(req.method==="POST"&&cmd==="pin"){
+   const value=await parseJSON(req),pinned=value.pinned===true?Date.now():0;
+   await dbRun(env.DB,"UPDATE chats SET pinned_at=? WHERE id=? AND user_id=?",pinned,chatId,user.id);
+   return response({ok:true,pinned_at:pinned});
+  }
+  if(req.method==="POST"&&cmd==="archive"){
+   const value=await parseJSON(req),archived=value.archived===true?Date.now():0;
+   await dbRun(env.DB,"UPDATE chats SET archived_at=? WHERE id=? AND user_id=?",archived,chatId,user.id);
+   return response({ok:true,archived_at:archived});
+  }
+  if(req.method==="POST"&&cmd==="project"){
+   const value=await parseJSON(req),id=value.projectId===null?null:typeof value.projectId==="string"&&/^[0-9a-f-]{36}$/.test(value.projectId)?value.projectId:undefined;
+   if(id===undefined)return fail("项目编号无效");
+   if(id&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",id,user.id))return fail("项目不存在",404);
+   await dbRun(env.DB,"UPDATE chats SET project_id=? WHERE id=? AND user_id=?",id,chatId,user.id);
+   return response({ok:true,projectId:id});
   }
   if(req.method==="POST"&&cmd==="rename"){
    const r=await parseJSON(req),title=truncate(r.title,80).trim();
