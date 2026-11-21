@@ -386,6 +386,8 @@ function appendMessage(role,content,model){
  return row;
 }
 function newChat(){
+ if(S.freeToolsMode)setFreeToolsMode(false);
+ if(S.workMode)setWorkMode(false);
  S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";flashError("");renderHistory();closeMenu();
  $("prompt").focus();
@@ -674,8 +676,65 @@ function initDomesticProviderLinks(){
  }
 }
 
+
+const EXTERNAL_FREE_TOOLS=[
+ {provider:"Perchance",name:"AI 文生图",category:"作图",desc:"提示词生成图片，可选画风和尺寸",url:"https://perchance.org/ai-text-to-image-generator"},
+ {provider:"Perchance",name:"角色形象生成",category:"作图",desc:"生成角色头像和人物形象",url:"https://perchance.org/ai-character-generator"},
+ {provider:"Perchance",name:"免费作图（另一版本）",category:"作图",desc:"更多图像生成选项",url:"https://perchance.org/new-image-gen"},
+ {provider:"Perchance",name:"AI 聊天",category:"聊天",desc:"网页对话与角色扮演",url:"https://perchance.org/ai-chat"},
+ {provider:"Perchance",name:"角色聊天",category:"聊天",desc:"创建角色并进行连续对话",url:"https://perchance.org/ai-character-chat"},
+ {provider:"Perchance",name:"故事生成",category:"写作",desc:"输入情节，生成并续写故事",url:"https://perchance.org/ai-story-generator"},
+ {provider:"Perchance",name:"文字冒险 RPG",category:"互动",desc:"AI 主持文字冒险游戏",url:"https://perchance.org/ai-rpg"},
+ {provider:"Perchance",name:"场景生成",category:"写作",desc:"生成剧情场景和创意背景",url:"https://perchance.org/ai-scenario-generator"},
+ {provider:"Perchance",name:"更多免费生成器",category:"全部",desc:"浏览平台上其他公开生成器",url:"https://perchance.org/"},
+ {provider:"Nova AI",name:"免费多模型",category:"聊天",desc:"官网免费模型路由；不需要 AIGZT 密钥",url:"https://www.novaai.one/"},
+ {provider:"FURAI",name:"Velorum 互动档案",category:"互动",desc:"科幻世界观问答和探索；不是通用模型平台",url:"https://furai.space/"}
+];
+function freeToolsFilters(){
+ const selected=S.freeToolsCategory||"全部",container=$("freeToolFilters");
+ container.replaceChildren();
+ for(const label of ["全部","作图","聊天","写作","互动"]){
+  const b=node("button","free-filter"+(label===selected?" active":""));
+  b.type="button";b.textContent=label;b.setAttribute("aria-pressed",label===selected?"true":"false");
+  b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools()});
+  container.append(b);
+ }
+}
+function renderFreeTools(){
+ freeToolsFilters();
+ const search=$("freeToolsSearch").value.trim().toLocaleLowerCase(),filter=S.freeToolsCategory||"全部";
+ const matches=EXTERNAL_FREE_TOOLS.filter(x=>(filter==="全部"||x.category===filter||x.category==="全部")&&
+  (!search||[x.name,x.provider,x.desc,x.category].some(y=>y.toLocaleLowerCase().includes(search))));
+ const container=$("freeToolsList");container.replaceChildren();
+ if(!matches.length){container.append(node("p","free-tools-empty","没有找到对应工具"));return}
+ for(const item of matches){
+  const a=node("a","free-tool-card");
+  a.href=item.url;a.target="_blank";a.rel="noopener noreferrer";
+  const title=node("strong","free-tool-name",item.name);
+  const source=node("span","free-tool-provider",item.provider);
+  const head=node("div","free-tool-card-head");head.append(title,source);
+  const body=node("span","free-tool-description",item.desc);
+  const open=node("span","free-tool-open","打开官网");
+  a.append(head,body,open);container.append(a);
+ }
+}
+function setFreeToolsMode(enabled){
+ S.freeToolsMode=!!enabled;
+ if(enabled){
+  S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
+  $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
+  $("workOpen").classList.remove("active");$("chatTop").classList.remove("active");
+  $("workOpen").setAttribute("aria-pressed","false");$("chatTop").setAttribute("aria-pressed","false");
+  $("navFreeTools").classList.add("active");renderFreeTools();
+ }else{
+  $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
+ }
+ closeMenu();
+}
+
 const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
+ setFreeToolsMode(false);
  S.workMode=on;
  if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("chatTop").classList.remove("active");$("workOpen").setAttribute("aria-pressed","true");$("chatTop").setAttribute("aria-pressed","false");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
  else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("chatTop").classList.add("active");$("workOpen").setAttribute("aria-pressed","false");$("chatTop").setAttribute("aria-pressed","true");$("prompt").placeholder="向 AI 提问…";}
@@ -1039,7 +1098,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.freeToolsMode=false;S.freeToolsCategory="全部";S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -1069,6 +1128,9 @@ function wire(){
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
+ $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
+ $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
+ $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
  $("workOpen").addEventListener("click",()=>setWorkMode(true));
  $("domesticProviderList");initDomesticProviderLinks();
