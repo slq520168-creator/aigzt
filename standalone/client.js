@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费模型",provider:"free",keys:{},connected:{},
- allowPaid:false,savedProviders:{},workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -394,6 +394,8 @@ function newChat(){
 }
 async function loadChat(id){
  if(S.busy)return;
+ if(S.freeToolsMode)setFreeToolsMode(false);
+ if(S.workMode)setWorkMode(false);
  try{
   const v=await api("/api/chats/"+id);
   S.chatId=id;$("messageList").replaceChildren();hideWelcome();
@@ -678,22 +680,25 @@ function initDomesticProviderLinks(){
 
 
 const EXTERNAL_FREE_TOOLS=[
- {provider:"Perchance",name:"AI 文生图",category:"作图",desc:"提示词生成图片，可选画风和尺寸",url:"https://perchance.org/ai-text-to-image-generator"},
- {provider:"Perchance",name:"角色形象生成",category:"作图",desc:"生成角色头像和人物形象",url:"https://perchance.org/ai-character-generator"},
- {provider:"Perchance",name:"免费作图（另一版本）",category:"作图",desc:"更多图像生成选项",url:"https://perchance.org/new-image-gen"},
- {provider:"Perchance",name:"AI 聊天",category:"聊天",desc:"网页对话与角色扮演",url:"https://perchance.org/ai-chat"},
- {provider:"Perchance",name:"角色聊天",category:"聊天",desc:"创建角色并进行连续对话",url:"https://perchance.org/ai-character-chat"},
- {provider:"Perchance",name:"故事生成",category:"写作",desc:"输入情节，生成并续写故事",url:"https://perchance.org/ai-story-generator"},
- {provider:"Perchance",name:"文字冒险 RPG",category:"互动",desc:"AI 主持文字冒险游戏",url:"https://perchance.org/ai-rpg"},
- {provider:"Perchance",name:"场景生成",category:"写作",desc:"生成剧情场景和创意背景",url:"https://perchance.org/ai-scenario-generator"},
- {provider:"Perchance",name:"更多免费生成器",category:"全部",desc:"浏览平台上其他公开生成器",url:"https://perchance.org/"},
- {provider:"Nova AI",name:"免费多模型",category:"聊天",desc:"官网免费模型路由；不需要 AIGZT 密钥",url:"https://www.novaai.one/"},
- {provider:"FURAI",name:"Velorum 互动档案",category:"互动",desc:"科幻世界观问答和探索；不是通用模型平台",url:"https://furai.space/"}
+ {provider:"Perchance",name:"AI 文生图",category:"作图",desc:"免费图像生成，画风及尺寸由原站提供",url:"https://perchance.org/ai-text-to-image-generator"},
+ {provider:"Perchance",name:"写实照片生成",category:"作图",desc:"写实风格图片生成",url:"https://perchance.org/ai-photo-generator"},
+ {provider:"Perchance",name:"角色形象生成",category:"作图",desc:"人物和虚构角色外观生成",url:"https://perchance.org/ai-character-generator"},
+ {provider:"Perchance",name:"快速免费作图",category:"作图",desc:"另一个社区图像生成器",url:"https://perchance.org/new-image-gen"},
+ {provider:"Perchance",name:"AI 聊天",category:"聊天",desc:"网页对话、角色扮演",url:"https://perchance.org/ai-chat"},
+ {provider:"Perchance",name:"角色聊天",category:"聊天",desc:"创建角色并持续对话",url:"https://perchance.org/ai-character-chat"},
+ {provider:"Perchance",name:"故事创作",category:"写作",desc:"根据人物、情节生成故事",url:"https://perchance.org/ai-story-generator"},
+ {provider:"Perchance",name:"剧情场景",category:"写作",desc:"生成情节背景与故事场景",url:"https://perchance.org/ai-scenario-generator"},
+ {provider:"Perchance",name:"文字生成",category:"写作",desc:"提供文字提示词并生成内容",url:"https://perchance.org/ai-text-generator"},
+ {provider:"Perchance",name:"文字冒险 RPG",category:"互动",desc:"AI 带领的文字互动冒险",url:"https://perchance.org/ai-rpg"},
+ {provider:"Perchance",name:"社区视频生成",category:"视频",desc:"社区生成器；免费能力与可用性由原站决定",url:"https://perchance.org/ai-video-generator"},
+ {provider:"Perchance",name:"更多生成器",category:"全部",desc:"浏览 Perchance 更多社区工具",url:"https://perchance.org/hub"},
+ {provider:"Nova AI",name:"免费多模型",category:"聊天",desc:"网页模型路由；不等于 AIGZT 内建 API",url:"https://www.novaai.one/"},
+ {provider:"FURAI",name:"Velorum 互动档案",category:"互动",desc:"剧情世界观与档案问答，不是通用 AI 模型平台",url:"https://furai.space/"}
 ];
 function freeToolsFilters(){
  const selected=S.freeToolsCategory||"全部",container=$("freeToolFilters");
  container.replaceChildren();
- for(const label of ["全部","作图","聊天","写作","互动"]){
+ for(const label of ["全部","作图","聊天","写作","视频","互动"]){
   const b=node("button","free-filter"+(label===selected?" active":""));
   b.type="button";b.textContent=label;b.setAttribute("aria-pressed",label===selected?"true":"false");
   b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools()});
@@ -711,15 +716,18 @@ function renderFreeTools(){
   const a=node("a","free-tool-card");
   a.href=item.url;a.target="_blank";a.rel="noopener noreferrer";
   const title=node("strong","free-tool-name",item.name);
-  const source=node("span","free-tool-provider",item.provider);
+  const source=node("span","free-tool-provider",item.provider==="FURAI"?"独立产品":item.provider);
   const head=node("div","free-tool-card-head");head.append(title,source);
   const body=node("span","free-tool-description",item.desc);
-  const open=node("span","free-tool-open","打开官网");
+  const open=node("span","free-tool-open","前往使用");
   a.append(head,body,open);container.append(a);
  }
 }
 function setFreeToolsMode(enabled){
  S.freeToolsMode=!!enabled;
+ $("shell").classList.toggle("free-tools-active",S.freeToolsMode);
+ $("freeToolsTop").classList.toggle("active",S.freeToolsMode);
+ $("freeToolsTop").setAttribute("aria-pressed",String(S.freeToolsMode));
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
@@ -1134,6 +1142,7 @@ function wire(){
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
+ $("freeToolsTop").addEventListener("click",()=>setFreeToolsMode(true));
  $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));

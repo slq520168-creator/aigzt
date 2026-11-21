@@ -47,7 +47,7 @@
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><div class="top-mode-tabs" role="group" aria-label="工作台模式"><button type="button" class="top-mode active" id="chatTop" aria-pressed="true">聊天</button><button type="button" class="top-mode" id="workOpen" aria-pressed="false">工作模式</button></div><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><div class="top-mode-tabs" role="group" aria-label="工作台模式"><button type="button" class="top-mode active" id="chatTop" aria-pressed="true">聊天</button><button type="button" class="top-mode" id="workOpen" aria-pressed="false">工作模式</button><button type="button" class="top-mode" id="freeToolsTop" aria-pressed="false">免费工具</button></div><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
     <div class="top-right"><button class="icon-btn" id="themeToggle" title="切换呼吸主题" aria-label="切换呼吸主题"><span class="ui-icon" data-icon="palette" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
@@ -80,13 +80,13 @@
     <details class="work-history"><summary>历史任务</summary><div id="workTaskList" class="work-task-list"></div></details>
    </section>
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
-    <div class="free-tools-header"><div><h2>免费工具</h2><p>打开原始网站使用，无需在这里填写密钥</p></div><button type="button" class="icon-btn" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+    <div class="free-tools-header"><div><h2>免费工具</h2><p>Perchance 免费工具与其他公开 AI 产品</p></div><button type="button" class="icon-btn" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
     <div class="free-tools-controls">
      <input id="freeToolsSearch" type="search" placeholder="搜索作图、聊天、故事…" aria-label="搜索免费工具">
      <div id="freeToolFilters" class="free-tool-filters" aria-label="按工具类型筛选"></div>
     </div>
     <div id="freeToolsList" class="free-tools-list"></div>
-    <p class="free-tools-footnote">外部网站独立运行；其免费政策、内容和可用性由各自提供方决定。AIGZT 不读取第三方网页中的账号信息。</p>
+    <p class="free-tools-footnote">点击后跳转官方网页。Perchance 目前不提供可供本站自动生成的授权接口，不会从 AIGZT 代为调用；第三方免费额度及内容以官网为准。</p>
    </section>
    <div class="conversation" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
    <div class="composer-area" id="composerArea">

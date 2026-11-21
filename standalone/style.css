@@ -406,3 +406,19 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 .free-tools-empty{color:#8a989f;padding:25px 8px;font-size:13px}
 .free-tools-footnote{color:#89979b;font-size:11px;line-height:1.6;margin-top:24px}
 @media(max-width:700px){.free-tools-board{padding:12px 14px 22px}.free-tools-header h2{font-size:19px}.free-tools-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.free-tool-card{padding:12px 10px;gap:7px}.free-tool-card-head{display:block}.free-tool-provider{display:inline-block;margin-top:6px}.free-tool-name{font-size:13px}.free-tool-description{font-size:11px;min-height:48px}}
+
+/* Free tools is a full-page mode, not a modal and not a hidden model. */
+.shell.free-tools-active #pickModel{display:none!important}
+.shell.free-tools-active #headerMore{visibility:hidden}
+.free-tools-board{background:#fff}
+.free-tool-card:focus-visible{outline:2px solid #609cb5;outline-offset:2px}
+@media(max-width:700px){
+ .top-mode-tabs{gap:1px;padding:2px}
+ .top-mode{min-width:0;padding:7px 8px;font-size:11px}
+ .free-tools-board{padding:12px 15px 24px}
+ .free-tools-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .free-tool-card{padding:12px 11px;border-radius:12px}
+ .free-tool-provider{font-size:9px}
+ .free-tool-description{font-size:11px;min-height:auto}
+}
+@media(max-width:390px){.free-tools-list{grid-template-columns:1fr}.top-mode{padding:7px 5px}}
