@@ -269,6 +269,39 @@ async function queryVideo(){
  }catch(e){$("createStatus").textContent=humanError(e)}
  finally{$("refreshVideo").disabled=false}
 }
+const oauthBase64=(b)=>btoa(Array.from(b,x=>String.fromCharCode(x)).join("")).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
+async function beginOpenRouterOAuth(){
+ if(!S.user){show("authDialog");return}
+ const verifier=oauthBase64(crypto.getRandomValues(new Uint8Array(32)));
+ const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier)));
+ const state=oauthBase64(crypto.getRandomValues(new Uint8Array(16)));
+ sessionStorage.setItem("aigzt:or-pkce",JSON.stringify({verifier,state,created:Date.now()}));
+ const callback=new URL("/",location.origin);
+ callback.searchParams.set("oauth_state",state);
+ location.assign("https://openrouter.ai/auth?callback_url="+encodeURIComponent(callback.toString())+
+  "&code_challenge="+oauthBase64(digest)+"&code_challenge_method=S256");
+}
+async function finishOpenRouterOAuth(){
+ const u=new URL(location.href),code=u.searchParams.get("code"),state=u.searchParams.get("oauth_state");
+ if(!code)return;
+ history.replaceState(null,"",location.pathname);
+ const pending=sessionStorage.getItem("aigzt:or-pkce");
+ sessionStorage.removeItem("aigzt:or-pkce");
+ if(!pending||!state){flashError("OpenRouter 授权状态已失效，请重新登录授权");return}
+ let saved;
+ try{saved=JSON.parse(pending)}catch{flashError("OpenRouter 授权状态损坏");return}
+ if(saved.state!==state||Date.now()-saved.created>600000){flashError("OpenRouter 授权超时或校验失败");return}
+ if(!S.user){flashError("请先登录 AIGZT 后重新授权 OpenRouter");return}
+ try{
+  const result=await api("/api/openrouter/exchange",{code,verifier:saved.verifier});
+  S.keys.openrouter=result.key;
+  const d=await api("/api/provider-models",{provider:"openrouter",apiKey:result.key});
+  S.connected.openrouter=d.models||[];
+  refreshSourceChips();
+  $("keyProvider").value="openrouter";show("keyDialog");
+  $("keyStatus").textContent="OpenRouter 官方账号授权成功，已发现 "+S.connected.openrouter.length+" 个模型。个人密钥只保存在当前页面内存中。";
+ }catch(e){flashError("OpenRouter 授权失败："+humanError(e))}
+}
 async function login(event){
  event.preventDefault();
  const form=$("authForm"),email=form.elements.email.value.trim(),password=form.elements.password.value;
@@ -329,6 +362,8 @@ function wire(){
  $("authForm").addEventListener("submit",e=>void login(e));
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
+ $("openrouterLogin").addEventListener("click",()=>void beginOpenRouterOAuth().catch(e=>{$("keyStatus").textContent=humanError(e)}));
+ $("keyProvider").addEventListener("change",e=>{$("openrouterLogin").hidden=e.target.value!=="openrouter"});
  $("modelSearch").addEventListener("input",e=>{S.query=e.target.value;S.modelPage=0;renderModels()});
  $("modelFilter").addEventListener("change",e=>{S.filter=e.target.value;S.modelPage=0;renderModels()});
  for(const btn of els("#sourceChips .chip"))btn.addEventListener("click",()=>activateSource(btn.dataset.source));
@@ -339,6 +374,6 @@ function wire(){
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
 }
 document.addEventListener("DOMContentLoaded",async()=>{
- wire();await fetchMe();await fetchChats();
+ wire();await fetchMe();await fetchChats();await finishOpenRouterOAuth();
  updateModelTitle();
 });
