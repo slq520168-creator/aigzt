@@ -204,8 +204,14 @@ async function chat(req,env,user){
   if(provider==="cloudflare"){
    giveBack=await quota(env,user.id);
    const system=mode==="code"?"你是 AIGZT 编程助手，请提供完整可用的代码、错误处理及测试步骤，不要声称你已运行代码。":"你是 AIGZT AI 中文助手，请准确回应，不编造事实。";
-   const out=await env.AI.run(model,{messages:[{role:"system",content:system},...messages.map(m=>({role:m.role,content:truncate(m.body,3000)}))],max_tokens:900});
-   const text=typeof out?.response==="string"?out.response:typeof out?.result?.response==="string"?out.result.response:null;
+   const config={messages:[{role:"system",content:system},...messages.map(m=>({role:m.role,content:truncate(m.body,3000)}))],max_tokens:900};
+   // Some Cloudflare models return OpenAI-compatible choices, not .response.
+   // Disable hidden reasoning for models whose free quota would otherwise be
+   // consumed by thinking tokens before the user sees an answer.
+   if(model.includes("glm-4.7")||model.includes("gemma-4"))config.chat_template_kwargs={enable_thinking:false};
+   const out=await env.AI.run(model,config);
+   const candidate=out?.response??out?.result?.response??out?.choices?.[0]?.message?.content??null;
+   const text=typeof candidate==="string"?candidate:null;
    if(!text||!text.trim())throw Error("免费模型没有返回有效内容");
    result={content:truncate(text,40000),actualModel:model};
   }else result=await callExternal(provider,model,body.apiKey,messages,body.allowPaid);
