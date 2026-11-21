@@ -88,19 +88,29 @@ async function fetchMe(){
  catch(e){flashError("账号状态读取失败："+humanError(e))}
 }
 function renderHistory(){
- const target=$("history");target.replaceChildren();
- $("chatCount").textContent=S.chats.length?String(S.chats.length):"";
+ const recent=$("history"),pinned=$("pinnedHistory"),pinHeading=$("pinHeading");
+ recent.replaceChildren();pinned.replaceChildren();
+ const rows=S.chats||[];
+ $("chatCount").textContent=rows.length?String(rows.length):"";
  $("historyHeading").textContent=S.archivedView?"已归档聊天":S.activeProjectId?"项目聊天":"最近聊天";
- if(!S.user){target.append(node("div","hint","登录后查看聊天记录"));return}
- if(!S.chats.length){target.append(node("div","hint",S.archivedView?"暂无归档聊天":"暂无聊天记录"));return}
- for(const item of S.chats){
+ const showPinned=!S.archivedView&&rows.some(item=>Boolean(item.pinned_at));
+ pinHeading.hidden=!showPinned;pinned.hidden=!showPinned;
+ if(!S.user){recent.append(node("div","hint","登录后查看聊天记录"));return}
+ if(!rows.length){recent.append(node("div","hint",S.archivedView?"暂无归档聊天":"暂无聊天记录"));return}
+ const makeRow=item=>{
   const row=node("div","history-row"+(S.chatId===item.id?" active":""));
-  const b=node("button","history-select",item.title||"新对话");b.title=item.title||"";
-  b.addEventListener("click",()=>void loadChat(item.id));
-  const more=node("button","history-more");more.type="button";more.title="聊天操作";more.setAttribute("aria-label","聊天操作");
+  const select=node("button","history-select",item.title||"新对话");
+  select.type="button";select.title=item.title||"";
+  select.addEventListener("click",()=>void loadChat(item.id));
+  const more=node("button","history-more");more.type="button";
+  more.title="聊天操作";more.setAttribute("aria-label",(item.title||"聊天")+"的操作");
   more.append(iconSlot("ellipsis"));more.addEventListener("click",()=>openChatActions(item.id));
-  row.append(b,more);target.append(row);renderIcons(row);
+  row.append(select,more);renderIcons(row);return row;
+ };
+ for(const item of rows){
+  (showPinned&&item.pinned_at?pinned:recent).append(makeRow(item));
  }
+ if(showPinned&&!recent.childElementCount)recent.append(node("div","hint","其他聊天显示在这里"));
 }
 async function fetchChats(){
  if(!S.user){S.chats=[];renderHistory();return}

@@ -18,9 +18,16 @@
    <div class="sidebar-links">
     <button class="nav-row" id="navChat"><span class="ui-icon" data-icon="message-circle" aria-hidden="true"></span><span>全部聊天</span></button>
     <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="compass" aria-hidden="true"></span><span>探索模型</span></button>
-    <button class="nav-row" id="navFiles"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>已上传文件</span></button>
-    <button class="nav-row" id="navKeys"><span class="ui-icon" data-icon="link" aria-hidden="true"></span><span>连接 AI</span></button>
    </div>
+   <details class="more-tools" id="moreTools">
+    <summary><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>更多工具</span><span class="ui-icon more-chevron" data-icon="chevron-down" aria-hidden="true"></span></summary>
+    <div class="more-tools-list">
+     <button class="nav-row" id="navFiles"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>已上传文件</span></button>
+     <button class="nav-row" id="navKeys"><span class="ui-icon" data-icon="link" aria-hidden="true"></span><span>连接 AI</span></button>
+    </div>
+   </details>
+   <div class="side-heading pin-heading" id="pinHeading" hidden><span>置顶</span></div>
+   <div id="pinnedHistory" class="pinned-history" hidden aria-label="置顶会话"></div>
    <div class="side-heading"><span>项目</span><button id="newProject" class="icon-btn small-btn" aria-label="新建项目"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button></div>
    <div id="projectsList" class="project-list" aria-label="项目列表"></div>
    <div class="side-heading"><span id="historyHeading">最近聊天</span><span id="chatCount"></span></div>
