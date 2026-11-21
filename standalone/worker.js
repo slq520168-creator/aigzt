@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-5.1-agents-claude";
+const VERSION="aigzt-cf-5.2-novai-model-hubs";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -19,6 +19,8 @@ const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
  openai:{host:"api.openai.com",path:"/v1/responses",models:"/v1/models"},
  claude:{host:"api.anthropic.com",path:"/v1/messages",models:"/v1/models"},
+ novai:{host:"us.novaiapi.com",path:"/v1/chat/completions",models:"/v1/models"},
+ novai_pro:{host:"aiapi-pro.com",path:"/v1/chat/completions",models:"/v1/models"},
  grok:{host:"api.x.ai",path:"/v1/chat/completions",models:"/v1/models"},
  gemini:{host:"generativelanguage.googleapis.com",models:"/v1beta/models"},
  qwen:{host:"dashscope-intl.aliyuncs.com",path:"/compatible-mode/v1/chat/completions",models:"/compatible-mode/v1/models"},
@@ -104,7 +106,15 @@ async function authentication(req,env,action){
  if(!row||!equal(hashed,row.passhash))return fail("邮箱或密码不正确",401);
  return response({ok:true,user:{id:row.id,email:row.email}},200,{"set-cookie":await createSession(env,row.id)});
 }
-function requireModelId(model){if(typeof model!=="string"||model.length>160||!/^[\w.:/-]+$/.test(model))throw Error("模型编号不合法")}
+const NOVAI_PRO_FREE_IDS=new Set(["glm-4.7-flash","glm-4.1v-thinking-flash","glm-4.6v-flash","cogview-3-flash","cogvideox-flash"]);
+function providerModelIsFree(provider,id){
+ if(typeof id!=="string"||!id)return false;
+ return provider==="novai_pro"?NOVAI_PRO_FREE_IDS.has(id):provider==="novai"?/^\[free\]/i.test(id):false;
+}
+function validModelIdentifier(id){
+ return typeof id==="string"&&id.length>0&&id.length<=160&&/^[\w.:/\-\[\]一-龥]+$/.test(id);
+}
+function requireModelId(model){if(!validModelIdentifier(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
 async function listModels(env){
  const availableFree=FREE_MODELS.filter(m=>m.id!=="free:groq"||Boolean(env.GROQ_FREE_KEY));
@@ -176,7 +186,8 @@ async function saveUserProvider(env,user,body){
  if(plain.length<12||plain.length>1500||/[\r\n\0]/.test(plain))throw Object.assign(new Error("API Key 不正确"),{status:400});
  const {models,verified}=await providerModels({provider,apiKey:plain,model:body.model});
  if(!models?.length)throw Object.assign(new Error("服务商未提供可用模型"),{status:502});
- const preferred=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(m=>m.id===id)).find(Boolean):null;
+ const preferred=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(m=>m.id===id)).find(Boolean):
+ provider==="novai"||provider==="novai_pro"?models.find(x=>x.free===true&&x.type==="text"):null;
  const requested=String(body.model||""),selected=(requested&&models.find(m=>m.id===requested))||preferred||models.find(m=>!/audio|tts|whisper|guard|embed|image|video|realtime|transcri/i.test(m.id))||models[0];
  if(!selected?.id)throw Object.assign(new Error("找不到适用的模型"),{status:502});
  const vault=await protectKey(env,user.id,provider,plain),now=Date.now(),consent=body.consent===true?1:0;
@@ -188,7 +199,7 @@ async function providerModels(body){
  const id=String(body.provider||""),key=body.apiKey;
  if(!HOSTS[id])throw Error("不支持该服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("请输入自己的有效 API Key");
- const h=HOSTS[id],manual=typeof body.model==="string"&&/^[\w.:/-]{1,160}$/.test(body.model)?body.model:null;
+ const h=HOSTS[id],manual=validModelIdentifier(body.model)?body.model:null;
  const headers=id==="gemini"?{"x-goog-api-key":key}:id==="claude"?{"x-api-key":key,"anthropic-version":"2026-10-21"}:{Authorization:"Bearer "+key};
  let resp;
  try{resp=await fetch("https://"+h.host+h.models,{headers,redirect:"manual",signal:AbortSignal.timeout(10000)})}
@@ -204,8 +215,13 @@ async function providerModels(body){
  }
  const json=await resp.json();
  let models=id==="gemini"?(json.models||[]).filter(x=>x.name?.startsWith("models/gemini-")).map(x=>({id:x.name.slice(7),name:x.displayName||x.name})):
-  (json.data||[]).filter(x=>x.id&&x.lifecycle!=="retired").map(x=>({id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":"")}));
+  (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired").map(x=>({
+  id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":""),
+  free:providerModelIsFree(id,x.id),
+  type:/image|cogview|seedream/i.test(x.id)?"image":/video|cogvideox|seedance/i.test(x.id)?"video":"text"
+ }));
  if(!Array.isArray(models)||models.length===0)throw Object.assign(new Error("连接成功但服务商没有返回可用模型"),{status:502});
+ if(id==="novai"||id==="novai_pro")models.sort((a,b)=>Number(!!b.free)-Number(!!a.free));
  return {ok:true,models:models.slice(0,500),verified:true};
 }
 async function exchangeOpenRouter(body){
@@ -228,7 +244,8 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))throw Error("请先输入自己的 API Key");
  const isOpenRouterFree=provider==="openrouter"&&(model==="openrouter/free"||model.endsWith(":free"));
- if(!isOpenRouterFree&&consent!==true)throw Error("请先确认使用本人额度；若账户启用付费可能产生费用");
+ const isPublishedFree=providerModelIsFree(provider,model);
+ if(!isOpenRouterFree&&!isPublishedFree&&consent!==true)throw Error("请先确认使用本人额度；若账户启用付费可能产生费用");
  const host=HOSTS[provider],headers={"content-type":"application/json","accept":"application/json"};
  if(provider==="gemini")headers["x-goog-api-key"]=key;
  else if(provider==="claude"){headers["x-api-key"]=key;headers["anthropic-version"]="2026-10-21";}
@@ -611,7 +628,7 @@ function validWorkPlan(input,minSteps=0){
  const steps=provided.map((v,i)=>{
   const name=truncate(v?.name,36).trim(),instruction=truncate(v?.instruction,700).trim();
   const provider=typeof v?.provider==="string"?v.provider:"auto",model=typeof v?.model==="string"?v.model.trim():"";
-  if(!name||!(provider==="auto"||provider==="free"||HOSTS[provider])||(model&&!/^[\w.:/-]{1,160}$/.test(model)))throw Object.assign(new Error("第"+(i+1)+"步的执行配置不正确"),{status:400});
+  if(!name||!(provider==="auto"||provider==="free"||HOSTS[provider])||(model&&!validModelIdentifier(model)))throw Object.assign(new Error("第"+(i+1)+"步的执行配置不正确"),{status:400});
   return {name,instruction,provider,model};
  });
  const routes=Array.isArray(input.routes)?input.routes:[];
@@ -619,7 +636,7 @@ function validWorkPlan(input,minSteps=0){
  const unique=new Set(),list=[];
  for(const v of routes){
   const provider=typeof v?.provider==="string"?v.provider:"",model=typeof v?.model==="string"?v.model.trim():"";
-  if(!(provider==="free"||HOSTS[provider])||!model||!/^[\w.:/-]{1,160}$/.test(model))throw Object.assign(new Error("候补模型需要真实服务商与模型ID"),{status:400});
+  if(!(provider==="free"||HOSTS[provider])||!model||!validModelIdentifier(model))throw Object.assign(new Error("候补模型需要真实服务商与模型ID"),{status:400});
   const id=provider+":"+model;if(unique.has(id))continue;unique.add(id);list.push({provider,model});
  }
  return {steps,routes:list,fallback:input.fallback!==false};
@@ -655,14 +672,15 @@ async function workCreate(req,env,user){
   texts.push("文件 "+truncate(entry.customMetadata?.name||"附件",60)+"：\n"+truncate(await file.text(),3200));
  }
  const provider=typeof b.provider==="string"&&(b.provider==="free"||HOSTS[b.provider])?b.provider:"free";
- const model=typeof b.model==="string"&&/^[\w.:/-]{1,160}$/.test(b.model)?b.model:"free:auto";
+ const model=typeof b.model==="string"&&validModelIdentifier(b.model)?b.model:"free:auto";
  const id=crypto.randomUUID(),now=Date.now();
  await dbRun(env.DB,"INSERT INTO work_tasks(id,user_id,project_id,title,prompt,attachment_context,preferred_provider,preferred_model,status,next_step,created_at,updated_at,steps_json,routes_json,fallback_enabled) VALUES(?,?,?,?,?,?,?,?,'pending',0,?,?,?,?,?)",id,user.id,pid,truncate(prompt,48),prompt,truncate(texts.join("\n\n"),7800),provider,model,now,now,JSON.stringify(config.steps),JSON.stringify(config.routes),config.fallback?1:0);
  return response({ok:true,id,task:{id,status:"pending",nextStep:0,totalSteps:config.steps.length}},201);
 }
 function workRoutes(t,saved,index=0){
  const result=[],seen=new Set(),add=r=>{if(!seen.has(r.id)){result.push(r);seen.add(r.id)}};
- const authorized=saved.filter(x=>x.consent===1||(x.provider==="openrouter"&&(x.model_id==="openrouter/free"||String(x.model_id).endsWith(":free"))));
+ const authorized=saved.filter(x=>x.consent===1||providerModelIsFree(x.provider,x.model_id)||
+ (x.provider==="openrouter"&&(x.model_id==="openrouter/free"||String(x.model_id).endsWith(":free"))));
  const selectedStep=workStepPlan(t)[index];
  const freeIds=["vexa","cehpoint","vireonix"];
  const addFree=model=>{
@@ -672,10 +690,11 @@ function workRoutes(t,saved,index=0){
  };
  const addSelected=(provider,model)=>{
   if(provider==="free"){addFree(model);return}
-  const key=authorized.find(x=>x.provider===provider);
+  const key=saved.find(x=>x.provider===provider);
   if(!key)return;
   const chosen=model||key.model_id;
-  if(!/^[\w.:/-]{1,160}$/.test(chosen))return;
+  if(!(key.consent===1||providerModelIsFree(provider,chosen)||(provider==="openrouter"&&(chosen==="openrouter/free"||chosen.endsWith(":free")))))return;
+  if(!validModelIdentifier(chosen))return;
   add({id:provider+":"+chosen,provider,model:chosen,label:provider,entry:key});
  };
  if(selectedStep?.provider&&selectedStep.provider!=="auto")addSelected(selectedStep.provider,selectedStep.model);

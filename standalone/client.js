@@ -99,6 +99,8 @@ const KEY_SITES={
  cerebras:{url:"https://cloud.cerebras.ai/",name:"打开 Cerebras 控制台"},
  openai:{url:"https://platform.openai.com/api-keys",name:"获取 OpenAI 密钥"},
  claude:{url:"https://console.anthropic.com/settings/keys",name:"获取 Claude API 密钥"},
+ novai:{url:"https://once-cf.novai.su/",name:"Nova AI（novai.su）创建令牌"},
+ novai_pro:{url:"https://aiapi-pro.com/",name:"NovAI（aiapi-pro.com）创建令牌"},
  grok:{url:"https://console.x.ai/",name:"打开 xAI 控制台"},
  gemini:{url:"https://aistudio.google.com/apikey",name:"获取 Gemini 密钥"},
  qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"},
@@ -115,7 +117,10 @@ function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
 function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
  const a=$("providerKeyLink");a.href=site.url;a.textContent=site.name;
- $("providerHelp").textContent=provider==="qwen"?"请选择新加坡地区的密钥。":provider==="openrouter"?"可用官方账号授权，或创建 API Key。":"登录服务商账号创建 API Key，再返回粘贴。";
+ $("providerHelp").textContent=provider==="qwen"?"请选择新加坡地区的密钥。":
+ provider==="novai"?"聚合多个模型。API 使用 us.novaiapi.com/v1，免费模型可能变化。":
+ provider==="novai_pro"?"部分 Flash 模型限额免费；其他模型可能收费。":
+ provider==="openrouter"?"可用官方账号授权，或创建 API Key。":"登录服务商账号创建 API Key，再返回粘贴。";
  $("personalKey").value="";
  $("personalKey").placeholder=rec?"已加密保存，留空即可":"粘贴 API Key";
  $("keySaveLabel").textContent=rec?"更换密钥":"验证并保存";
@@ -456,7 +461,7 @@ async function uploadSelected(files){
 
 
 const WORK_PROVIDER_NAMES={
- free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",claude:"Anthropic Claude API",
+ free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",claude:"Anthropic Claude API",novai:"Nova AI · 多模型",novai_pro:"NovAI · 中国模型",
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
  minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
 };
@@ -474,6 +479,8 @@ const WORK_AGENT_PRODUCTS=[
  {name:"Google Antigravity",desc:"Google · 开发代理",url:"https://antigravity.google",region:"国际",kind:"dev"},
  {name:"Nova AI（Mac Agent）",desc:"Mac · 网页、邮件和自动任务",url:"https://nova-ai-agent.com/",region:"国际",kind:"work"},
  {name:"Nova（Agent Workspace）",desc:"Mac · Claude / ChatGPT 代理工作台",url:"https://supernova.md/",region:"国际",kind:"work"},
+ {name:"Nova AI（模型聚合）",desc:"novai.su · 多模型接口与免费模型",url:"https://once-cf.novai.su/",region:"国际",kind:"api"},
+ {name:"NovAI（中国模型）",desc:"aiapi-pro.com · 中国模型与免费 Flash",url:"https://aiapi-pro.com/",region:"中国",kind:"api"},
  {name:"GigaAgent（ГигаАгент）",desc:"Sber · 俄罗斯自主任务代理",url:"https://www.sberbank.ru/ru/sberpress/all/article?blockID=1303&lang=ru&newsID=79a5051e-0de1-40eb-94b7-10ca383ca531&regionID=78&type=NEWS",region:"俄罗斯",kind:"work"},
  {name:"GigaCowork",desc:"Sber · 团队协作工作代理",url:"https://www.sberbank.ru/ru/sberpress/tekhnologii/article?blockID=69b149cd-6db4-45aa-ade1-b6920d771b11&lang=ru&newsID=d43562d5-d15c-49af-88bb-8ad23bdd3323&regionID=77&type=NEWS",region:"俄罗斯",kind:"work"},
  {name:"GigaCode",desc:"Sber · 编程代理",url:"https://www.sberbank.ru/ru/sberpress/tekhnologii/article?blockID=69b149cd-6db4-45aa-ade1-b6920d771b11&lang=ru&newsID=b91a0cfe-70f9-47cb-aa52-c19ebacc6197&regionID=16&type=NEWS",region:"俄罗斯",kind:"dev"},
@@ -495,7 +502,7 @@ function renderWorkAgentCatalog(){
    const link=node("a","work-agent-product");link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
    const details=node("span","work-agent-description");
    details.append(node("strong","",item.name),node("small","",item.desc));
-   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":"官网");
+   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":item.kind==="api"?"API 入口":"官网");
    link.append(details,meta);grid.append(link);
   }
   group.append(heading,grid);target.append(group);
@@ -659,7 +666,7 @@ async function saveWorkConfiguration(){
 }
 function initDomesticProviderLinks(){
  const el=$("domesticProviderList");el.replaceChildren();
- for(const id of ["deepseek","zhipu","kimi","qwen","minimax","siliconflow","doubao","qianfan","hunyuan"]){
+ for(const id of ["deepseek","zhipu","kimi","qwen","minimax","siliconflow","doubao","qianfan","hunyuan","novai","novai_pro"]){
   const b=node("button","domestic-provider",WORK_PROVIDER_NAMES[id]+(connected(id)?" · 已连接":""));
   b.type="button";b.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(id)});
   el.append(b);
