@@ -54,7 +54,7 @@
     <details class="work-agents" id="workAgents" open><summary>官方工作代理 <small>官网入口 · 不是普通模型</small></summary>
      <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
      <div id="workAgentCatalog" class="work-agent-catalog"></div>
-     <p class="work-agent-disclaimer">第三方工作代理需分别登录官方账号；当前仅提供官方入口，尚不能通过普通聊天 API 在本站代它们执行任务。</p>
+     <p class="work-agent-disclaimer">第三方工作代理使用官方账号独立运行；本站目前只提供官网入口。Claude API 可在「连接 AI」另行使用个人密钥，不等于获得 Claude Cowork 权限。</p>
     </details>
     <details class="work-config" id="workConfig" open>
      <summary>执行配置 <span id="workConfigSummary">按任务自由配置</span></summary>
@@ -171,7 +171,7 @@
  <dialog id="keyDialog" class="modal workspace-view">
   <div class="modal-head"><div><h2>连接 AI</h2></div><button class="close-modal" data-close="keyDialog" aria-label="关闭">×</button></div>
   <form id="keyForm"><label>服务商
-   <select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option></select></label>
+   <select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option></select></label>
    <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">获取官方 API Key</a><span id="providerHelp">在服务商控制台创建密钥。</span></div>
    
    <button id="openrouterLogin" type="button" class="outline full">使用 OpenRouter 账号授权我的额度</button>

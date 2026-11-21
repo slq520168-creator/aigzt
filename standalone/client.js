@@ -98,6 +98,7 @@ const KEY_SITES={
  groq:{url:"https://console.groq.com/keys",name:"获取 Groq 密钥"},
  cerebras:{url:"https://cloud.cerebras.ai/",name:"打开 Cerebras 控制台"},
  openai:{url:"https://platform.openai.com/api-keys",name:"获取 OpenAI 密钥"},
+ claude:{url:"https://console.anthropic.com/settings/keys",name:"获取 Claude API 密钥"},
  grok:{url:"https://console.x.ai/",name:"打开 xAI 控制台"},
  gemini:{url:"https://aistudio.google.com/apikey",name:"获取 Gemini 密钥"},
  qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"},
@@ -455,32 +456,50 @@ async function uploadSelected(files){
 
 
 const WORK_PROVIDER_NAMES={
- free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",
+ free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",claude:"Anthropic Claude API",
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
  minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
 };
 const WORK_AGENT_PRODUCTS=[
- {name:"QwenWork",desc:"千问办公 · Agent 工作平台",url:"https://qwenwork.cn",category:"综合工作"},
- {name:"ChatGPT Work",desc:"OpenAI · 多步骤工作代理",url:"https://chatgpt.com",category:"综合工作"},
- {name:"Manus",desc:"通用 AI 执行代理",url:"https://manus.im",category:"综合工作"},
- {name:"Kimi Work",desc:"Kimi · 桌面工作代理",url:"https://www.kimi.com/en/help/others/product-comparison",category:"综合工作"},
- {name:"OpenAI Codex",desc:"OpenAI · 编程代理",url:"https://chatgpt.com/codex",category:"编程开发"},
- {name:"Google Antigravity",desc:"Google · 开发代理工作台",url:"https://antigravity.google",category:"编程开发"},
- {name:"Kimi Code",desc:"Kimi · 编程代理",url:"https://www.kimi.com/code/en",category:"编程开发"},
- {name:"Qwen Code",desc:"千问 · 开源编程代理",url:"https://github.com/QwenLM/qwen-code",category:"编程开发"}
+ {name:"QwenWork",desc:"千问 · 办公工作代理",url:"https://qwenwork.cn",region:"中国",kind:"work"},
+ {name:"WorkBuddy",desc:"腾讯 · AI 办公工作台",url:"https://cloud.tencent.com/product/workbuddy",region:"中国",kind:"work"},
+ {name:"Kimi Work",desc:"Kimi · 多步骤工作",url:"https://www.kimi.com/en/help/others/product-comparison",region:"中国",kind:"work"},
+ {name:"Manus",desc:"通用任务代理",url:"https://manus.im",region:"中国",kind:"work"},
+ {name:"Qwen Code",desc:"千问 · 编程代理",url:"https://github.com/QwenLM/qwen-code",region:"中国",kind:"dev"},
+ {name:"Kimi Code",desc:"Kimi · 编程代理",url:"https://www.kimi.com/code/en",region:"中国",kind:"dev"},
+ {name:"Claude（含 Cowork）",desc:"Anthropic · 办公与多步骤工作",url:"https://claude.com/product/cowork",region:"国际",kind:"work"},
+ {name:"Claude Code",desc:"Anthropic · 编程代理",url:"https://claude.com/product/claude-code",region:"国际",kind:"dev"},
+ {name:"ChatGPT Work",desc:"OpenAI · 工作代理",url:"https://chatgpt.com",region:"国际",kind:"work"},
+ {name:"OpenAI Codex",desc:"OpenAI · 编程代理",url:"https://chatgpt.com/codex",region:"国际",kind:"dev"},
+ {name:"Google Antigravity",desc:"Google · 开发代理",url:"https://antigravity.google",region:"国际",kind:"dev"},
+ {name:"Nova AI（Mac Agent）",desc:"Mac · 网页、邮件和自动任务",url:"https://nova-ai-agent.com/",region:"国际",kind:"work"},
+ {name:"Nova（Agent Workspace）",desc:"Mac · Claude / ChatGPT 代理工作台",url:"https://supernova.md/",region:"国际",kind:"work"},
+ {name:"GigaAgent（ГигаАгент）",desc:"Sber · 俄罗斯自主任务代理",url:"https://www.sberbank.ru/ru/sberpress/all/article?blockID=1303&lang=ru&newsID=79a5051e-0de1-40eb-94b7-10ca383ca531&regionID=78&type=NEWS",region:"俄罗斯",kind:"work"},
+ {name:"GigaCowork",desc:"Sber · 团队协作工作代理",url:"https://www.sberbank.ru/ru/sberpress/tekhnologii/article?blockID=69b149cd-6db4-45aa-ade1-b6920d771b11&lang=ru&newsID=d43562d5-d15c-49af-88bb-8ad23bdd3323&regionID=77&type=NEWS",region:"俄罗斯",kind:"work"},
+ {name:"GigaCode",desc:"Sber · 编程代理",url:"https://www.sberbank.ru/ru/sberpress/tekhnologii/article?blockID=69b149cd-6db4-45aa-ade1-b6920d771b11&lang=ru&newsID=b91a0cfe-70f9-47cb-aa52-c19ebacc6197&regionID=16&type=NEWS",region:"俄罗斯",kind:"dev"},
+ {name:"Alice AI Agents（Алиса AI）",desc:"Yandex · 研究、预约等工作代理",url:"https://alice.yandex.ru/support/ru/assistant/chat/agents",region:"俄罗斯",kind:"work"},
+ {name:"Yandex AI Studio · Agent Atelier",desc:"Yandex Cloud · AI 代理开发",url:"https://yandex.cloud/en/docs/stackland/concepts/components/ai-studio",region:"俄罗斯",kind:"dev"},
+ {name:"GigaChat",desc:"Sber · 俄罗斯模型及 AI 助手",url:"https://giga.chat/portal",region:"俄罗斯",kind:"assistant"},
+ {name:"Alice AI / YandexGPT",desc:"Yandex · 俄罗斯 AI 助手及模型",url:"https://alice.yandex.ru/about",region:"俄罗斯",kind:"assistant"}
 ];
 function renderWorkAgentCatalog(){
  const target=$("workAgentCatalog");target.replaceChildren();
- const selected=document.createDocumentFragment();
- for(const item of WORK_AGENT_PRODUCTS){
-  const link=node("a","work-agent-product");
-  link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
-  const details=node("span","work-agent-description");
-  details.append(node("strong","",item.name),node("small","",item.desc));
-  const meta=node("span","work-agent-meta","官网");
-  link.append(details,meta);selected.append(link);
+ for(const region of ["中国","国际","俄罗斯"]){
+  const group=node("details","work-agent-group");
+  // Keep the huge directory compact on mobile while letting all groups open on demand.
+  group.open=region==="中国";
+  const items=WORK_AGENT_PRODUCTS.filter(x=>x.region===region);
+  const heading=node("summary","work-agent-region",region+" · "+items.length+" 项");
+  const grid=node("div","work-agent-items");
+  for(const item of items){
+   const link=node("a","work-agent-product");link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
+   const details=node("span","work-agent-description");
+   details.append(node("strong","",item.name),node("small","",item.desc));
+   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":"官网");
+   link.append(details,meta);grid.append(link);
+  }
+  group.append(heading,grid);target.append(group);
  }
- target.append(selected);
 }
 function resetWorkPlan(){
  S.workStages=[

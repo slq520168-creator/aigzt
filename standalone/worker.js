@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-5.0-agent-identity";
+const VERSION="aigzt-cf-5.1-agents-claude";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -18,6 +18,7 @@ const FREE_MODELS=[
 const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
  openai:{host:"api.openai.com",path:"/v1/responses",models:"/v1/models"},
+ claude:{host:"api.anthropic.com",path:"/v1/messages",models:"/v1/models"},
  grok:{host:"api.x.ai",path:"/v1/chat/completions",models:"/v1/models"},
  gemini:{host:"generativelanguage.googleapis.com",models:"/v1beta/models"},
  qwen:{host:"dashscope-intl.aliyuncs.com",path:"/compatible-mode/v1/chat/completions",models:"/compatible-mode/v1/models"},
@@ -188,7 +189,7 @@ async function providerModels(body){
  if(!HOSTS[id])throw Error("不支持该服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("请输入自己的有效 API Key");
  const h=HOSTS[id],manual=typeof body.model==="string"&&/^[\w.:/-]{1,160}$/.test(body.model)?body.model:null;
- const headers=id==="gemini"?{"x-goog-api-key":key}:{Authorization:"Bearer "+key};
+ const headers=id==="gemini"?{"x-goog-api-key":key}:id==="claude"?{"x-api-key":key,"anthropic-version":"2026-10-21"}:{Authorization:"Bearer "+key};
  let resp;
  try{resp=await fetch("https://"+h.host+h.models,{headers,redirect:"manual",signal:AbortSignal.timeout(10000)})}
  catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"连接服务商超时":"无法连接服务商网络，请稍后重试"),{status:503})}
@@ -230,6 +231,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  if(!isOpenRouterFree&&consent!==true)throw Error("请先确认使用本人额度；若账户启用付费可能产生费用");
  const host=HOSTS[provider],headers={"content-type":"application/json","accept":"application/json"};
  if(provider==="gemini")headers["x-goog-api-key"]=key;
+ else if(provider==="claude"){headers["x-api-key"]=key;headers["anthropic-version"]="2026-10-21";}
  else headers.authorization="Bearer "+key;
  let target="https://"+host.host+(host.path||"/"),body;
  const history=messages.map(m=>({role:m.role,content:truncate(m.body,3000)}));
@@ -238,6 +240,10 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}))};
  }else if(provider==="openai"){
   body={model,input:history,max_output_tokens:maxTokens};
+ }else if(provider==="claude"){
+  const system=history.filter(m=>m.role==="system").map(m=>m.content).join("\n\n");
+  const turns=history.filter(m=>m.role==="user"||m.role==="assistant");
+  body={model,max_tokens:maxTokens,messages:turns.length?turns:[{role:"user",content:"你好"}],...(system?{system}:{})};
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
@@ -248,6 +254,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  const out=await res.json();
  const text=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("\n"):
  provider==="openai"?(out.output_text||(out.output||[]).flatMap(o=>o.content||[]).map(x=>x.text||"").join("\n")):
+ provider==="claude"?(out.content||[]).filter(x=>x.type==="text").map(x=>x.text||"").join("\n"):
  out.choices?.[0]?.message?.content;
  if(typeof text!=="string"||!text.trim())throw Error("服务商没有返回有效文字");
  return {content:truncate(text,40000),actualModel:out.model||model};
