@@ -204,7 +204,7 @@ async function providerModels(body){
  }
  const json=await resp.json();
  let models=id==="gemini"?(json.models||[]).filter(x=>x.name?.startsWith("models/gemini-")).map(x=>({id:x.name.slice(7),name:x.displayName||x.name})):
-  (json.data||[]).filter(x=>x.id).map(x=>({id:x.id,name:x.name||x.id}));
+  (json.data||[]).filter(x=>x.id&&x.lifecycle!=="retired").map(x=>({id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":"")}));
  if(!Array.isArray(models)||models.length===0)throw Object.assign(new Error("连接成功但服务商没有返回可用模型"),{status:502});
  return {ok:true,models:models.slice(0,500),verified:true};
 }
