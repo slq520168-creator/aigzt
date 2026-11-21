@@ -5,7 +5,7 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4-project-memory";
+const VERSION="aigzt-cf-4.1-unified";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
@@ -96,7 +96,7 @@ async function authentication(req,env,action){
 }
 function requireModelId(model){if(typeof model!=="string"||model.length>160||!/^[\w.:/-]+$/.test(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
-async function listModels(){
+async function listModels(env){
  try{
  const url="https://openrouter.ai/api/v1/models";
  const req=new Request(url,{headers:{"Accept":"application/json"}});
@@ -188,10 +188,10 @@ async function callExternal(provider,model,key,messages,consent){
  return {content:truncate(text,40000),actualModel:out.model||model};
 }
 async function quota(env,userId,kind="text"){
- const day=new Date().toISOString().slice(0,10)+(kind==="image"?":image":"");
- const userLimit=kind==="image"?1:USER_DAILY,siteLimit=kind==="image"?4:SITE_DAILY;
+ const day=new Date().toISOString().slice(0,10)+(kind==="image"?":image":kind==="upload"?":upload":"");
+ const userLimit=kind==="image"?2:kind==="upload"?15:USER_DAILY,siteLimit=kind==="image"?25:kind==="upload"?180:SITE_DAILY;
  const a=await dbRun(env.DB,"INSERT INTO usage_user(day,user_id,used) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET used=used+1 WHERE used<?",day,userId,userLimit);
- if(!a.meta?.changes)throw Object.assign(new Error("今日免费对话次数已用完"),{status:429});
+ if(!a.meta?.changes)throw Object.assign(new Error(kind==="image"?"今日免费图片次数已用完":kind==="upload"?"今日上传次数已用完":"今日免费聊天次数已用完"),{status:429});
  const b=await dbRun(env.DB,"INSERT INTO usage_site(day,used) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used<?",day,siteLimit);
  if(!b.meta?.changes){
   await dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId);
@@ -208,6 +208,7 @@ async function freeText(env,messages,mode,preferred="free:auto"){
   {id:"vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"vexa",ms:8000,query:true}
  ];
  if(env.OPENROUTER_FREE_KEY)sources.push({id:"openrouter",endpoint:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY,ms:9000});
+ if(env.GROQ_FREE_KEY)sources.push({id:"groq",endpoint:"https://api.groq.com/openai/v1/chat/completions",model:"llama-3.1-8b-instant",key:env.GROQ_FREE_KEY,ms:9000});
  const preferredId=preferred.split(":")[1],order=preferredId==="auto"?sources:[...sources.filter(x=>x.id===preferredId),...sources.filter(x=>x.id!==preferredId)];
  for(const source of order){
   try{
@@ -313,12 +314,15 @@ async function uploadFile(req,env,user){
  const formReq=new Request(req.url,{method:"POST",headers:{"content-type":req.headers.get("content-type")||""},body:new Blob(parts)});
  const form=await formReq.formData(),file=form.get("file");
  if(!(file instanceof File))throw Error("请选择文件");
- const type=String(file.type||"").toLowerCase();
- if(!["image/jpeg","image/png","image/webp","image/gif","text/plain","text/markdown","text/csv","application/pdf"].includes(type))throw Error("仅支持常见图片、PDF、TXT、MD、CSV");
+ const originalType=String(file.type||"").toLowerCase();
+ const type=(originalType==="application/octet-stream"||!originalType)&&/\.(heic|heif)$/i.test(file.name)?(/\.heif$/i.test(file.name)?"image/heif":"image/heic"):originalType;
+ if(!["image/jpeg","image/png","image/webp","image/gif","image/heic","image/heif","text/plain","text/markdown","text/csv","application/pdf"].includes(type))throw Error("仅支持常见图片、PDF、TXT、MD、CSV");
  if(!file.size||file.size>8000000)throw Error("单文件上限8MB");
  const name=String(file.name||"附件").replace(/[<>\x00-\x1f]/g,"").slice(0,110)||"附件";
  const id=crypto.randomUUID();
- await env.MEDIA.put(user.id+"/"+id,file.stream(),{httpMetadata:{contentType:type},customMetadata:{name}});
+ const refund=await quota(env,user.id,"upload");
+ try{await env.MEDIA.put(user.id+"/"+id,file.stream(),{httpMetadata:{contentType:type},customMetadata:{name}})}
+ catch(e){await refund().catch(()=>{});throw e}
  return {ok:true,id,name,type,size:file.size,url:"/api/files/"+id};
 }
 async function readFile(env,user,id){
@@ -351,32 +355,41 @@ async function mediaChat(req,env,user){
 
 async function createImage(req,env,user){
  requireUser(user);
- const body=await parseJSON(req),prompt=truncate(body.prompt,1400).trim();
+ const body=await parseJSON(req),prompt=truncate(body.prompt,1000).trim();
  if(!prompt)throw Error("请输入图片描述");
- if(!env.MEDIA)throw Object.assign(new Error("独立文件存储未绑定"),{status:503});
+ if(!env.MEDIA)throw Object.assign(new Error("独立图片存储未绑定"),{status:503});
  const refund=await quota(env,user.id,"image");
- try{
-  const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({prompt,model:"hd",preference:"quality"}),signal:AbortSignal.timeout(19000)});
-  if(!res.ok)throw Error("外部免费作图接口暂时不可用");
-  const result=await res.json(),url=new URL(String(result.proxy_url||""));
-  if(result.success!==true||result.model!=="hd"||result.source!=="deepai.org"||url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/"))throw Error("外部免费作图未返回有效图片");
-  const image=await fetch(url.href,{signal:AbortSignal.timeout(19000)});
-  if(!image.ok||!String(image.headers.get("content-type")||"").startsWith("image/"))throw Error("图片获取失败");
-  if(Number(image.headers.get("content-length")||0)>6_000_000)throw Error("生成图片过大");
-  const reader=image.body?.getReader();if(!reader)throw Error("外部图片为空");
-  const chunks=[];let total=0;
-  for(;;){
-   const {done,value}=await reader.read();if(done)break;
-   total+=value.byteLength;if(total>6_000_000){await reader.cancel().catch(()=>{});throw Error("图片超过6MB")}
-   chunks.push(value);
-  }
-  if(total<1024)throw Error("生成图片无效");
-  const data=new Uint8Array(total);let at=0;for(const ch of chunks){data.set(ch,at);at+=ch.byteLength}
-  const id=crypto.randomUUID();
-  await env.MEDIA.put(user.id+"/"+id,data,{httpMetadata:{contentType:"image/jpeg"},customMetadata:{name:"AI 生成图片.jpg"}});
-  return {ok:true,image:"/api/files/"+id,model:"Vexa HD / DeepAI 外部免费"};
- }catch(e){await refund().catch(()=>{});throw e}
+ let lastError;
+ for(const model of ["hd","flux","turbo-img"]){
+  try{
+   const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({prompt,model,preference:"quality"}),redirect:"manual",signal:AbortSignal.timeout(15000)});
+   if(!res.ok||res.status>=300)throw Error(model+" 生成服务暂时不可用");
+   const result=await res.json();
+   const url=new URL(String(result.proxy_url||""));
+   if(result.success!==true||result.model!==model||url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/"))throw Error("没有获得可信生成图片");
+   if(!["deepai.org","pollinations.ai"].includes(result.source))throw Error("图片来源无效");
+   const image=await fetch(url.href,{redirect:"manual",signal:AbortSignal.timeout(15000)});
+   if(!image.ok||image.status>=300||!String(image.headers.get("content-type")||"").startsWith("image/"))throw Error("生成图片无法读取");
+   const reader=image.body?.getReader();if(!reader)throw Error("图片内容为空");
+   const chunks=[];let total=0;
+   for(;;){
+    const {done,value}=await reader.read();if(done)break;
+    total+=value.byteLength;
+    if(total>6_000_000){await reader.cancel().catch(()=>{});throw Error("生成图片超过6MB")}
+    chunks.push(value);
+   }
+   if(total<1024)throw Error("生成图片文件无效");
+   const data=new Uint8Array(total);let at=0;for(const part of chunks){data.set(part,at);at+=part.byteLength}
+   const id=crypto.randomUUID();
+   const mime=String(image.headers.get("content-type")||"").split(";")[0];
+   await env.MEDIA.put(user.id+"/"+id,data,{httpMetadata:{contentType:mime},customMetadata:{name:"AI 生成图片"}});
+   return {ok:true,image:"/api/files/"+id,model:"Vexa "+model+" · "+result.source};
+  }catch(e){lastError=e}
+ }
+ await refund().catch(()=>{});
+ throw Object.assign(new Error("免费作图线路暂时不可用，请稍后再试"),{status:503,cause:lastError});
 }
+
 async function createVideo(req,user){
  requireUser(user);
  const body=await parseJSON(req);
@@ -428,7 +441,7 @@ async function main(req,env){
   }
  }
  const user=await getUser(req,env);
- if(path==="/api/models"&&req.method==="GET")return response(await listModels());
+ if(path==="/api/models"&&req.method==="GET")return response(await listModels(env));
  if(path==="/api/me"&&req.method==="GET"){
   const day=new Date().toISOString().slice(0,10);
   const u=user?await dbGet(env.DB,"SELECT used FROM usage_user WHERE day=? AND user_id=?",day,user.id):null;
