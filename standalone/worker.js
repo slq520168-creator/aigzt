@@ -80,6 +80,10 @@ async function authentication(req,env,action){
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>150)return fail("邮箱格式不正确");
  if(pass.length<12||pass.length>160)return fail("密码至少12位，最多160位");
  if(action==="register"){
+  const day=new Date().toISOString().slice(0,10);
+  const iphash=await sha(req.headers.get("cf-connecting-ip")||"unknown");
+  const attempt=await dbRun(env.DB,"INSERT INTO signup_limits(day,iphash,used) VALUES(?,?,1) ON CONFLICT(day,iphash) DO UPDATE SET used=used+1 WHERE used<2",day,iphash);
+  if(!attempt.meta?.changes)return fail("当前网络今日注册次数达到上限，请明天再试",429);
   const salt=random(16),hash=await passwordHash(pass,salt),id=crypto.randomUUID(),now=Date.now();
   try{await dbRun(env.DB,"INSERT INTO users(id,email,passhash,salt,created_at) VALUES(?,?,?,?,?)",id,email,hash,salt,now)}
   catch{return fail("该邮箱已注册，请登录",409)}
