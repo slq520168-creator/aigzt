@@ -4,11 +4,11 @@
  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
  <meta name="theme-color" content="#ffffff">
  <meta name="apple-mobile-web-app-capable" content="yes">
- <meta name="apple-mobile-web-app-status-bar-style" content="default">
+ <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
  <meta name="mobile-web-app-capable" content="yes">
- <link rel="manifest" href="/manifest.webmanifest">
+ <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="icon" type="image/svg+xml" href="/app-icon.svg">
  <meta name="description" content="AIGZT 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
- <title>AIGZT · AI 聚合工作台</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='17' fill='%2312242a'/%3E%3Cpath d='M14 44L32 13l18 31H14Z' fill='none' stroke='white' stroke-width='6'/%3E%3C/svg%3E">
+ <title>AIGZT · AI 聚合工作台</title>
  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
 </head>
 <body>
@@ -31,7 +31,7 @@
     <div id="projectsList" class="project-list" aria-label="项目列表"></div>
     <div class="sidebar-links">
      <button class="nav-row" id="navWork"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作任务</span></button>
-     <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>AI 模型</span></button>
+     <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>AI 模型</span><small id="modelTitle" class="side-model-label">免费自动</small></button>
      <button class="nav-row" id="navFreeTools"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>免费工具</span></button>
      <button class="nav-row" id="groqConnect"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span>Groq 免费额度</span></button>
      <button class="nav-row" id="navFiles"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>已上传文件</span></button>
@@ -47,17 +47,17 @@
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
-    <div class="top-right"><button type="button" class="top-work" id="workOpen" aria-pressed="false" aria-label="进入工作模式">工作</button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><strong class="top-wordmark">aigzt</strong></div>
+    <div class="top-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <div class="work-header"><div><h2>工作模式</h2><p>工作代理与聊天模型是不同产品</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
-    <details class="work-agents" id="workAgents" open><summary>官方工作代理 <small>官网入口 · 不是普通模型</small></summary>
+    <div class="work-header"><div><h2>工作任务</h2><p>连续执行 · 自动接力 · 可恢复</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
+    <details class="work-agents" id="workAgents"><summary>官方工作代理 <small>官网入口 · 不是普通模型</small></summary>
      <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
      <div id="workAgentCatalog" class="work-agent-catalog"></div>
      <p class="work-agent-disclaimer">第三方工作代理使用官方账号独立运行；本站目前只提供官网入口。Claude API 可在「连接 AI」另行使用个人密钥，不等于获得 Claude Cowork 权限。</p>
     </details>
-    <details class="work-config" id="workConfig" open>
+    <details class="work-config" id="workConfig">
      <summary>执行配置 <span id="workConfigSummary">按任务自由配置</span></summary>
      <div class="work-config-body">
       <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
@@ -65,7 +65,7 @@
       <div class="work-config-foot"><button type="button" class="outline" id="workSaveConfig">保存任务配置</button><span id="workConfigMessage" role="status"></span></div>
      </div>
     </details>
-    <div id="workEmpty" class="work-empty">配置好执行 AI，在下方输入任务即可。</div>
+    <div id="workEmpty" class="work-empty">在下方输入任务即可开始。需要调整执行 AI 时再展开配置。</div>
     <div id="workDetail" class="work-detail" hidden>
      <h3 id="workTitle"></h3><div id="workState" class="work-state" role="status"></div>
      <div id="workProgress" class="work-progress"></div>
@@ -165,15 +165,15 @@
  </dialog>
 
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
-  <div class="modal-head"><div><h2>选择模型</h2><p id="modelSummary"></p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
-  <div class="model-tools"><input id="modelSearch" placeholder="搜索 GPT、Grok、Gemini、Qwen、编程模型…" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
-  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">所有来源</button><button class="chip" data-source="free">外部免费</button><button class="chip" data-source="openrouter">OpenRouter</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button></div>
-  <div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
+  <div class="modal-head"><div><h2>选择模型</h2><p id="modelSummary">默认免费自动</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
+  <div class="model-tools"><input id="modelSearch" placeholder="搜索模型名称或 ID…" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
+  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="free">免费线路</button><button class="chip" data-source="connected">已连接</button><button class="chip" data-source="all">全部模型</button></div>
+  <details class="model-extra" id="modelExtra"><summary>更多服务商与工具</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
   <div class="model-quick">
    <button type="button" class="quick-entry" id="groqQuick"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span><strong>Groq 免费额度</strong><small>用个人免费 Key 连接</small></span></button>
    <button type="button" class="quick-entry" id="imageQuick"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span><strong>作图</strong><small>聊天内生成</small></span></button>
   </div>
-  <div class="model-count" id="modelCount">正在读取真实模型目录…</div>
+  </details><div class="model-count" id="modelCount">正在读取真实模型目录…</div>
   <div class="model-list" id="modelList"></div>
   <button class="outline full" id="moreModels" type="button" hidden>加载更多模型</button>
  </dialog>
@@ -189,7 +189,7 @@
    <label class="check-row"><input type="checkbox" id="allowPaid"><span>授权使用我的服务商额度（若账户启用计费，可能产生费用）。</span></label>
    <p class="small-note">加密保存到当前账号，重新登录自动恢复，可随时删除。</p>
    <p id="keyStatus" class="form-message"></p>
-   <button class="primary full" id="keySaveLabel" type="submit">验证并保存</button><button type="button" class="outline full" id="disconnectProvider" hidden>删除已保存密钥</button>
+   <button type="button" class="primary full" id="useSavedKey" hidden>使用已保存的连接</button><button class="primary full" id="keySaveLabel" type="submit">加密保存密钥</button><button type="button" class="outline full" id="disconnectProvider" hidden>删除已保存密钥</button>
   </form>
  </dialog>
 
