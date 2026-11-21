@@ -96,6 +96,7 @@ async function authentication(req,env,action){
 function requireModelId(model){if(typeof model!=="string"||model.length>160||!/^[\w.:/-]+$/.test(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
 async function listModels(){
+ try{
  const url="https://openrouter.ai/api/v1/models";
  const req=new Request(url,{headers:{"Accept":"application/json"}});
  const cache=caches.default;
@@ -121,6 +122,11 @@ async function listModels(){
    inputImages:inMods.includes("image"),description:truncate(m.description,160)};
  });
  return {ok:true,at:new Date().toISOString(),freeModels:FREE_MODELS,models,count:models.length};
+ }catch(error){
+  // A failed external catalog must not hide locally verified free models.
+  return {ok:true,at:new Date().toISOString(),freeModels:FREE_MODELS,
+   models:[],count:0,catalogError:"外部公开模型目录暂不可用；本站免费模型仍可使用"};
+ }
 }
 async function providerModels(body){
  const id=String(body.provider||""),key=body.apiKey;
