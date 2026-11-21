@@ -146,6 +146,21 @@ async function providerModels(body){
   (json.data||[]).filter(x=>x.id).map(x=>({id:x.id,name:x.name||x.id}));
  return {ok:true,models:models.slice(0,500)};
 }
+async function exchangeOpenRouter(body){
+ const code=body?.code,verifier=body?.verifier;
+ if(typeof code!=="string"||code.length<5||code.length>400||/[\r\n\0]/.test(code))throw Error("无效的 OpenRouter 登录授权代码");
+ if(typeof verifier!=="string"||!/^[A-Za-z0-9_-]{43,128}$/.test(verifier))throw Error("OpenRouter 登录校验失败");
+ const resp=await fetch("https://openrouter.ai/api/v1/auth/keys",{
+  method:"POST",headers:{"content-type":"application/json",accept:"application/json"},
+  body:JSON.stringify({code,code_verifier:verifier,code_challenge_method:"S256"}),
+  redirect:"manual",signal:AbortSignal.timeout(15000)
+ });
+ if(resp.status>=300&&resp.status<400)throw Error("登录授权返回重定向，已停止");
+ if(!resp.ok)throw Error("OpenRouter 官方授权失败，HTTP "+resp.status);
+ const payload=await resp.json();
+ if(typeof payload?.key!=="string"||!payload.key)throw Error("OpenRouter 没有返回授权密钥");
+ return {ok:true,key:payload.key,provider:"openrouter"};
+}
 async function callExternal(provider,model,key,messages,consent){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
@@ -313,6 +328,7 @@ async function main(req,env){
  }
  if(!user)return fail("请先登录独立 AIGZT 账号",401);
  if(path==="/api/provider-models"&&req.method==="POST")return response(await providerModels(await parseJSON(req)));
+ if(path==="/api/openrouter/exchange"&&req.method==="POST")return response(await exchangeOpenRouter(await parseJSON(req)));
  if(path==="/api/image"&&req.method==="POST")return response(await createImage(req,env,user));
  if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,user));
  if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,user));
