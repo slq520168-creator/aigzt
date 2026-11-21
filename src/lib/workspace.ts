@@ -4,6 +4,6 @@ export type WorkspaceMessage = {role:"user"|"assistant";content:string;model?:st
 export type WorkspaceChat = {
  title:string; messages:WorkspaceMessage[]; updatedAt:string; projectId?:string;
  mode?:"general"|"creative"|"code"|"analysis"|"translate";
- engine?:"native"|"gateway"|"openrouter"|"groq"|"cerebras"; modelChoice?:string
+ engine?:"native"|"gateway"|"openai"|"grok"|"gemini"|"qwen"|"openrouter"|"groq"|"cerebras"; modelChoice?:string
 }
 export function issueText(e:unknown):string {return e instanceof Error?e.message:String(e)}

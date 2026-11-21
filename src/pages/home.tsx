@@ -125,6 +125,7 @@ export default function Home() {
  },[showHistory])
 
  function startNew(){setSelected(null);setProjectForNew(null);setModeForNew("general");setDraft("");setSelectedImages([]);setPending(null);setStreaming(null);setNotice("");setShowHistory(false);setDeleteConfirm(false)}
+ function startCoding(){if(inFlight.current)return;startNew();setModeForNew("code");setDraft("请帮我完成以下编程需求，给出完整可运行代码、错误处理和验证步骤：\n");setShowHistory(false);editor.current?.focus()}
  function openChat(key:string){const v=entries?.find(e=>e.key===key)?.value;setSelected(key);setShowHistory(false);setPending(null);setStreaming(null);setSelectedImages([]);setNotice("");setDeleteConfirm(false);setEngine(v?.engine??"native");setStrategy(v?.modelChoice??"auto")}
  useEffect(()=>{
   const source=urlParams.get("source"),model=urlParams.get("model")
@@ -287,6 +288,8 @@ export default function Home() {
   </div>
   <div className="shrink-0 border-t border-border/60 pt-2">
    <Link to="/directory" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Layers3 className="size-4"/>模型管理</Link>
+   <Link to="/create" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><ImagePlus className="size-4"/>图片与视频创作</Link>
+   <button type="button" className="chat-sidebar-action" onClick={startCoding}><Code2 className="size-4"/>编程助手</button>
    <Link to="/projects" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><FolderKanban className="size-4"/>项目</Link>
    <Link to="/settings" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Settings2 className="size-4"/>设置</Link>
    {me?<button type="button" onClick={()=>setShowAccount(v=>!v)} className="chat-sidebar-action truncate"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{me.email.slice(0,1).toUpperCase()}</span><span className="truncate">{me.email}</span></button>:<button type="button" className="chat-sidebar-action" onClick={()=>tiny.login()}>登录工作台</button>}
@@ -337,6 +340,9 @@ export default function Home() {
         {selectedProject&&<button type="button" className="chat-mode" onClick={()=>{editor.current?.blur();setShowProjectMenu(v=>!v);setShowTools(false)}}><FolderKanban className="size-3.5"/><span className="max-w-24 truncate">{selectedProject.value.name}</span></button>}
         {showTools&&<div className="chat-pop bottom-12 left-0 w-56">
          <button type="button" className="chat-pop-row" disabled={busy||converting||engine!=="native"} onClick={()=>{setShowTools(false);imageInput.current?.click()}}><ImagePlus className="size-4"/>添加图片</button>
+         <Link className="chat-pop-row" to="/create?mode=image" onClick={()=>setShowTools(false)}><ImagePlus className="size-4"/>AI 生成图片</Link>
+         <Link className="chat-pop-row" to="/create?mode=video" onClick={()=>setShowTools(false)}><ImageIcon className="size-4"/>AI 生成视频</Link>
+         <button type="button" className="chat-pop-row" onClick={startCoding}><Code2 className="size-4"/>编程助手</button>
          <button type="button" className="chat-pop-row" onClick={()=>{setShowTools(false);setShowProjectMenu(true)}}><FolderKanban className="size-4"/>关联项目</button><div className="my-1 border-t"/>
          {tools.map(t=><button type="button" key={t.id} className="chat-pop-row" onClick={()=>{void changeMode(t.id);setShowTools(false)}}>{t.id===activeMode?<Check className="size-4"/>:<span className="size-4"/>}{t.label}</button>)}
         </div>}

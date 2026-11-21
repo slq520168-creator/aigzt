@@ -9,7 +9,7 @@ import {issueText} from "@/lib/workspace"
 
 type Favorite={source:ModelEngine;id:string;name:string;addedAt:string}
 type Props={view:"sheet"|"page";currentSource?:ModelEngine;currentModel?:string;initialTab?:"favorites"|"browse";onChoose:(s:ModelEngine,m:string)=>void;onClose?:()=>void}
-const SOURCES:ModelEngine[]=["native","openrouter","groq","cerebras","gateway"]
+const SOURCES:ModelEngine[]=["native","openai","grok","gemini","qwen","openrouter","groq","cerebras","gateway"]
 const favKey=(source:ModelEngine,id:string)=>"model-fav:"+source+":"+encodeURIComponent(id)
 
 export default function ModelCatalog({view,currentSource="native",currentModel="auto",initialTab="favorites",onChoose,onClose}:Props){
@@ -80,6 +80,7 @@ export default function ModelCatalog({view,currentSource="native",currentModel="
    <button type="button" onClick={()=>{setTab("favorites");setQuery("");setError("")}} className={"model-tab "+(tab==="favorites"?"model-tab-active":"")}><Star className="size-4"/>常用 {favorites.length}</button>
    <button type="button" onClick={()=>{setTab("browse");setQuery("");setError("")}} className={"model-tab "+(tab==="browse"?"model-tab-active":"")}><Search className="size-4"/>浏览与添加</button>
   </div>
+  {tab==="favorites"&&<div className="flex shrink-0 flex-wrap gap-1.5 border-b px-4 py-2">{(["openai","grok","gemini","qwen"] as const).map(id=><button type="button" key={id} onClick={()=>selectSource(id)} className="inline-flex h-8 items-center rounded-xl border border-border/60 px-3 text-xs hover:bg-muted">{engineName(id)}</button>)}<Link to="/create" className="inline-flex h-8 items-center rounded-xl border border-border/60 px-3 text-xs hover:bg-muted">画图 · 视频</Link></div>}
   {tab==="browse"&&<div className="model-source-list flex shrink-0 gap-1 overflow-x-auto border-b px-4 py-2">
    {SOURCES.map(id=><button key={id} type="button" className={"model-source-tab "+(source===id?"model-source-selected":"")} onClick={()=>selectSource(id)}>{engineName(id)}{loaded[id]&&<Check className="size-3.5 text-primary"/>}</button>)}
   </div>}
