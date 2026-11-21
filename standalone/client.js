@@ -124,8 +124,11 @@ function refreshKeyPanel(){
  $("personalKey").value="";
  $("personalKey").placeholder=rec?"已保存，无需再次填写；更换时才输入新密钥":"粘贴 API Key";
  $("keySaveLabel").textContent=rec?"更换并保存密钥":"加密保存密钥";
+ $("savedConnectionPanel").hidden=!rec;
  $("useSavedKey").hidden=!rec;
  $("disconnectProvider").hidden=!rec;
+ if(!$("personalKey").value)$("keyAdvanced").open=!rec;
+ $("keyAdvancedSummary").textContent=rec?"更换 API Key（不需要时无需展开）":"首次连接 · 输入 API Key";
  $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini";
  $("allowPaid").checked=Boolean(rec?.consent);
  $("keyStatus").textContent=rec?(rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
@@ -435,7 +438,7 @@ function newChat(){
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
  S.chatId=null;S.attachments=[];renderAttachments();setFreeDefault();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
- $("prompt").value="";resizePrompt();flashError("");renderHistory();closeMenu();
+ $("prompt").value="";settlePromptSize();flashError("");renderHistory();closeMenu();
  $("prompt").focus();
 }
 async function loadChat(id){
@@ -473,13 +476,24 @@ function setModel(row){
 }
 
 function resizePrompt(){
- const textarea=$("prompt");
- if(!textarea)return;
- textarea.style.height="28px";
- const max=Math.max(90,Math.min(132,Math.round(window.innerHeight*.22)));
+ const textarea=$("prompt");if(!textarea)return;
+ textarea.style.height="auto";
+ const max=Math.max(88,Math.min(116,Math.round((window.visualViewport?.height||window.innerHeight)*.21)));
  const needed=textarea.scrollHeight;
- textarea.style.height=Math.max(28,Math.min(needed,max))+"px";
+ textarea.style.height=Math.max(24,Math.min(needed,max))+"px";
  textarea.style.overflowY=needed>max?"auto":"hidden";
+}
+function settlePromptSize(){
+ resizePrompt();
+ requestAnimationFrame(resizePrompt);
+}
+function syncMobileHeight(){
+ if(!window.visualViewport)return;
+ const active=document.activeElement;
+ const keyboardVisible=(active===$("prompt")||active?.matches?.("input,textarea"))&&window.visualViewport.height<window.innerHeight-90;
+ if(keyboardVisible)document.documentElement.style.setProperty("--aigzt-visible-height",Math.round(window.visualViewport.height)+"px");
+ else document.documentElement.style.removeProperty("--aigzt-visible-height");
+ resizePrompt();
 }
 
 function setComposerMode(mode){
@@ -867,7 +881,7 @@ async function startWorkTask(){
   const data=await api("/api/work/tasks",{prompt,provider:S.provider,model:S.model,projectId:S.activeProjectId,
    attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback});
   if(epoch!==S.workEpoch)return;
-  $("prompt").value="";resizePrompt();S.attachments=[];renderAttachments();
+  $("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
   S.workTaskId=data.id;S.workDetail=null;
   await selectWorkTask(data.id);await fetchWorkTasks();
  }catch(e){flashError(humanError(e));$("workState").textContent=humanError(e)}
@@ -939,7 +953,7 @@ async function sendMessage(){
  const isNew=!S.chatId;
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
- appendMessage("user",sentBody);$("prompt").value="";resizePrompt();S.attachments=[];renderAttachments();
+ appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status"),dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));dots.setAttribute("aria-hidden","true");
@@ -1020,8 +1034,8 @@ function modelMatches(m){
 }
 function renderModels(){
  const visible=allModels().filter(modelMatches);
- const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*45);
- $("modelCount").textContent="模型 "+count+" 项"+(S.source==="free"?" · 默认免费自动":"");
+ const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*30);
+ $("modelCount").textContent=count+" 项"+(S.source==="free"?" · 当前默认：免费自动":"");
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList");list.replaceChildren();
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的真实模型，请切换筛选。":"模型目录尚未连接成功。"));return}
@@ -1031,7 +1045,7 @@ function renderModels(){
   const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费线路":saved?"已连接":item.free?"免费 · 需连接":"需连接");
   title.append(tag);info.append(title,node("small","",item.provider==="free"?"平台路由 · 真实模型由上游决定":"接入平台："+item.provider+" · 模型 ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
-  const button=node("button","model-action",actionable?(item.type!=="text"?"使用":S.model===item.id?"已选":item.provider==="free"||saved?"选择":"连接"):"暂不支持");
+  const button=node("button","model-action",actionable?(item.type!=="text"?"使用":S.model===item.id?"已选":item.provider==="free"||saved?"使用":"连接"):"暂不支持");
   button.disabled=!actionable||S.model===item.id;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
@@ -1059,8 +1073,8 @@ function refreshSourceChips(){
  }
 }
 function openModels(){
- S.modelPage=0;S.filter="free";S.source="free";S.query="";$("modelSearch").value="";
- $("modelFilter").value="free";
+ S.modelPage=0;S.filter="all";S.source="free";S.query="";$("modelSearch").value="";
+ $("modelFilter").value="all";
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="free");
  show("modelDialog");void loadCatalog();
 }
@@ -1175,7 +1189,7 @@ async function verifyKey(event){
  event.preventDefault();
  if(!S.user){show("authDialog");return}
  const p=$("keyProvider").value,key=$("personalKey").value.trim();
- if(!key){$("keyStatus").textContent=S.savedProviders[p]?"已经保存；更换密钥才需要填写":"请先从官方页面获取 API Key";return}
+ if(!key){if(S.savedProviders[p]){await useSavedConnection();return}$("keyStatus").textContent="请先从官方页面获取 API Key";return}
  const submit=event.submitter||$("keyForm").querySelector('[type="submit"]');
  if(submit)submit.disabled=true;
  $("keyStatus").textContent="验证连接中…";
@@ -1192,7 +1206,7 @@ async function verifyKey(event){
    S.selectedFree=isFreeModel(p,rec.model);
   }
   S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
-  refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已加密保存 · 模型目录已验证":(data.warning||"密钥已加密保存 · 模型目录未验证");
+  refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已保存，下次打开直接使用":(data.warning||"密钥已保存，请选择官方模型 ID");
   if(rec.consent&&rec.verified&&rec.model){hide("keyDialog");$("prompt").focus()}
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
@@ -1250,8 +1264,13 @@ function wire(){
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendMessage()}});
- $("prompt").addEventListener("input",resizePrompt);
- window.addEventListener("resize",resizePrompt);
+ $("prompt").addEventListener("input",settlePromptSize);
+ $("prompt").addEventListener("change",settlePromptSize);
+ $("prompt").addEventListener("paste",()=>requestAnimationFrame(settlePromptSize));
+ $("prompt").addEventListener("blur",()=>{document.documentElement.style.removeProperty("--aigzt-visible-height");settlePromptSize()});
+ window.addEventListener("resize",syncMobileHeight);
+ if(window.visualViewport){window.visualViewport.addEventListener("resize",syncMobileHeight);window.visualViewport.addEventListener("scroll",syncMobileHeight)}
+
  document.addEventListener("click",e=>{if(!$("attachMenu").hidden&&!$("attachMenu").contains(e.target)&&!$("attachButton").contains(e.target))hideAttachMenu()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")hideAttachMenu()});
  for(const btn of els("[data-close]"))btn.addEventListener("click",()=>hide(btn.dataset.close));

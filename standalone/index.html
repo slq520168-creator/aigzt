@@ -3,10 +3,10 @@
 <head>
  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
  <meta name="theme-color" content="#ffffff">
- <meta name="apple-mobile-web-app-capable" content="yes">
+ <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="AIGZT">
  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
  <meta name="mobile-web-app-capable" content="yes">
- <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="icon" type="image/svg+xml" href="/app-icon.svg">
+ <link rel="manifest" href="/manifest.webmanifest?v=55"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=55"><link rel="icon" type="image/svg+xml" href="/app-icon.svg?v=55">
  <meta name="description" content="AIGZT 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
  <title>AIGZT · AI 聚合工作台</title>
  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
@@ -15,7 +15,7 @@
  <div class="shell" id="shell">
   <aside class="sidebar" id="sidebar" aria-label="聊天与项目">
    <div class="sidebar-top">
-    <div class="brand-lockup"><span class="brand-avatar" aria-hidden="true">A<i></i></span><strong class="brand">aigzt</strong></div>
+    <div class="brand-lockup"><img class="brand-app-icon" src="/app-icon.svg?v=55" alt="" aria-hidden="true" width="38" height="38"><strong class="brand">aigzt</strong></div>
     <button class="icon-btn sidebar-close" id="closeSide" aria-label="关闭侧栏"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button>
    </div>
    <div class="sidebar-primary">
@@ -47,25 +47,25 @@
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><strong class="top-wordmark">aigzt</strong></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button></div>
     <div class="top-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <div class="work-header"><div><h2>工作任务</h2><p>连续执行 · 自动接力 · 可恢复</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
-    <details class="work-agents" id="workAgents"><summary>官方工作代理 <small>官网入口 · 不是普通模型</small></summary>
+    <div class="work-header"><div><h2>工作</h2><p>任务与阶段自动保存 · 模型不可用时继续接力</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
+    <details class="work-agents" id="workAgents"><summary>其他工作代理 <small>官方入口</small></summary>
      <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
      <div id="workAgentCatalog" class="work-agent-catalog"></div>
      <p class="work-agent-disclaimer">第三方工作代理使用官方账号独立运行；本站目前只提供官网入口。Claude API 可在「连接 AI」另行使用个人密钥，不等于获得 Claude Cowork 权限。</p>
     </details>
     <details class="work-config" id="workConfig">
-     <summary>执行配置 <span id="workConfigSummary">按任务自由配置</span></summary>
+     <summary>配置执行步骤与模型 <span id="workConfigSummary">按任务自由配置</span></summary>
      <div class="work-config-body">
       <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
       <div class="work-config-section"><div class="work-section-heading"><strong>模型接力</strong><span>仅已授权的 API 模型参与自动切换</span></div><div id="workRouteEditor" class="work-route-editor"></div><button type="button" class="work-add" id="workAddRoute">+ 添加候补模型</button><label class="work-checkbox"><input type="checkbox" id="workFallback" checked>当前模型不可用时，自动尝试其他授权模型</label></div>
       <div class="work-config-foot"><button type="button" class="outline" id="workSaveConfig">保存任务配置</button><span id="workConfigMessage" role="status"></span></div>
      </div>
     </details>
-    <div id="workEmpty" class="work-empty">在下方输入任务即可开始。需要调整执行 AI 时再展开配置。</div>
+    <div id="workEmpty" class="work-empty"><strong>开始一项工作</strong><span>输入任务直接执行，需要调整 AI 时再展开配置。</span></div>
     <div id="workDetail" class="work-detail" hidden>
      <h3 id="workTitle"></h3><div id="workState" class="work-state" role="status"></div>
      <div id="workProgress" class="work-progress"></div>
@@ -165,10 +165,10 @@
  </dialog>
 
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
-  <div class="modal-head"><div><h2>选择模型</h2><p id="modelSummary">默认免费自动</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
-  <div class="model-tools"><input id="modelSearch" placeholder="搜索模型名称或 ID…" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
+  <div class="modal-head"><div><h2>模型</h2><p id="modelSummary">默认使用免费自动线路</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
+  <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="free">免费线路</button><button class="chip" data-source="connected">已连接</button><button class="chip" data-source="all">全部模型</button></div>
-  <details class="model-extra" id="modelExtra"><summary>更多服务商与工具</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
+  <details class="model-extra" id="modelExtra"><summary>连接更多服务商</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
   <div class="model-quick">
    <button type="button" class="quick-entry" id="groqQuick"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span><strong>Groq 免费额度</strong><small>用个人免费 Key 连接</small></span></button>
    <button type="button" class="quick-entry" id="imageQuick"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span><strong>作图</strong><small>聊天内生成</small></span></button>
@@ -180,17 +180,21 @@
 
  <dialog id="keyDialog" class="modal workspace-view">
   <div class="modal-head"><div><h2>连接 AI</h2></div><button class="close-modal" data-close="keyDialog" aria-label="关闭">×</button></div>
-  <form id="keyForm"><label>服务商
-   <select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option></select></label>
-   <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">获取官方 API Key</a><span id="providerHelp">在服务商控制台创建密钥。</span></div>
-   
-   <button id="openrouterLogin" type="button" class="outline full">使用 OpenRouter 账号授权我的额度</button>
-   <label>API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 API Key"></label><label id="manualModelWrap" hidden>模型 ID（无法查询模型目录时填写）<input id="manualModel" type="text" autocomplete="off" spellcheck="false" placeholder="服务商控制台中的模型 ID"></label>
-   <label class="check-row"><input type="checkbox" id="allowPaid"><span>授权使用我的服务商额度（若账户启用计费，可能产生费用）。</span></label>
-   <p class="small-note">加密保存到当前账号，重新登录自动恢复，可随时删除。</p>
-   <p id="keyStatus" class="form-message"></p>
-   <button type="button" class="primary full" id="useSavedKey" hidden>使用已保存的连接</button><button class="primary full" id="keySaveLabel" type="submit">加密保存密钥</button><button type="button" class="outline full" id="disconnectProvider" hidden>删除已保存密钥</button>
-  </form>
+  <form id="keyForm">
+  <label>服务商<select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option></select></label>
+  <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">官方密钥页面</a><span id="providerHelp">登录服务商账号获取密钥。</span></div>
+  <button id="openrouterLogin" type="button" class="outline full" hidden>使用 OpenRouter 官方授权</button>
+  <div id="savedConnectionPanel" class="saved-connection-panel" hidden><strong>密钥已保存在此账号</strong><small>刷新或重新登录无需再次填写</small><button class="primary full" type="button" id="useSavedKey">使用已保存连接</button></div>
+  <label class="check-row"><input type="checkbox" id="allowPaid"><span>允许使用我自己的服务商额度（可能产生费用）</span></label>
+  <details id="keyAdvanced" class="key-advanced" open><summary id="keyAdvancedSummary">首次连接 · 输入 API Key</summary>
+   <label>API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴自己的 API Key"></label>
+   <label id="manualModelWrap" hidden>模型 ID（仅在目录不可用时填写）<input id="manualModel" type="text" autocomplete="off" spellcheck="false" placeholder="官方模型 ID"></label>
+   <button type="submit" class="primary full" id="keySaveLabel">加密保存密钥</button>
+  </details>
+  <p class="small-note">密钥仅加密保存到当前账号，可随时更换或删除。</p>
+  <p id="keyStatus" class="form-message" role="status"></p>
+  <button type="button" class="outline full" id="disconnectProvider" hidden>删除已保存密钥</button>
+ </form>
  </dialog>
 
  <dialog id="createDialog" class="modal workspace-view">
