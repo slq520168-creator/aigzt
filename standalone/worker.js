@@ -12,7 +12,8 @@ const FREE_MODELS=[
  {id:"free:auto",name:"免费自动 · 多线路",provider:"free",type:"text",free:true},
  {id:"free:vireonix",name:"Vireonix 免费文本",provider:"free",type:"text",free:true},
  {id:"free:cehpoint",name:"Cehpoint 免费文本",provider:"free",type:"text",free:true},
- {id:"free:vexa",name:"Vexa · 免费对话",provider:"free",type:"text",free:true}
+ {id:"free:vexa",name:"Vexa · 免费对话",provider:"free",type:"text",free:true},
+ {id:"free:groq",name:"Groq · 免费额度",provider:"free",type:"text",free:true}
 ];
 const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
@@ -97,6 +98,7 @@ async function authentication(req,env,action){
 function requireModelId(model){if(typeof model!=="string"||model.length>160||!/^[\w.:/-]+$/.test(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
 async function listModels(env){
+ const availableFree=FREE_MODELS.filter(m=>m.id!=="free:groq"||Boolean(env.GROQ_FREE_KEY));
  try{
  const url="https://openrouter.ai/api/v1/models";
  const req=new Request(url,{headers:{"Accept":"application/json"}});
@@ -122,10 +124,10 @@ async function listModels(env){
    context:m.context_length||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",
    inputImages:inMods.includes("image"),description:truncate(m.description,160)};
  });
- return {ok:true,at:new Date().toISOString(),freeModels:FREE_MODELS,models,count:models.length};
+ return {ok:true,at:new Date().toISOString(),freeModels:availableFree,models,count:models.length};
  }catch(error){
   // A failed external catalog must not hide locally verified free models.
-  return {ok:true,at:new Date().toISOString(),freeModels:FREE_MODELS,
+  return {ok:true,at:new Date().toISOString(),freeModels:availableFree,
    models:[],count:0,catalogError:"外部公开模型目录暂不可用；本站免费模型仍可使用"};
  }
 }
@@ -203,9 +205,9 @@ async function freeText(env,messages,mode,preferred="free:auto"){
  const system=mode==="code"?"你是中文编程助手，提供可运行的代码与测试方法。":"你是中文 AI 助手，准确回答，不能编造事实。";
  const history=messages.map(m=>({role:m.role,content:truncate(m.body,3000)}));
  const sources=[
-  {id:"vireonix",endpoint:"https://vireonix.ai/v1/chat/completions",model:"auto",ms:7000},
-  {id:"cehpoint",endpoint:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai",ms:7000},
-  {id:"vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"vexa",ms:8000,query:true}
+  {id:"vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"vexa",ms:8500,query:true},
+  {id:"vireonix",endpoint:"https://vireonix.ai/v1/chat/completions",model:"auto",ms:6500},
+  {id:"cehpoint",endpoint:"https://ai-api.cehpoint.co.in/v1/chat/completions",model:"cehpoint-ai",ms:6500}
  ];
  if(env.OPENROUTER_FREE_KEY)sources.push({id:"openrouter",endpoint:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY,ms:9000});
  if(env.GROQ_FREE_KEY)sources.push({id:"groq",endpoint:"https://api.groq.com/openai/v1/chat/completions",model:"llama-3.1-8b-instant",key:env.GROQ_FREE_KEY,ms:9000});
@@ -243,7 +245,7 @@ async function chat(req,env,user){
  if(!message.trim())throw Error("请输入消息或添加附件");
  const model=String(body.model||FREE_MODELS[0].id);
  requireModelId(model);
- if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("此模型不是本站免费线路");
+ if(provider==="free"&&(!FREE_MODELS.some(m=>m.id===model)||(model==="free:groq"&&!env.GROQ_FREE_KEY)))throw Error("此免费线路尚未连接");
  if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
  let chatId=typeof body.chatId==="string"?body.chatId:null;
  const projectId=typeof body.projectId==="string"&&/^[0-9a-f-]{36}$/.test(body.projectId)?body.projectId:null;
