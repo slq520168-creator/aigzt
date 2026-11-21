@@ -9,6 +9,7 @@ function apply(theme: Theme) {
  const dark = theme === "dark" || (theme === "system" && device.matches)
  document.documentElement.classList.toggle("dark",dark)
  document.documentElement.style.colorScheme=dark?"dark":"light"
+ document.querySelector('meta[name="theme-color"]')?.setAttribute("content",dark?"#21302e":"#f8fafc")
 }
 export function setTheme(theme: Theme) {
  document.cookie=theme==="system"?"theme=; path=/; max-age=0; samesite=lax":"theme="+theme+"; path=/; max-age=31536000; samesite=lax"

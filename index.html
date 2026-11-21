@@ -17,7 +17,14 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/_pwa/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="AIGZT" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <script>
+      if ("serviceWorker" in navigator) window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/sw.js").catch(function () {});
+      }, {once: true});
+    </script>
     <!-- Tiniest Cloud's SDK, the global `tiny`; vite-ignore leaves it as written. -->
     <script src="/sdk.js" vite-ignore></script>
   </head>
