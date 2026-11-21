@@ -393,16 +393,17 @@ function updateModelTitle(){
 }
 function setModel(row){
  if(row.type!=="text"){setComposerMode(row.type==="video"?"video":"image");hide("modelDialog");return}
- if(row.provider!=="free"&&!connected(row.provider)){
-  const provider=row.provider==="openrouter"?"openrouter":row.provider;
-  hide("modelDialog");openKeyPanel(provider);$("keyStatus").textContent="请连接个人 API Key 后使用该模型。";
+ // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.
+ const via=row.availableWith==="openrouter-key"?"openrouter":row.provider;
+ if(via!=="free"&&!connected(via)){
+  hide("modelDialog");openKeyPanel(via);
+  $("keyStatus").textContent="获取并保存 "+via+" 的 API Key 后选择模型";
   return;
  }
- S.provider=row.provider;S.model=row.id;S.modelTitle=row.name||row.id;
- S.allowPaid=Boolean(S.savedProviders[row.provider]?.consent);
- if(S.savedProviders[row.provider])void api("/api/connections/"+row.provider+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
- updateModelTitle();hide("modelDialog");
- flashError("");
+ S.provider=via;S.model=row.id;S.modelTitle=row.name||row.id;
+ S.allowPaid=Boolean(S.savedProviders[via]?.consent);
+ if(S.savedProviders[via])void api("/api/connections/"+via+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
+ updateModelTitle();hide("modelDialog");flashError("");
 }
 
 function setComposerMode(mode){
@@ -592,14 +593,10 @@ function openCreate(){
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
  const prompt=$("createPrompt").value.trim();if(!prompt){$("createStatus").textContent="请填写画面描述";return}
- const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在发送真实生成请求…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
+ const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在创建…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
  try{
   if(S.createMode==="image"){
-   const d=await api("/api/image",{prompt});
-   const img=node("img");img.src=d.image;img.alt="AI 根据描述生成的图片";
-   const link=node("a","","保存图片");link.href=d.image;link.download="aigzt-image.jpg";
-   $("mediaPreview").append(img,link);
-   $("createStatus").textContent="生成成功 · "+d.model;void fetchMe();
+   hide("createDialog");setComposerMode("image");$("prompt").value=prompt;void sendMessage();return;
   }else{
    if(!connected("grok"))throw Error("请先连接 Grok 密钥");
    if(!$("confirmVideo").checked)throw Error("视频可能收费，请先勾选费用确认");
