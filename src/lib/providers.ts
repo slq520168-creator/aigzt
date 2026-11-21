@@ -1,6 +1,6 @@
 import type {WorkspaceMessage} from "@/lib/workspace"
 export type ExternalProvider = "openai"|"grok"|"gemini"|"qwen"|"openrouter"|"groq"|"cerebras"
-export type ModelEngine = "native"|"gateway"|ExternalProvider
+export type ModelEngine = "free"|"native"|"gateway"|ExternalProvider
 export type ModelRecord={id:string;name?:string;description?:string}
 export const KEY_PANEL="https://app.tiniest.cloud/?app=ai-unified-workspace--lq&panel=connections"
 export const PROVIDERS:{id:ExternalProvider;name:string;detail:string;signup:string;freeNote:string;modelsPath:string;chatPath:string}[]=[
@@ -97,11 +97,13 @@ export async function completeProvider(
  return {content:extractResponseText(response),route:model}
 }
 export function engineName(e:ModelEngine){
+ if(e==="free")return "免费智能调度"
  if(e==="native")return "平台内置 AI"
  if(e==="gateway")return "FreeLLMAPI"
  return getDef(e).name
 }
 export function modelName(e:ModelEngine,m:string){
+ if(e==="free")return "免费自动选择"
  if(e==="native")return m==="auto"?"平台自动选择":m
  if(e==="openrouter"&&m==="openrouter/free")return "免费智能路由"
  if(e==="gateway"&&m==="auto")return "免费网关自动路由"

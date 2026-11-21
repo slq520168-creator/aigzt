@@ -9,10 +9,10 @@ import {issueText} from "@/lib/workspace"
 
 type Favorite={source:ModelEngine;id:string;name:string;addedAt:string}
 type Props={view:"sheet"|"page";currentSource?:ModelEngine;currentModel?:string;initialTab?:"favorites"|"browse";onChoose:(s:ModelEngine,m:string)=>void;onClose?:()=>void}
-const SOURCES:ModelEngine[]=["native","openai","grok","gemini","qwen","openrouter","groq","cerebras","gateway"]
+const SOURCES:ModelEngine[]=["free","native","openai","grok","gemini","qwen","openrouter","groq","cerebras","gateway"]
 const favKey=(source:ModelEngine,id:string)=>"model-fav:"+source+":"+encodeURIComponent(id)
 
-export default function ModelCatalog({view,currentSource="native",currentModel="auto",initialTab="favorites",onChoose,onClose}:Props){
+export default function ModelCatalog({view,currentSource="free",currentModel="auto",initialTab="favorites",onChoose,onClose}:Props){
  const [tab,setTab]=useState<"favorites"|"browse">(initialTab)
  const [source,setSource]=useState<ModelEngine>(currentSource)
  const [loaded,setLoaded]=useState<Partial<Record<ModelEngine,ModelRecord[]>>>({})
@@ -30,7 +30,9 @@ export default function ModelCatalog({view,currentSource="native",currentModel="
   busyLock.current=true;setBusy(id);setSource(id);setQuery("");setError("")
   try{
    let records:ModelRecord[]
-   if(id==="native"){
+   if(id==="free"){
+    records=[{id:"auto",name:"免费智能调度（不需要个人密钥）"}]
+   }else if(id==="native"){
     const limits=await listNativeModels()
     records=limits.models.map(id=>({id}))
     setRemaining(limits.remaining)
@@ -53,7 +55,8 @@ export default function ModelCatalog({view,currentSource="native",currentModel="
   if(loaded[id]){setSource(id);setError("");setQuery("")}
   else void verify(id)
  }
- const available:Favorite[]=source==="native"?
+ const available:Favorite[]=source==="free"?
+  [{source:"free",id:"auto",name:"免费智能调度",addedAt:""}]:source==="native"?
   [{source:"native",id:"auto",name:"自动选择",addedAt:""},...(loaded.native??[]).map(m=>({source:"native" as const,id:m.id,name:m.name||m.id,addedAt:""}))]:
   (loaded[source]??[]).map(m=>({source,id:m.id,name:m.name||m.id,addedAt:""}))
  const models=tab==="favorites"?favorites:loaded[source]?available:[]
@@ -76,7 +79,8 @@ export default function ModelCatalog({view,currentSource="native",currentModel="
    <div><h2 className="text-[16px] font-semibold">{view==="sheet"?"选择模型":"模型管理"}</h2><p className="mt-0.5 text-[11px] text-muted-foreground">真实模型 · 添加常用 · 一键切换</p></div>
    {view==="sheet"?<button type="button" className="grid size-9 place-items-center rounded-xl hover:bg-muted" onClick={onClose} aria-label="关闭"><X className="size-5"/></button>:<Link to="/" className="rounded-xl px-3 py-2 text-xs hover:bg-muted">返回聊天</Link>}
   </div>
-  <div className="flex shrink-0 gap-1 border-b px-4 py-2">
+  <div className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">
+   <button type="button" className="model-tab model-tab-active" onClick={()=>{setTab("browse");void verify("free")}}>免费自动路由</button>
    <button type="button" onClick={()=>{setTab("favorites");setQuery("");setError("")}} className={"model-tab "+(tab==="favorites"?"model-tab-active":"")}><Star className="size-4"/>常用 {favorites.length}</button>
    <button type="button" onClick={()=>{setTab("browse");setQuery("");setError("")}} className={"model-tab "+(tab==="browse"?"model-tab-active":"")}><Search className="size-4"/>浏览与添加</button>
   </div>
@@ -108,8 +112,8 @@ export default function ModelCatalog({view,currentSource="native",currentModel="
   </div>
   <div className="shrink-0 border-t px-4 py-3 text-[11px] text-muted-foreground">
    {tab==="browse"&&source==="native"&&remaining&&<p className="mb-2">内置剩余：本小时 {remaining.user_hour} 次 · 今日 {remaining.app_day} 次</p>}
-   <div className="flex flex-wrap items-center justify-between gap-2"><span>收藏不代表服务已连接，调用前会再次验证。</span><a href={KEY_PANEL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-primary"><KeyRound className="size-3.5"/>配置密钥</a></div>
-   {tab==="browse"&&source!=="native"&&source!=="gateway"&&<a href={PROVIDERS.find(p=>p.id===source)?.signup} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-primary">获取 {engineName(source)} 密钥<ArrowRight className="size-3.5"/></a>}
+   <div className="flex flex-wrap items-center justify-between gap-2"><span>网站统一配置上游密钥；普通用户不需要申请。</span><Link to="/pool" onClick={onClose} className="inline-flex items-center gap-1 font-medium text-primary">免费额度</Link></div>
+   
    {tab==="browse"&&source==="gateway"&&<p className="mt-2">FreeLLMAPI 需要独立 HTTPS 网关。</p>}
   </div>
  </div>

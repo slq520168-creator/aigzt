@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { useEntries,useMe } from "@/lib/tiny"
 import { discoverGatewayModels,gatewayComplete,type GatewayModel } from "@/lib/gateway"
+import {freePoolChat} from "@/lib/free-pool"
 import ModelPicker from "@/components/model-picker"
 import {discoverProviderModels,completeProvider,engineName,modelName,PROVIDERS,type ModelEngine} from "@/lib/providers"
 import { type WorkspaceChat,type WorkspaceMessage,type WorkspaceProject,type ChatAttachment,issueText } from "@/lib/workspace"
@@ -50,7 +51,7 @@ export default function Home() {
  const [theme,setLocalTheme]=useState(getTheme)
  const followBottom=useRef(true)
  const [deleteConfirm,setDeleteConfirm]=useState(false)
- const [engine,setEngine]=useState<ModelEngine>("native")
+ const [engine,setEngine]=useState<ModelEngine>("free")
  const [gatewayReady,setGatewayReady]=useState(false)
  const [gatewayModels,setGatewayModels]=useState<GatewayModel[]>([])
  const [showModels,setShowModels]=useState(false)
@@ -124,12 +125,12 @@ export default function Home() {
   return ()=>document.removeEventListener("keydown",onEscape)
  },[showHistory])
 
- function startNew(){setSelected(null);setProjectForNew(null);setModeForNew("general");setDraft("");setSelectedImages([]);setPending(null);setStreaming(null);setNotice("");setShowHistory(false);setDeleteConfirm(false)}
+ function startNew(){setEngine("free");setStrategy("auto");setSelected(null);setProjectForNew(null);setModeForNew("general");setDraft("");setSelectedImages([]);setPending(null);setStreaming(null);setNotice("");setShowHistory(false);setDeleteConfirm(false)}
  function startCoding(){if(inFlight.current)return;startNew();setModeForNew("code");setDraft("请帮我完成以下编程需求，给出完整可运行代码、错误处理和验证步骤：\n");setShowHistory(false);editor.current?.focus()}
- function openChat(key:string){const v=entries?.find(e=>e.key===key)?.value;setSelected(key);setShowHistory(false);setPending(null);setStreaming(null);setSelectedImages([]);setNotice("");setDeleteConfirm(false);setEngine(v?.engine??"native");setStrategy(v?.modelChoice??"auto")}
+ function openChat(key:string){const v=entries?.find(e=>e.key===key)?.value;setSelected(key);setShowHistory(false);setPending(null);setStreaming(null);setSelectedImages([]);setNotice("");setDeleteConfirm(false);setEngine(v?.engine??"free");setStrategy(v?.modelChoice??"auto")}
  useEffect(()=>{
   const source=urlParams.get("source"),model=urlParams.get("model")
-  if(source&&model&&(source==="native"||source==="gateway"||PROVIDERS.some(p=>p.id===source))){
+  if(source&&model&&(source==="free"||source==="native"||source==="gateway"||PROVIDERS.some(p=>p.id===source))){
    setEngine(source as ModelEngine);setStrategy(model);setNotice("已选择模型 "+model+"，首次调用前会验证连接")
    setUrlParams({}, {replace:true})
   }
@@ -198,6 +199,20 @@ export default function Home() {
  async function ask(messages:WorkspaceMessage[],mode:Mode,requestKey:string,project?:string){
   const context=projects?.find(p=>p.key===project)?.value.context
   const system="你是 AIGZT AI 统一工作台的中文助手。"+taskRules[mode]+"不得声称使用了未连接的模型或外部服务。"+(context?"\n当前项目共享上下文：\n"+context.slice(0,12000):"")
+  if(engine==="free"){
+   const attachments=messages.at(-1)?.role==="user"?messages.at(-1)?.attachments?.map(a=>a.id)??[]:[]
+   if(attachments.length){
+    const history=messages.slice(-10).map(m=>m.role+": "+m.content.slice(0,8500)).join("\n\n")
+    let content=""
+    for await(const chunk of tiny.ai.stream(history,{system,images:attachments})){
+     content+=chunk;setStreaming({key:requestKey,text:content})
+    }
+    if(!content.trim())throw Error("图片理解没有产生有效回答")
+    return {role:"assistant" as const,content,model:"平台内置 AI · 图片理解"}
+   }
+   const r=await freePoolChat(messages,system)
+   return {role:"assistant" as const,content:r.content,model:r.provider==="openrouter"?"免费路由 · "+r.model:"平台有限额度备用 · "+r.model}
+  }
   if(engine==="gateway"){
    if(!gatewayReady)await discoverGatewayModels()
    const res=await gatewayComplete(messages,system,strategy)
@@ -233,7 +248,7 @@ export default function Home() {
   const uploaded:ChatAttachment[]=[]
   let saved=false
   try{
-   if(engine!=="native"&&freshFiles.length)throw Error("当前第三方接口只支持文本，请切换内置 AI 分析图片")
+   if(engine!=="native"&&engine!=="free"&&freshFiles.length)throw Error("当前第三方接口只支持文本，请切换内置 AI 分析图片")
    for(let i=0;i<freshFiles.length;i++){
     setUploading("正在上传图片 "+(i+1)+"/"+freshFiles.length)
     const file=freshFiles[i]
@@ -287,6 +302,7 @@ export default function Home() {
    {chatsError?<p className="p-3 text-xs text-destructive">{issueText(chatsError)}</p>:entries===undefined?<p className="p-3 text-xs text-muted-foreground">正在同步…</p>:chats.length===0?<p className="p-3 text-xs text-muted-foreground">暂无聊天</p>:chats.map(item=><button type="button" disabled={busy} key={item.key} onClick={()=>openChat(item.key)} className={"chat-history-row "+(selected===item.key?"chat-history-selected":"")}><span className="truncate">{item.value.title}</span></button>)}
   </div>
   <div className="shrink-0 border-t border-border/60 pt-2">
+   <Link to="/pool" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Layers3 className="size-4"/>免费额度聚合</Link>
    <Link to="/directory" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Layers3 className="size-4"/>模型管理</Link>
    <Link to="/create" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><ImagePlus className="size-4"/>图片与视频创作</Link>
    <button type="button" className="chat-sidebar-action" onClick={startCoding}><Code2 className="size-4"/>编程助手</button>
@@ -301,7 +317,7 @@ export default function Home() {
   <div className="chat-main">
    <header className="chat-topbar">
     <button className="chat-icon md:hidden" type="button" aria-label="打开会话列表" onClick={()=>setShowHistory(true)}><PanelLeft className="size-5"/></button>
-    <button type="button" className="chat-model-selector" onClick={()=>{editor.current?.blur();setModelInitialTab("favorites");setShowModels(true)}} aria-label="切换 AI 模型"><span className="max-w-[min(43vw,230px)] truncate">{engine==="native"&&strategy==="auto"?"AIGZT":modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0 text-muted-foreground"/></button>
+    <button type="button" className="chat-model-selector" onClick={()=>{editor.current?.blur();setModelInitialTab("favorites");setShowModels(true)}} aria-label="切换 AI 模型"><span className="max-w-[min(43vw,230px)] truncate">{engine==="free"?"免费智能调度":engine==="native"&&strategy==="auto"?"AIGZT":modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0 text-muted-foreground"/></button>
     <button type="button" className="chat-icon chat-quick-add" aria-label="快捷添加模型" title="添加模型" onClick={()=>{editor.current?.blur();setModelInitialTab("browse");setShowModels(true)}}><Plus className="size-5"/></button>
     <div className="ml-auto flex shrink-0 gap-1">
      <button type="button" className="chat-icon" aria-label="新建对话" onClick={startNew}><SquarePen className="size-5"/></button>
@@ -339,7 +355,7 @@ export default function Home() {
         <button type="button" className="chat-mode" onClick={()=>{editor.current?.blur();setShowTools(v=>!v);setShowProjectMenu(false)}}><span className="truncate">{tools.find(t=>t.id===activeMode)?.label||"自由对话"}</span><ChevronDown className="size-3.5"/></button>
         {selectedProject&&<button type="button" className="chat-mode" onClick={()=>{editor.current?.blur();setShowProjectMenu(v=>!v);setShowTools(false)}}><FolderKanban className="size-3.5"/><span className="max-w-24 truncate">{selectedProject.value.name}</span></button>}
         {showTools&&<div className="chat-pop bottom-12 left-0 w-56">
-         <button type="button" className="chat-pop-row" disabled={busy||converting||engine!=="native"} onClick={()=>{setShowTools(false);imageInput.current?.click()}}><ImagePlus className="size-4"/>添加图片</button>
+         <button type="button" className="chat-pop-row" disabled={busy||converting||(engine!=="native"&&engine!=="free")} onClick={()=>{setShowTools(false);imageInput.current?.click()}}><ImagePlus className="size-4"/>添加图片</button>
          <Link className="chat-pop-row" to="/create?mode=image" onClick={()=>setShowTools(false)}><ImagePlus className="size-4"/>AI 生成图片</Link>
          <Link className="chat-pop-row" to="/create?mode=video" onClick={()=>setShowTools(false)}><ImageIcon className="size-4"/>AI 生成视频</Link>
          <button type="button" className="chat-pop-row" onClick={startCoding}><Code2 className="size-4"/>编程助手</button>

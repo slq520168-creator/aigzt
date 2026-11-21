@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "prefix": "pool-use:",
+      "read": [
+        "user",
+        "owner",
+        "admin"
+      ],
+      "write": [
+        "function"
+      ]
+    }
+  ]
+}
