@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { lazy,Suspense,useEffect, useMemo, useRef, useState } from "react"
 import { Link,useSearchParams } from "react-router"
+import {PanelLeft,SquarePen,Ellipsis,Settings2,Moon,Sun} from "lucide-react"
+const ChatMarkdown=lazy(()=>import("@/components/chat-markdown").then(x=>({default:x.ChatMarkdown})))
+import {getTheme,setTheme} from "@/lib/theme"
 import { ArrowUp, BookOpen, Bot, BrainCircuit, Check, ChevronRight, Clock3, Code2, Compass, Copy, FolderKanban, History, ImagePlus, Image as ImageIcon, Layers3, LoaderCircle, MessageSquareText, MoreHorizontal, PenLine, Plus, ChevronDown, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, WandSparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -40,6 +43,12 @@ export default function Home() {
  const [busy,setBusy]=useState(false)
  const [notice,setNotice]=useState("")
  const [showHistory,setShowHistory]=useState(false)
+ const [showMore,setShowMore]=useState(false)
+ const [showTools,setShowTools]=useState(false)
+ const [showProjectMenu,setShowProjectMenu]=useState(false)
+ const [showAccount,setShowAccount]=useState(false)
+ const [theme,setLocalTheme]=useState(getTheme)
+ const followBottom=useRef(true)
  const [deleteConfirm,setDeleteConfirm]=useState(false)
  const [engine,setEngine]=useState<ModelEngine>("native")
  const [gatewayReady,setGatewayReady]=useState(false)
@@ -69,8 +78,9 @@ export default function Home() {
  const matchedModels=gatewayModels.filter(m=>m.id.toLowerCase().includes(modelQuery.toLowerCase()))
 
  useEffect(()=>{
-   if(visibleMessages.length || busy){const el=chatScroll.current;if(el)el.scrollTop=el.scrollHeight}
+   if(followBottom.current||busy){const el=chatScroll.current;if(el)el.scrollTop=el.scrollHeight}
  },[visibleMessages.length,busy,selected,streaming?.text.length])
+ useEffect(()=>{followBottom.current=true;const el=chatScroll.current;if(el)el.scrollTop=el.scrollHeight},[selected])
  useEffect(()=>{
   // iOS WebKit scrolls the visual viewport separately from the layout viewport.
   // Keep one pinned chat shell sized and positioned to the actually visible area.
@@ -265,126 +275,80 @@ export default function Home() {
  async function copyMessage(content:string){
   try{await navigator.clipboard.writeText(content);setNotice("内容已复制")}catch(e){setNotice("复制失败："+issueText(e))}
  }
- const histories=<>
-  <div className="mb-4 flex items-center justify-between gap-2">
-   <div><h2 className="font-semibold">最近会话</h2><p className="mt-0.5 text-[11px] text-muted-foreground">云端自动同步</p></div>
-   <Button size="icon" variant="secondary" aria-label="新对话" onClick={startNew}><Plus className="size-4"/></Button>
+
+ const side=<>
+  <div className="chat-sidebar-title"><img src="/icon.svg" alt="" className="size-8 rounded-lg"/>aigzt</div>
+  <button type="button" className="chat-sidebar-action" onClick={startNew}><SquarePen className="size-5"/>新建对话</button>
+  <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground"/><Input value={search} onChange={e=>setSearch(e.target.value)} aria-label="搜索聊天" placeholder="搜索聊天" className="h-10 rounded-xl border-0 bg-transparent pl-9 shadow-none focus-visible:ring-0"/></div>
+  <p className="px-3 pt-4 pb-2 text-xs text-muted-foreground">最近对话</p>
+  <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+   {chatsError?<p className="p-3 text-xs text-destructive">{issueText(chatsError)}</p>:entries===undefined?<p className="p-3 text-xs text-muted-foreground">正在同步…</p>:chats.length===0?<p className="p-3 text-xs text-muted-foreground">暂无聊天</p>:chats.map(item=><button type="button" disabled={busy} key={item.key} onClick={()=>openChat(item.key)} className={"chat-history-row "+(selected===item.key?"chat-history-selected":"")}><span className="truncate">{item.value.title}</span></button>)}
   </div>
-  <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground"/><Input value={search} onChange={e=>setSearch(e.target.value)} className="h-10 rounded-xl bg-background/40 pl-9" placeholder="搜索会话…" aria-label="搜索会话"/></div>
-  {chatsError?<p role="alert" className="text-xs text-destructive">读取失败：{issueText(chatsError)}</p>:entries===undefined?<p className="text-xs text-muted-foreground">正在同步会话…</p>:chats.length===0?<p className="py-4 text-xs text-muted-foreground">暂无匹配的会话</p>:<div className="workspace-scroll space-y-1 overflow-y-auto lg:max-h-[53vh]">
-   {chats.map(e=><Button key={e.key} variant="ghost" onClick={()=>openChat(e.key)}
-    className={"h-auto min-h-11 w-full justify-start gap-3 rounded-xl px-3 py-3 text-left "+(selected===e.key?"bg-primary/13 text-primary":"text-muted-foreground")}>
-    <MessageSquareText className="size-4 shrink-0"/><span className="min-w-0 flex-1 truncate text-[13px] font-medium">{e.value.title}</span>
-   </Button>)}
-  </div>}
+  <div className="shrink-0 border-t border-border/60 pt-2">
+   <Link to="/directory" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Layers3 className="size-4"/>AI 模型</Link>
+   <Link to="/projects" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><FolderKanban className="size-4"/>项目</Link>
+   <Link to="/settings" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Settings2 className="size-4"/>设置</Link>
+   {me?<button type="button" onClick={()=>setShowAccount(v=>!v)} className="chat-sidebar-action truncate"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{me.email.slice(0,1).toUpperCase()}</span><span className="truncate">{me.email}</span></button>:<button type="button" className="chat-sidebar-action" onClick={()=>tiny.login()}>登录工作台</button>}
+   {showAccount&&me&&<button type="button" onClick={()=>void tiny.logout()} className="chat-sidebar-action text-destructive">退出登录</button>}
+  </div>
  </>
-
- return <div className={"aigzt-chat-home "+(chatActive?"aigzt-chat-active ":"")+"space-y-3 sm:space-y-5"}>
-  <div className={(chatActive?"hidden lg:flex":"flex")+" items-center justify-between gap-3"}>
-   <div className="min-w-0">
-    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.16em] text-primary"><span className="size-1.5 rounded-full bg-primary"/>AIGZT / AI WORKSPACE</div>
-    <h1 className="text-[24px] font-bold leading-tight tracking-tight sm:text-[30px]">一个空间，连接你的 AI</h1>
-    <p className="mt-1 text-[12px] text-muted-foreground sm:text-sm">对话、写作、开发与项目资料集中管理</p>
-   </div>
-   <Button variant="outline" onClick={()=>setShowHistory(true)} className="h-10 shrink-0 rounded-xl lg:hidden"><History className="size-4"/>会话</Button>
-  </div>
-
-  <div className="hidden gap-3 lg:grid lg:grid-cols-3">
-   <div className="workspace-surface flex min-w-0 items-center gap-3 rounded-2xl p-3 sm:p-4">
-    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary"><Bot className="size-5"/></span>
-    <div className="min-w-0"><p className="text-[11px] text-muted-foreground">当前对话引擎</p><p className="truncate text-sm font-semibold">{engineName(engine)}</p><p className="mt-0.5 text-[10px] text-primary">{engine==="native"?"无需密钥":engine==="gateway"?(gatewayReady?"已验证":"调用前验证"):"调用前验证"}</p></div>
-   </div>
-   <div className="workspace-surface hidden min-w-0 items-center gap-3 rounded-2xl p-3 sm:flex sm:p-4">
-    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-foreground"><Layers3 className="size-5"/></span>
-    <div><p className="text-[11px] text-muted-foreground">外部模型网关</p><p className="text-sm font-semibold">{gatewayReady?gatewayModels.length+" 个已发现":"尚未验证"}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{gatewayReady?"可选择智能调度":"需配置独立网关"}</p></div>
-   </div>
-   <div className="workspace-surface hidden min-w-0 items-center gap-3 rounded-2xl p-3 sm:flex sm:p-4">
-    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-foreground"><FolderKanban className="size-5"/></span>
-    <div><p className="text-[11px] text-muted-foreground">项目工作空间</p><p className="text-sm font-semibold">{projects?.length??"—"} 个已保存项目</p><p className="mt-0.5 text-[10px] text-muted-foreground">同一份上下文跨设备</p></div>
-   </div>
-  </div>
-
-  <div className="aigzt-chat-layout grid min-h-0 items-start gap-4 lg:grid-cols-[225px_minmax(0,1fr)] xl:grid-cols-[225px_minmax(0,1fr)_240px]">
-   <aside className="workspace-surface sticky top-[90px] hidden min-h-[570px] rounded-2xl p-3 lg:block">
-    {histories}
-    <div className="mt-5 border-t border-border/70 px-2 pt-4">
-      <Link className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-primary" to="/projects"><FolderKanban className="size-4"/>项目空间<ChevronRight className="ml-auto size-4"/></Link>
-    </div>
-   </aside>
-
-   <section className={"aigzt-chat-card workspace-surface flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[22px] "+(chatActive?"h-[calc(100dvh-172px)]":"h-[calc(100dvh-250px)] min-h-[455px]")+" lg:h-[calc(100dvh-222px)] lg:min-h-[525px]"}>
-    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 px-4 py-2.5 sm:px-5 sm:py-3.5">
-     <div className="min-w-0"><div className="flex items-center gap-2"><span className="size-2 rounded-full bg-primary"/><span className="truncate text-[13px] font-semibold sm:text-sm">{current?.value.title||"新建对话"}</span></div><p className="ml-4 mt-0.5 text-[10px] text-muted-foreground">选择任务模式，开始使用你的 AI 工具箱</p></div>
-     <div className="flex items-center gap-1">
-      {selected&&(deleteConfirm?<><span className="text-[11px] text-destructive">删除会话？</span><Button size="sm" variant="outline" onClick={()=>setDeleteConfirm(false)}>取消</Button><Button size="sm" variant="destructive" onClick={()=>void remove()}>删除</Button></>:<Button size="icon" variant="ghost" aria-label="删除会话" onClick={()=>setDeleteConfirm(true)}><Trash2 className="size-4"/></Button>)}
-      <Button size="icon" variant="secondary" aria-label="新建对话" onClick={startNew} className="rounded-lg"><Plus className="size-4"/></Button>
+ return <section className="chat-shell" data-keyboard={inputFocused?"true":"false"}>
+  <aside className="chat-desktop-sidebar hidden shrink-0 flex-col border-r bg-muted/30 p-3 md:flex">{side}</aside>
+  <div className="chat-main">
+   <header className="chat-topbar">
+    <button className="chat-icon md:hidden" type="button" aria-label="打开会话列表" onClick={()=>setShowHistory(true)}><PanelLeft className="size-5"/></button>
+    <button type="button" className="chat-model-selector" onClick={()=>{editor.current?.blur();setShowModels(true)}} aria-label="切换 AI 模型"><span className="max-w-[min(54vw,330px)] truncate">{engineName(engine)} · {modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0 text-muted-foreground"/></button>
+    <div className="ml-auto flex shrink-0 gap-1">
+     <button type="button" className="chat-icon" aria-label="新建对话" onClick={startNew}><SquarePen className="size-5"/></button>
+     <div className="relative"><button type="button" className="chat-icon" aria-label="更多操作" onClick={()=>setShowMore(v=>!v)}><Ellipsis className="size-5"/></button>
+      {showMore&&<div className="chat-pop right-0 top-11 min-w-44">
+       <button className="chat-pop-row" type="button" onClick={()=>{setShowMore(false);setShowProjectMenu(true)}}><FolderKanban className="size-4"/>关联项目</button>
+       <Link className="chat-pop-row" to="/directory" onClick={()=>setShowMore(false)}><Layers3 className="size-4"/>添加 AI</Link>
+       <button className="chat-pop-row" type="button" onClick={()=>{const next=theme==="dark"?"light":"dark";setTheme(next);setLocalTheme(next);setShowMore(false)}}>{theme==="dark"?<Sun className="size-4"/>:<Moon className="size-4"/>}切换主题</button>
+       {selected&&<button className="chat-pop-row text-destructive" type="button" onClick={()=>{setDeleteConfirm(true);setShowMore(false)}}><Trash2 className="size-4"/>删除会话</button>}
+      </div>}
      </div>
     </div>
-    <div className="aigzt-chat-tools workspace-scroll flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-2 sm:px-5">
-     <span className="shrink-0 text-xs text-muted-foreground">模型</span>
-     <Button size="sm" variant="secondary" className="h-10 max-w-[66%] shrink-0 rounded-xl border px-3 text-xs" onClick={()=>setShowModels(true)}><Bot className="size-4 shrink-0 text-primary"/><span className="max-w-[200px] truncate">{engineName(engine)} · {modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0"/></Button>
-     <Link to="/directory" className="ml-auto inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-primary hover:bg-primary/8"><Plus className="size-4"/>添加 AI</Link>
+   </header>
+   <div ref={chatScroll} className="chat-messages" onScroll={e=>{const el=e.currentTarget;followBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<100}}>
+    <div className={"chat-thread "+(!visibleMessages.length&&!busy?"chat-empty":"")}>
+     {!visibleMessages.length&&!busy?<h1 className="chat-welcome">有什么可以帮你？</h1>:
+      visibleMessages.map((msg,i)=><article key={selected+":"+i} className={"chat-message "+(msg.role==="user"?"chat-message-user":"chat-message-ai")}>
+       {msg.role==="user"?<div className="chat-user-bubble"><span className="whitespace-pre-wrap break-words">{msg.content}</span>{msg.attachments?.length?<div className="mt-2 flex flex-wrap gap-2">{msg.attachments.map(a=><a key={a.id} href={tiny.files.url(a.id)} target="_blank" rel="noopener noreferrer"><img src={tiny.files.url(a.id)} alt={a.name} loading="lazy" className="h-28 max-w-36 rounded-xl object-cover"/></a>)}</div>:null}</div>:
+       <div className="w-full min-w-0"><Suspense fallback={<p className="whitespace-pre-wrap break-words">{msg.content}</p>}><ChatMarkdown content={msg.content}/></Suspense><div className="chat-reply-actions"><button title="复制回复" aria-label="复制回复" onClick={()=>void copyMessage(msg.content)}><Copy className="size-4"/></button>{msg.model&&<span className="truncate text-[11px] text-muted-foreground">{msg.model}</span>}</div></div>}
+      </article>)}
+     {busy&&(streaming?.key===selected&&streaming.text?<div className="chat-message chat-message-ai"><Suspense fallback={<p className="whitespace-pre-wrap break-words">{streaming.text}</p>}><ChatMarkdown content={streaming.text}/></Suspense></div>:<p className="chat-message chat-message-ai flex items-center gap-2 text-sm text-muted-foreground"><span className="size-2 animate-pulse rounded-full bg-primary"/>{uploading||"正在思考…"}</p>)}
     </div>
-    <div className={(chatActive?"flex":"hidden sm:flex")+" aigzt-chat-tools workspace-scroll shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-1.5 sm:px-5"}>
-     <span className="shrink-0 text-[11px] text-muted-foreground">任务</span>
-     {tools.map(t=><Button key={t.id} size="sm" variant={activeMode===t.id?"secondary":"ghost"} className={"h-8 shrink-0 rounded-lg px-3 text-[11px] "+(activeMode===t.id?"text-foreground":"text-muted-foreground")} onClick={()=>void changeMode(t.id)}>{t.label}</Button>)}
-    </div>
-
-    <div ref={chatScroll} data-chat-messages className="workspace-scroll min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
-     {visibleMessages.length===0&&!busy?<div className="space-y-3 py-1 sm:space-y-5 sm:py-5">
-      <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/13 text-primary sm:size-11 sm:rounded-2xl"><WandSparkles className="size-6"/></span><div><h2 className="text-base font-semibold sm:text-xl">今天想完成什么？</h2><p className="mt-0.5 text-[11px] leading-5 text-muted-foreground sm:mt-1 sm:text-sm sm:leading-6">选择任务即可开始。会话和项目资料自动保留，手机与电脑可接续使用。</p></div></div>
-      <div className="grid grid-cols-2 gap-2 sm:gap-3">{quickTools.map(t=>{const Icon=t.icon;return <Button key={t.id} variant="outline" onClick={()=>useSuggestion(t)} className="workspace-button h-auto min-h-[72px] flex-row items-center justify-start gap-2 rounded-xl border-border/75 bg-card p-2.5 text-left hover:border-primary/40 hover:bg-primary/7 sm:min-h-[110px] sm:flex-col sm:items-start sm:justify-between sm:rounded-2xl sm:p-4">
-       <span className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-primary"><Icon className="size-4.5"/></span>
-       <span className="block w-full"><span className="block text-[13px] font-semibold sm:text-sm">{t.label}</span><span className="mt-0.5 hidden text-[10px] font-normal text-muted-foreground sm:block sm:text-xs">{t.detail}</span></span>
-      </Button>})}</div>
-      <div className="hidden items-center justify-between rounded-xl border border-border/70 bg-background/50 px-3 py-3 text-[11px] text-muted-foreground sm:flex"><span className="flex items-center gap-2"><ShieldCheck className="size-4 text-primary"/>不伪造第三方额度或模型调用</span><Link to="/directory" className="flex items-center gap-1 font-medium text-primary">模型中心<ChevronRight className="size-3.5"/></Link></div>
-     </div>:visibleMessages.map((m,i)=><div key={i} className={"flex "+(m.role==="user"?"justify-end":"justify-start")}>
-      <div className={"max-w-[96%] rounded-2xl px-3.5 py-3 text-[13px] leading-6 sm:max-w-[90%] sm:px-4 sm:text-sm "+(m.role==="user"?"rounded-tr-sm bg-primary text-primary-foreground":"rounded-tl-sm bg-muted/70 text-foreground")}>
-       <div className="whitespace-pre-wrap break-words">{m.content}</div>{m.attachments?.length?<div className="mt-2 grid grid-cols-2 gap-2">{m.attachments.map(a=><a key={a.id} href={tiny.files.url(a.id)} target="_blank" rel="noopener noreferrer" aria-label={"查看图片："+a.name} className="block overflow-hidden rounded-lg"><img src={tiny.files.url(a.id)} alt={a.name} loading="lazy" className="h-28 w-full object-cover sm:h-40"/></a>)}</div>:null}
-       {m.role==="assistant"&&<div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-2 text-[10px] text-muted-foreground"><span className="truncate">{m.model??"AI 助手"}</span><Button size="icon" variant="ghost" aria-label="复制回复" className="ml-auto size-7" onClick={()=>void copyMessage(m.content)}><Copy className="size-3.5"/></Button></div>}
+   </div>
+   <div className="chat-bottom">
+    <div className="chat-bottom-inner">
+     {deleteConfirm&&<div role="alertdialog" className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-card p-3 text-xs"><span>删除当前会话及图片？</span><div className="flex gap-2"><button type="button" onClick={()=>setDeleteConfirm(false)}>取消</button><button type="button" className="rounded-lg bg-destructive px-3 py-2 text-white" onClick={()=>void remove()}>确认删除</button></div></div>}
+     {notice&&<div role="status" className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-muted px-3 py-2 text-xs"><span className="break-words">{notice}</span><button aria-label="关闭提示" onClick={()=>setNotice("")}><X className="size-4"/></button></div>}
+     {current?.value.messages.at(-1)?.role==="user"&&!busy&&<button className="mb-2 flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs" onClick={()=>void retry()}><RotateCcw className="size-4"/>重新生成</button>}
+     {selectedImages.length>0&&<div className="mb-2 flex flex-wrap gap-2">{selectedImages.map((file,i)=><span key={i} className="flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-xs"><span className="max-w-28 truncate">{file.name}</span><button aria-label={"移除"+file.name} onClick={()=>setSelectedImages(list=>list.filter((_,j)=>i!==j))}><X className="size-3.5"/></button></span>)}</div>}
+     <form className="chat-composer" onSubmit={e=>{e.preventDefault();void send()}}>
+      <textarea ref={editor} rows={1} className="chat-textarea" aria-label="输入聊天消息" placeholder={me?"询问任何问题":"请先登录工作台"} value={draft} onChange={e=>{setDraft(e.target.value);const el=e.currentTarget;el.style.height="auto";el.style.height=Math.min(160,el.scrollHeight)+"px"}} onFocus={()=>setInputFocused(true)} onBlur={()=>setInputFocused(false)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia("(min-width:640px)").matches){e.preventDefault();void send()}}} disabled={!me||busy}/>
+      <div className="chat-composer-actions">
+       <div className="relative flex min-w-0 items-center gap-1">
+        <button type="button" className="chat-plus" aria-label="添加附件和工具" onClick={()=>{editor.current?.blur();setShowTools(v=>!v);setShowProjectMenu(false)}}><Plus className="size-5"/></button>
+        <button type="button" className="chat-mode" onClick={()=>{editor.current?.blur();setShowTools(v=>!v);setShowProjectMenu(false)}}><span className="truncate">{tools.find(t=>t.id===activeMode)?.label||"自由对话"}</span><ChevronDown className="size-3.5"/></button>
+        {selectedProject&&<button type="button" className="chat-mode" onClick={()=>{editor.current?.blur();setShowProjectMenu(v=>!v);setShowTools(false)}}><FolderKanban className="size-3.5"/><span className="max-w-24 truncate">{selectedProject.value.name}</span></button>}
+        {showTools&&<div className="chat-pop bottom-12 left-0 w-56">
+         <button type="button" className="chat-pop-row" disabled={busy||converting||engine!=="native"} onClick={()=>{setShowTools(false);imageInput.current?.click()}}><ImagePlus className="size-4"/>添加图片</button>
+         <button type="button" className="chat-pop-row" onClick={()=>{setShowTools(false);setShowProjectMenu(true)}}><FolderKanban className="size-4"/>关联项目</button><div className="my-1 border-t"/>
+         {tools.map(t=><button type="button" key={t.id} className="chat-pop-row" onClick={()=>{void changeMode(t.id);setShowTools(false)}}>{t.id===activeMode?<Check className="size-4"/>:<span className="size-4"/>}{t.label}</button>)}
+        </div>}
+        {showProjectMenu&&<div className="chat-pop bottom-12 left-0 w-56"><p className="px-3 py-2 text-xs text-muted-foreground">项目上下文</p><button type="button" className="chat-pop-row" onClick={()=>{void chooseProject(null);setShowProjectMenu(false)}}>{!projectId?<Check className="size-4"/>:<span className="size-4"/>}未关联</button>{projects?.map(p=><button type="button" key={p.key} className="chat-pop-row" onClick={()=>{void chooseProject(p.key);setShowProjectMenu(false)}}><FolderKanban className="size-4"/><span className="truncate">{p.value.name}</span></button>)}<Link to="/projects" className="chat-pop-row border-t"><Plus className="size-4"/>管理项目</Link></div>}
+       </div>
+       <button type="submit" className="chat-send ml-auto" aria-label="发送消息" disabled={!me||busy||converting||(!draft.trim()&&!selectedImages.length)}>{busy?<LoaderCircle className="size-4 animate-spin"/>:<ArrowUp className="size-5"/>}</button>
       </div>
-     </div>)}
-     {streaming?.key===selected&&streaming.text?<div className="max-w-[96%] whitespace-pre-wrap rounded-2xl bg-muted/70 p-3 text-sm leading-6">{streaming.text}<span className="ml-1 inline-block size-1.5 animate-pulse rounded-full bg-primary"/></div>:busy?<div className="flex items-center gap-2 rounded-xl px-2 py-3 text-xs text-muted-foreground"><LoaderCircle className="size-4 animate-spin text-primary"/>{uploading||"正在生成回复…"}</div>:null}
-    </div>
-    <div className="aigzt-chat-composer shrink-0 space-y-2 border-t border-border/70 bg-card p-3 sm:p-4">
-     <div className="aigzt-chat-tools workspace-scroll flex items-center gap-2 overflow-x-auto pb-1"><span className="shrink-0 text-[11px] text-muted-foreground"><FolderKanban className="mr-1 inline size-3.5"/>项目</span><Button size="sm" variant={!projectId?"secondary":"ghost"} className="h-7 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(null)}>未关联</Button>{projects?.slice(0,5).map(p=><Button key={p.key} size="sm" variant={projectId===p.key?"secondary":"ghost"} className="h-7 max-w-36 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(p.key)}><span className="truncate">{p.value.name}</span></Button>)}<Link to="/projects" className="ml-auto shrink-0 text-[11px] font-medium text-primary">管理项目</Link></div>
-     
-     {selectedImages.length>0&&<div className="flex flex-wrap gap-1.5">{selectedImages.map((file,i)=><span key={i} className="inline-flex max-w-full items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-[11px]"><ImageIcon className="size-3.5"/><span className="max-w-28 truncate">{file.name}</span><Button size="icon" variant="ghost" className="size-6" aria-label={"移除图片："+file.name} onClick={()=>setSelectedImages(list=>list.filter((_,j)=>j!==i))}><X className="size-3"/></Button></span>)}</div>}{notice&&<div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-[11px] text-foreground"><span className="flex-1">{notice}</span><Button size="icon" variant="ghost" aria-label="关闭消息" onClick={()=>setNotice("")} className="size-6"><X className="size-3"/></Button></div>}
-     {current?.value.messages.at(-1)?.role==="user"&&!busy&&<Button variant="outline" size="sm" className="h-8 text-xs" onClick={()=>void retry()}><RotateCcw className="size-3.5"/>重试回复</Button>}
-     <form onSubmit={e=>{e.preventDefault();void send()}} className="flex items-end gap-1 rounded-2xl border border-border bg-background/45 p-1.5 focus-within:border-primary/50">
-      <input ref={imageInput} type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" multiple aria-label="选择图片" onChange={e=>void addImages(e.target.files)}/>
-      <Button type="button" size="icon" variant="ghost" aria-label="添加图片" disabled={!me||busy||converting||engine!=="native"} className="mb-0.5 size-10 shrink-0 rounded-xl" onClick={()=>imageInput.current?.click()}><ImagePlus className="size-5"/></Button>
-      <Textarea ref={editor} onFocus={()=>setInputFocused(true)} onBlur={()=>setInputFocused(false)} aria-label="输入聊天内容" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia("(min-width:640px)").matches){e.preventDefault();void send()}}} placeholder={me?"给 AI 发送消息，Shift + Enter 换行…":"请先登录工作台"} disabled={!me||busy} className="aigzt-chat-input workspace-editor min-h-11 flex-1 resize-none border-0 bg-transparent p-2 text-[16px] shadow-none focus-visible:border-0 focus-visible:ring-0"/>
-      <Button size="icon" type="submit" aria-label="发送消息" disabled={!me||busy||converting||(!draft.trim()&&!selectedImages.length)} className="size-10 shrink-0 rounded-xl"><ArrowUp className="size-5"/></Button>
+      <input type="file" className="sr-only" ref={imageInput} accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" multiple aria-label="上传图片" onChange={e=>void addImages(e.target.files)}/>
      </form>
-     <p className="aigzt-chat-caption flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground"><span>{engineName(engine)+" · "+modelName(engine,strategy)}{selectedProject?" · "+selectedProject.value.name:""}</span><span>{converting?"正在转换图片…":selectedImages.length?"可发送图片":"会话自动保存"}</span></p>
+     <p className="chat-footnote">AIGZT · {engineName(engine)}</p>
     </div>
-   </section>
-
-   <aside className="sticky top-[90px] hidden space-y-4 xl:block">
-    <section className="workspace-surface space-y-4 rounded-2xl p-4">
-      <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">模型路由</h2><Compass className="size-4 text-primary"/></div>
-      <div className="rounded-xl bg-primary/10 p-3"><div className="flex items-center gap-2 text-xs font-semibold"><span className="size-2 rounded-full bg-primary"/>平台内置 AI</div><p className="mt-1.5 text-[11px] text-muted-foreground">已集成 · 无需额外密钥</p></div>
-      <div className="rounded-xl bg-muted/60 p-3"><div className="flex items-center gap-2 text-xs font-semibold"><span className="size-2 rounded-full bg-muted-foreground"/>FreeLLMAPI</div><p className="mt-1.5 text-[11px] text-muted-foreground">{gatewayReady?gatewayModels.length+" 个模型已发现":"待配置真实网关"}</p></div>
-      <Button onClick={()=>void checkGateway()} disabled={checking} variant="outline" className="w-full rounded-xl text-xs">{checking?"检测中…":"检测外部网关"}<ChevronRight className="size-3.5"/></Button>
-    </section>
-    <section className="workspace-surface space-y-3 rounded-2xl p-4">
-      <h2 className="text-sm font-semibold">当前项目</h2>
-      <p className="text-xs font-medium">{selectedProject?.value.name??"未关联项目"}</p>
-      <p className="line-clamp-5 whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">{selectedProject?.value.context??"将长期规则与项目资料保存到「项目」，下次打开对话仍可继续。"} </p>
-      <Link to="/projects" className="inline-flex items-center gap-1 text-xs font-medium text-primary">管理项目记忆<ChevronRight className="size-3.5"/></Link>
-    </section>
-    <section className="space-y-2 px-1 text-[11px] text-muted-foreground"><p className="flex items-center gap-2"><ShieldCheck className="size-3.5"/>第三方模型未授权不会被调用</p><p className="flex items-center gap-2"><Clock3 className="size-3.5"/>不后台轮询额度</p></section>
-   </aside>
+   </div>
   </div>
-
+  {showHistory&&<div className="chat-drawer-bg"><button type="button" className="absolute inset-0 bg-foreground/25" aria-label="关闭会话列表" onClick={()=>setShowHistory(false)}/><aside role="dialog" aria-modal="true" aria-label="会话列表" className="chat-drawer"><button className="chat-icon absolute right-3 top-3 z-10" type="button" aria-label="关闭侧栏" onClick={()=>setShowHistory(false)}><X className="size-5"/></button>{side}</aside></div>}
   {showModels&&<ModelPicker currentSource={engine} currentModel={strategy} onClose={()=>setShowModels(false)} onChoose={(source,id)=>void chooseModel(source,id)}/>}
-  {showHistory&&<div className="fixed inset-0 z-50 lg:hidden" role="presentation">
-    <button className="absolute inset-0 bg-background/75 backdrop-blur-sm" aria-label="关闭历史会话" onClick={()=>setShowHistory(false)}/>
-    <section role="dialog" aria-modal="true" aria-label="历史会话" className="absolute inset-y-0 left-0 flex w-[min(86vw,360px)] flex-col overflow-hidden border-r bg-card p-4 shadow-2xl">
-      <div className="mb-5 flex items-center justify-between"><span className="text-lg font-bold">会话中心</span><Button variant="ghost" size="icon" aria-label="关闭" onClick={()=>setShowHistory(false)}><X className="size-4"/></Button></div>
-      {histories}
-    </section>
-   </div>}
- </div>
+ </section>
 }
