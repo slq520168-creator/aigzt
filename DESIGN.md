@@ -19,3 +19,6 @@ V9 移动端专项：首屏任务卡压缩到单行内容，已选会话隐藏�
 
 ## V12 iOS 整页上移根因修复
 V10/V11 仅设置 #root 高度和 body overflow，却没有把根容器固定；Safari 软键盘弹出后滚动 layout viewport，导致整页仍能被推走。V12 使用 visualViewport.resize + scroll 的 height/offsetTop 维护固定 #root，在移动聊天状态中禁止根滚动；只有消息列表 overflow-y:auto，输入栏不随整页滚动。保留 V11 对工具栏高度的唯一性修复。非聊天页面不受此布局影响。
+
+## V14 模型闭环
+真实模型来源：平台 tiny.ai.limits / 安全连接 OpenRouter（仅 free）/ Groq / Cerebras / 预留 FreeLLMAPI；模型管理页检测并从目录直接进入会话，聊天顶部模型选择器与实际调用一致，按会话保存选择。所有外部密钥由 Tiniest Cloud Connections 设置，未连接明确报错不伪造，禁止付费兜底。保留已有手机/PWA/聊天存储逻辑。

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router"
+import { Link,useSearchParams } from "react-router"
 import { ArrowUp, BookOpen, Bot, BrainCircuit, Check, ChevronRight, Clock3, Code2, Compass, Copy, FolderKanban, History, ImagePlus, Image as ImageIcon, Layers3, LoaderCircle, MessageSquareText, MoreHorizontal, PenLine, Plus, ChevronDown, RotateCcw, Search, ShieldCheck, Sparkles, Trash2, WandSparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { useEntries,useMe } from "@/lib/tiny"
 import { discoverGatewayModels,gatewayComplete,type GatewayModel } from "@/lib/gateway"
+import ModelPicker from "@/components/model-picker"
+import {discoverProviderModels,completeProvider,engineName,modelName,PROVIDERS,type ModelEngine} from "@/lib/providers"
 import { type WorkspaceChat,type WorkspaceMessage,type WorkspaceProject,type ChatAttachment,issueText } from "@/lib/workspace"
 
 type Mode = "general"|"creative"|"code"|"analysis"|"translate"
@@ -27,6 +29,7 @@ type SessionPending={key:string;messages:WorkspaceMessage[]}
 
 export default function Home() {
  const me=useMe()
+ const [urlParams,setUrlParams]=useSearchParams()
  const {entries,error:chatsError}=useEntries<WorkspaceChat>("chat:",{order:"-$updated_at",limit:50})
  const {entries:projects}=useEntries<WorkspaceProject>("project:",{order:"-$updated_at",limit:50})
  const [selected,setSelected]=useState<string|null>(null)
@@ -38,7 +41,7 @@ export default function Home() {
  const [notice,setNotice]=useState("")
  const [showHistory,setShowHistory]=useState(false)
  const [deleteConfirm,setDeleteConfirm]=useState(false)
- const [engine,setEngine]=useState<"native"|"gateway">("native")
+ const [engine,setEngine]=useState<ModelEngine>("native")
  const [gatewayReady,setGatewayReady]=useState(false)
  const [gatewayModels,setGatewayModels]=useState<GatewayModel[]>([])
  const [showModels,setShowModels]=useState(false)
@@ -111,7 +114,14 @@ export default function Home() {
  },[showHistory])
 
  function startNew(){setSelected(null);setProjectForNew(null);setModeForNew("general");setDraft("");setSelectedImages([]);setPending(null);setStreaming(null);setNotice("");setShowHistory(false);setDeleteConfirm(false)}
- function openChat(key:string){const v=entries?.find(e=>e.key===key)?.value;setSelected(key);setShowHistory(false);setPending(null);setStreaming(null);setSelectedImages([]);setNotice("");setDeleteConfirm(false);setEngine(v?.engine==="gateway"&&gatewayReady?"gateway":"native");setStrategy(v?.modelChoice??"auto")}
+ function openChat(key:string){const v=entries?.find(e=>e.key===key)?.value;setSelected(key);setShowHistory(false);setPending(null);setStreaming(null);setSelectedImages([]);setNotice("");setDeleteConfirm(false);setEngine(v?.engine??"native");setStrategy(v?.modelChoice??"auto")}
+ useEffect(()=>{
+  const source=urlParams.get("source"),model=urlParams.get("model")
+  if(source&&model&&(source==="native"||source==="gateway"||PROVIDERS.some(p=>p.id===source))){
+   setEngine(source as ModelEngine);setStrategy(model);setNotice("已选择模型 "+model+"，首次调用前会验证连接")
+   setUrlParams({}, {replace:true})
+  }
+ },[urlParams,setUrlParams])
  function useSuggestion(t:typeof tools[number]){setModeForNew(t.id);setDraft(t.prompt);editor.current?.focus()}
  async function changeMode(m:Mode) {
   if(inFlight.current)return
@@ -166,25 +176,37 @@ export default function Home() {
   }catch(e){setNotice("添加图片失败："+issueText(e))}
   finally{setConverting(false);if(imageInput.current)imageInput.current.value=""}
  }
- function chooseModel(id:string){setEngine("gateway");setStrategy(id);setShowModels(false)}
+ async function chooseModel(source:ModelEngine,id:string){
+  if(inFlight.current)return
+  setEngine(source);setStrategy(id);setShowModels(false)
+  if(current)try{
+   await tiny.db.set(current.key,{...current.value,engine:source,modelChoice:id,updatedAt:new Date().toISOString()})
+  }catch(e){setNotice("保存模型选择失败："+issueText(e))}
+ }
  async function ask(messages:WorkspaceMessage[],mode:Mode,requestKey:string,project?:string){
   const context=projects?.find(p=>p.key===project)?.value.context
   const system="你是 AIGZT AI 统一工作台的中文助手。"+taskRules[mode]+"不得声称使用了未连接的模型或外部服务。"+(context?"\n当前项目共享上下文：\n"+context.slice(0,12000):"")
   if(engine==="gateway"){
-   if(!gatewayReady)throw new Error("请先验证 FreeLLMAPI 网关")
+   if(!gatewayReady)await discoverGatewayModels()
    const res=await gatewayComplete(messages,system,strategy)
    return {role:"assistant" as const,content:res.content,model:res.route}
+  }
+  if(engine!=="native"){
+   // Re-verify existing selections when a chat is opened on another device.
+   await discoverProviderModels(engine)
+   const response=await completeProvider(engine,strategy,messages,system)
+   return {role:"assistant" as const,content:response.content,model:engineName(engine)+" / "+response.route}
   }
   const history=messages.slice(-18).map(m=>m.role+": "+m.content.slice(0,10000)).join("\n\n")
   const images=messages.at(-1)?.role==="user"?messages.at(-1)?.attachments?.map(a=>a.id)??[]:[]
   let content="",updated=0
-  for await(const chunk of tiny.ai.stream(history,{system,images})){
+  for await(const chunk of tiny.ai.stream(history,{system,images,...(strategy!=="auto"?{model:strategy}:{})})){
    content+=chunk
    if(Date.now()-updated>70){setStreaming({key:requestKey,text:content});updated=Date.now()}
   }
   if(!content.trim())throw Error("AI 未返回有效回复，请重试")
   setStreaming({key:requestKey,text:content})
-  return {role:"assistant" as const,content,model:"平台内置 AI"}
+  return {role:"assistant" as const,content,model:strategy==="auto"?"平台自动选择":"请求模型："+strategy}
  }
  async function send(){
   const input=draft.trim()
@@ -199,7 +221,7 @@ export default function Home() {
   const uploaded:ChatAttachment[]=[]
   let saved=false
   try{
-   if(engine==="gateway"&&freshFiles.length)throw Error("当前网关只连接文本模型，请切换内置 AI 分析图片")
+   if(engine!=="native"&&freshFiles.length)throw Error("当前第三方接口只支持文本，请切换内置 AI 分析图片")
    for(let i=0;i<freshFiles.length;i++){
     setUploading("正在上传图片 "+(i+1)+"/"+freshFiles.length)
     const file=freshFiles[i]
@@ -270,7 +292,7 @@ export default function Home() {
   <div className="hidden gap-3 lg:grid lg:grid-cols-3">
    <div className="workspace-surface flex min-w-0 items-center gap-3 rounded-2xl p-3 sm:p-4">
     <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary"><Bot className="size-5"/></span>
-    <div className="min-w-0"><p className="text-[11px] text-muted-foreground">当前对话引擎</p><p className="truncate text-sm font-semibold">{engine==="native"?"平台内置 AI":"FreeLLMAPI"}</p><p className="mt-0.5 text-[10px] text-primary">{engine==="native"?"已接入 · 可直接对话":"网关已通过检测"}</p></div>
+    <div className="min-w-0"><p className="text-[11px] text-muted-foreground">当前对话引擎</p><p className="truncate text-sm font-semibold">{engineName(engine)}</p><p className="mt-0.5 text-[10px] text-primary">{engine==="native"?"无需密钥":engine==="gateway"?(gatewayReady?"已验证":"调用前验证"):"调用前验证"}</p></div>
    </div>
    <div className="workspace-surface hidden min-w-0 items-center gap-3 rounded-2xl p-3 sm:flex sm:p-4">
     <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-foreground"><Layers3 className="size-5"/></span>
@@ -299,10 +321,9 @@ export default function Home() {
      </div>
     </div>
     <div className="aigzt-chat-tools workspace-scroll flex shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-2 sm:px-5">
-     <span className="shrink-0 text-[11px] text-muted-foreground">引擎</span>
-     <Button size="sm" variant={engine==="native"?"default":"secondary"} onClick={()=>setEngine("native")} className="h-8 shrink-0 rounded-lg text-xs"><Check className="size-3"/>内置 AI</Button>
-     <Button size="sm" variant={engine==="gateway"?"default":"secondary"} disabled={!gatewayReady} onClick={()=>setEngine("gateway")} className="h-8 shrink-0 rounded-lg text-xs"><Sparkles className="size-3"/>FreeLLMAPI</Button>
-     <Button size="sm" variant="ghost" disabled={checking} onClick={()=>void checkGateway()} className="h-8 shrink-0 text-xs">{checking?"连接检测中…":gatewayReady?"重新检测":"连接网关"}<ChevronRight className="size-3"/></Button>
+     <span className="shrink-0 text-xs text-muted-foreground">模型</span>
+     <Button size="sm" variant="secondary" className="h-10 max-w-[66%] shrink-0 rounded-xl border px-3 text-xs" onClick={()=>setShowModels(true)}><Bot className="size-4 shrink-0 text-primary"/><span className="max-w-[200px] truncate">{engineName(engine)} · {modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0"/></Button>
+     <Link to="/directory" className="ml-auto inline-flex h-9 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-primary hover:bg-primary/8"><Plus className="size-4"/>添加 AI</Link>
     </div>
     <div className={(chatActive?"flex":"hidden sm:flex")+" aigzt-chat-tools workspace-scroll shrink-0 items-center gap-2 overflow-x-auto border-b border-border/60 px-3 py-1.5 sm:px-5"}>
      <span className="shrink-0 text-[11px] text-muted-foreground">任务</span>
@@ -327,16 +348,16 @@ export default function Home() {
     </div>
     <div className="aigzt-chat-composer shrink-0 space-y-2 border-t border-border/70 bg-card p-3 sm:p-4">
      <div className="aigzt-chat-tools workspace-scroll flex items-center gap-2 overflow-x-auto pb-1"><span className="shrink-0 text-[11px] text-muted-foreground"><FolderKanban className="mr-1 inline size-3.5"/>项目</span><Button size="sm" variant={!projectId?"secondary":"ghost"} className="h-7 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(null)}>未关联</Button>{projects?.slice(0,5).map(p=><Button key={p.key} size="sm" variant={projectId===p.key?"secondary":"ghost"} className="h-7 max-w-36 shrink-0 rounded-lg text-[11px]" onClick={()=>void chooseProject(p.key)}><span className="truncate">{p.value.name}</span></Button>)}<Link to="/projects" className="ml-auto shrink-0 text-[11px] font-medium text-primary">管理项目</Link></div>
-     {engine==="gateway"&&<div className="flex items-center gap-1 overflow-x-auto py-1"><Button size="sm" variant="secondary" className="h-8 max-w-full shrink-0 text-xs" onClick={()=>setShowModels(true)}><span className="max-w-44 truncate">{strategy==="auto"?"智能调度":strategy==="auto:fast"?"快速优先":strategy==="auto:smart"?"深度优先":strategy}</span><ChevronDown className="size-3"/></Button><span className="text-[11px] text-muted-foreground">选择真实模型</span></div>}
+     
      {selectedImages.length>0&&<div className="flex flex-wrap gap-1.5">{selectedImages.map((file,i)=><span key={i} className="inline-flex max-w-full items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-[11px]"><ImageIcon className="size-3.5"/><span className="max-w-28 truncate">{file.name}</span><Button size="icon" variant="ghost" className="size-6" aria-label={"移除图片："+file.name} onClick={()=>setSelectedImages(list=>list.filter((_,j)=>j!==i))}><X className="size-3"/></Button></span>)}</div>}{notice&&<div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-[11px] text-foreground"><span className="flex-1">{notice}</span><Button size="icon" variant="ghost" aria-label="关闭消息" onClick={()=>setNotice("")} className="size-6"><X className="size-3"/></Button></div>}
      {current?.value.messages.at(-1)?.role==="user"&&!busy&&<Button variant="outline" size="sm" className="h-8 text-xs" onClick={()=>void retry()}><RotateCcw className="size-3.5"/>重试回复</Button>}
      <form onSubmit={e=>{e.preventDefault();void send()}} className="flex items-end gap-1 rounded-2xl border border-border bg-background/45 p-1.5 focus-within:border-primary/50">
       <input ref={imageInput} type="file" className="sr-only" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif" multiple aria-label="选择图片" onChange={e=>void addImages(e.target.files)}/>
-      <Button type="button" size="icon" variant="ghost" aria-label="添加图片" disabled={!me||busy||converting||engine==="gateway"} className="mb-0.5 size-10 shrink-0 rounded-xl" onClick={()=>imageInput.current?.click()}><ImagePlus className="size-5"/></Button>
+      <Button type="button" size="icon" variant="ghost" aria-label="添加图片" disabled={!me||busy||converting||engine!=="native"} className="mb-0.5 size-10 shrink-0 rounded-xl" onClick={()=>imageInput.current?.click()}><ImagePlus className="size-5"/></Button>
       <Textarea ref={editor} onFocus={()=>setInputFocused(true)} onBlur={()=>setInputFocused(false)} aria-label="输入聊天内容" value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia("(min-width:640px)").matches){e.preventDefault();void send()}}} placeholder={me?"给 AI 发送消息，Shift + Enter 换行…":"请先登录工作台"} disabled={!me||busy} className="aigzt-chat-input workspace-editor min-h-11 flex-1 resize-none border-0 bg-transparent p-2 text-[16px] shadow-none focus-visible:border-0 focus-visible:ring-0"/>
       <Button size="icon" type="submit" aria-label="发送消息" disabled={!me||busy||converting||(!draft.trim()&&!selectedImages.length)} className="size-10 shrink-0 rounded-xl"><ArrowUp className="size-5"/></Button>
      </form>
-     <p className="aigzt-chat-caption flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground"><span>{engine==="native"?"平台内置 AI":"FreeLLMAPI · "+strategy}{selectedProject?" · "+selectedProject.value.name:""}</span><span>{converting?"正在转换图片…":selectedImages.length?"可发送图片":"会话自动保存"}</span></p>
+     <p className="aigzt-chat-caption flex items-center justify-between gap-2 px-1 text-[10px] text-muted-foreground"><span>{engineName(engine)+" · "+modelName(engine,strategy)}{selectedProject?" · "+selectedProject.value.name:""}</span><span>{converting?"正在转换图片…":selectedImages.length?"可发送图片":"会话自动保存"}</span></p>
     </div>
    </section>
 
@@ -344,7 +365,7 @@ export default function Home() {
     <section className="workspace-surface space-y-4 rounded-2xl p-4">
       <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">模型路由</h2><Compass className="size-4 text-primary"/></div>
       <div className="rounded-xl bg-primary/10 p-3"><div className="flex items-center gap-2 text-xs font-semibold"><span className="size-2 rounded-full bg-primary"/>平台内置 AI</div><p className="mt-1.5 text-[11px] text-muted-foreground">已集成 · 无需额外密钥</p></div>
-      <div className="rounded-xl bg-muted/60 p-3"><div className="flex items-center gap-2 text-xs font-semibold"><span className="size-2 rounded-full bg-muted-foreground"/>FreeLLMAPI</div><p className="mt-1.5 text-[11px] text-muted-foreground">{gatewayReady?gatewayModels+" 个模型已发现":"待配置真实网关"}</p></div>
+      <div className="rounded-xl bg-muted/60 p-3"><div className="flex items-center gap-2 text-xs font-semibold"><span className="size-2 rounded-full bg-muted-foreground"/>FreeLLMAPI</div><p className="mt-1.5 text-[11px] text-muted-foreground">{gatewayReady?gatewayModels.length+" 个模型已发现":"待配置真实网关"}</p></div>
       <Button onClick={()=>void checkGateway()} disabled={checking} variant="outline" className="w-full rounded-xl text-xs">{checking?"检测中…":"检测外部网关"}<ChevronRight className="size-3.5"/></Button>
     </section>
     <section className="workspace-surface space-y-3 rounded-2xl p-4">
@@ -357,19 +378,8 @@ export default function Home() {
    </aside>
   </div>
 
-  {showModels&&<div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-  <button className="absolute inset-0 bg-foreground/25 backdrop-blur-sm" aria-label="关闭模型选择" onClick={()=>setShowModels(false)}/>
-  <section role="dialog" aria-modal="true" aria-label="选择模型" className="relative w-full max-w-xl rounded-t-3xl border bg-card p-4 shadow-2xl sm:rounded-3xl sm:p-5">
-   <div className="mb-3 flex items-center justify-between"><div><h2 className="font-semibold">选择 AI 模型</h2><p className="mt-1 text-xs text-muted-foreground">来自真实连接的 FreeLLMAPI 网关</p></div><Button size="icon" variant="ghost" aria-label="关闭" onClick={()=>setShowModels(false)}><X className="size-4"/></Button></div>
-   <Input value={modelQuery} onChange={e=>setModelQuery(e.target.value)} aria-label="搜索模型" placeholder="搜索模型 ID…" className="mb-3 h-11"/>
-   <div className="workspace-scroll max-h-[min(60dvh,450px)] space-y-1 overflow-y-auto">
-    {([["auto","智能调度"],["auto:fast","快速优先"],["auto:smart","深度优先"]] as const).map(([id,label])=><Button key={id} variant={strategy===id?"secondary":"ghost"} className="h-11 w-full justify-start" onClick={()=>chooseModel(id)}><Sparkles className="size-4"/>{label}</Button>)}
-    {matchedModels.slice(0,70).map(m=><Button key={m.id} variant={strategy===m.id?"secondary":"ghost"} className="h-11 w-full justify-start" onClick={()=>chooseModel(m.id)}><Bot className="size-4 shrink-0"/><span className="min-w-0 truncate">{m.id}</span></Button>)}
-   </div>
-   {matchedModels.length>70&&<p className="mt-2 text-xs text-muted-foreground">结果较多，请输入更具体的模型名称</p>}
-  </section>
- </div>}
- {showHistory&&<div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+  {showModels&&<ModelPicker currentSource={engine} currentModel={strategy} onClose={()=>setShowModels(false)} onChoose={(source,id)=>void chooseModel(source,id)}/>}
+  {showHistory&&<div className="fixed inset-0 z-50 lg:hidden" role="presentation">
     <button className="absolute inset-0 bg-background/75 backdrop-blur-sm" aria-label="关闭历史会话" onClick={()=>setShowHistory(false)}/>
     <section role="dialog" aria-modal="true" aria-label="历史会话" className="absolute inset-y-0 left-0 flex w-[min(86vw,360px)] flex-col overflow-hidden border-r bg-card p-4 shadow-2xl">
       <div className="mb-5 flex items-center justify-between"><span className="text-lg font-bold">会话中心</span><Button variant="ghost" size="icon" aria-label="关闭" onClick={()=>setShowHistory(false)}><X className="size-4"/></Button></div>
