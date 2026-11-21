@@ -99,7 +99,7 @@ async function listModels(){
  const url="https://openrouter.ai/api/v1/models";
  const req=new Request(url,{headers:{"Accept":"application/json"}});
  const cache=caches.default;
- const hit=await cache.match(req);
+ const hit=await cache.match(req).catch(()=>null);
  let data;
  if(hit){data=await hit.json().catch(()=>null)}
  if(!data){
@@ -107,7 +107,7 @@ async function listModels(){
   if(!upstream.ok)throw Error("OpenRouter 模型目录暂时不可用："+upstream.status);
   data=await upstream.json();
   const rsp=new Response(JSON.stringify(data),{headers:{"content-type":"application/json","cache-control":"public,max-age=3600"}});
-  await cache.put(req,rsp);
+  await cache.put(req,rsp).catch(()=>{});
  }
  const list=Array.isArray(data?.data)?data.data:[];
  const models=list.filter(m=>typeof m.id==="string").map(m=>{
@@ -165,11 +165,12 @@ async function callExternal(provider,model,key,messages,consent){
  if(typeof text!=="string"||!text.trim())throw Error("服务商没有返回有效文字");
  return {content:truncate(text,40000),actualModel:out.model||model};
 }
-async function quota(env,userId){
- const day=new Date().toISOString().slice(0,10);
- const a=await dbRun(env.DB,"INSERT INTO usage_user(day,user_id,used) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET used=used+1 WHERE used<?",day,userId,USER_DAILY);
+async function quota(env,userId,kind="text"){
+ const day=new Date().toISOString().slice(0,10)+(kind==="image"?":image":"");
+ const userLimit=kind==="image"?1:USER_DAILY,siteLimit=kind==="image"?4:SITE_DAILY;
+ const a=await dbRun(env.DB,"INSERT INTO usage_user(day,user_id,used) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET used=used+1 WHERE used<?",day,userId,userLimit);
  if(!a.meta?.changes)throw Object.assign(new Error("今日免费对话次数已用完"),{status:429});
- const b=await dbRun(env.DB,"INSERT INTO usage_site(day,used) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used<?",day,SITE_DAILY);
+ const b=await dbRun(env.DB,"INSERT INTO usage_site(day,used) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used<?",day,siteLimit);
  if(!b.meta?.changes){
   await dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId);
   throw Object.assign(new Error("网站今日免费总额度已用完，明天恢复"),{status:429});
@@ -217,6 +218,52 @@ async function chat(req,env,user){
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,stamp,chatId,user.id);
  return {ok:true,chatId,reply:result.content,model:result.actualModel,provider};
 }
+async function createImage(req,env,user){
+ requireUser(user);
+ const body=await parseJSON(req),prompt=truncate(body.prompt,1400).trim();
+ if(!prompt)throw Error("请输入图片描述");
+ const refund=await quota(env,user.id,"image");
+ try{
+  const out=await env.AI.run("@cf/black-forest-labs/flux-1-schnell",{prompt,steps:4});
+  if(typeof out?.image!=="string"||!out.image)throw Error("免费作图模型没有返回有效图片");
+  if(out.image.length>6500000)throw Error("生成图片太大，请修改描述重试");
+  return {ok:true,model:"@cf/black-forest-labs/flux-1-schnell",image:"data:image/jpeg;base64,"+out.image};
+ }catch(e){await refund().catch(()=>{});throw e}
+}
+async function createVideo(req,user){
+ requireUser(user);
+ const body=await parseJSON(req);
+ if(body.confirmed!==true)throw Error("视频可能收费，必须明确确认");
+ const key=body.apiKey,model=body.model,prompt=truncate(body.prompt,1400).trim();
+ if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("请先填写自己的 Grok API Key");
+ if(model!=="grok-imagine-video-1.5")throw Error("仅支持经官方确认的 Grok Imagine Video 1.5 模型");
+ if(!prompt)throw Error("请输入视频描述");
+ const r=await fetch("https://api.x.ai/v1/videos/generations",{
+  method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+key},
+  body:JSON.stringify({model,prompt,duration:6,resolution:"720p"}),
+  redirect:"manual",signal:AbortSignal.timeout(19000)
+ });
+ if(r.status>=300&&r.status<400)throw Error("上游重定向已安全拦截");
+ if(!r.ok)throw Error(r.status===429?"个人视频额度或速率已用完":"Grok 视频提交失败 HTTP "+r.status);
+ const data=await r.json();
+ if(typeof data?.request_id!=="string")throw Error("视频服务没有返回任务编号");
+ return {ok:true,requestId:data.request_id,status:data.status||"pending"};
+}
+async function queryVideo(req,user){
+ requireUser(user);
+ const body=await parseJSON(req);
+ const key=body.apiKey,id=body.requestId;
+ if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("缺少 Grok 授权");
+ if(typeof id!=="string"||!/^[A-Za-z0-9_-]{4,160}$/.test(id))throw Error("视频任务编号无效");
+ const res=await fetch("https://api.x.ai/v1/videos/"+encodeURIComponent(id),{
+  headers:{authorization:"Bearer "+key},redirect:"manual",signal:AbortSignal.timeout(16000)
+ });
+ if(res.status>=300&&res.status<400)throw Error("上游重定向已拦截");
+ if(!res.ok)throw Error("查询视频任务失败 HTTP "+res.status);
+ const data=await res.json();
+ const url=typeof data?.video?.url==="string"&&data.video.url.startsWith("https://")?data.video.url:null;
+ return {ok:true,status:data.status||"pending",url};
+}
 async function main(req,env){
  const url=new URL(req.url),path=url.pathname;
  if(req.method==="GET"&&(path==="/"||path==="/index.html"))return staticResponse(HTML,"text/html; charset=utf-8");
@@ -250,6 +297,9 @@ async function main(req,env){
  }
  if(!user)return fail("请先登录独立 AIGZT 账号",401);
  if(path==="/api/provider-models"&&req.method==="POST")return response(await providerModels(await parseJSON(req)));
+ if(path==="/api/image"&&req.method==="POST")return response(await createImage(req,env,user));
+ if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,user));
+ if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,user));
  if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));
  if(path==="/api/chats"&&req.method==="GET"){
   const r=await env.DB.prepare("SELECT id,title,provider,model,updated_at FROM chats WHERE user_id=? ORDER BY updated_at DESC LIMIT 80").bind(user.id).all();
