@@ -69,19 +69,35 @@ export default function Home() {
    if(visibleMessages.length || busy){const el=chatScroll.current;if(el)el.scrollTop=el.scrollHeight}
  },[visibleMessages.length,busy,selected,streaming?.text.length])
  useEffect(()=>{
-  // Mobile Safari keyboard resizes visualViewport, not necessarily the CSS viewport.
+  // iOS WebKit scrolls the visual viewport separately from the layout viewport.
+  // Keep one pinned chat shell sized and positioned to the actually visible area.
   const viewport=window.visualViewport
-  function updateHeight(){
-   const height=Math.round(viewport?.height??window.innerHeight)
-   if(height>0)document.documentElement.style.setProperty("--aigzt-visible-height",height+"px")
+  const root=document.documentElement
+  let raf=0
+  function measure(){
+   if(raf)cancelAnimationFrame(raf)
+   raf=requestAnimationFrame(()=>{
+    const height=viewport?.height??window.innerHeight
+    const top=viewport?.offsetTop??0
+    if(height>0){
+     root.style.setProperty("--aigzt-visible-height",Math.round(height)+"px")
+     root.style.setProperty("--aigzt-viewport-offset",Math.max(0,Math.round(top))+"px")
+    }
+   })
   }
-  updateHeight()
-  viewport?.addEventListener("resize",updateHeight)
-  window.addEventListener("resize",updateHeight)
+  measure()
+  viewport?.addEventListener("resize",measure)
+  viewport?.addEventListener("scroll",measure)
+  window.addEventListener("resize",measure)
+  window.addEventListener("orientationchange",measure)
   return ()=>{
-   viewport?.removeEventListener("resize",updateHeight)
-   window.removeEventListener("resize",updateHeight)
-   document.documentElement.style.removeProperty("--aigzt-visible-height")
+   if(raf)cancelAnimationFrame(raf)
+   viewport?.removeEventListener("resize",measure)
+   viewport?.removeEventListener("scroll",measure)
+   window.removeEventListener("resize",measure)
+   window.removeEventListener("orientationchange",measure)
+   root.style.removeProperty("--aigzt-visible-height")
+   root.style.removeProperty("--aigzt-viewport-offset")
   }
  },[])
  useEffect(()=>{

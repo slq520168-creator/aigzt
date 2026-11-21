@@ -16,3 +16,6 @@ V9 移动端专项：首屏任务卡压缩到单行内容，已选会话隐藏�
 
 ## V11 手机消息高度专项
 根因：V10 CSS `.aigzt-chat-card > .workspace-scroll` 同时选中消息列表、引擎栏和任务栏，导致所有横向可滚动工具栏 `flex:1` 平均瓜分高度；现用 `data-chat-messages` 唯一标记，只给消息区增长，其他栏 `flex:0 0 auto`。减少工具栏纵向留白，保留键盘聚焦时隐藏全局导航。Tiniest Cloud 邮件登录页是平台自带界面，不能通过应用 CSS 控制；YOUXI 收藏页属于独立项目，本次不修改。
+
+## V12 iOS 整页上移根因修复
+V10/V11 仅设置 #root 高度和 body overflow，却没有把根容器固定；Safari 软键盘弹出后滚动 layout viewport，导致整页仍能被推走。V12 使用 visualViewport.resize + scroll 的 height/offsetTop 维护固定 #root，在移动聊天状态中禁止根滚动；只有消息列表 overflow-y:auto，输入栏不随整页滚动。保留 V11 对工具栏高度的唯一性修复。非聊天页面不受此布局影响。
