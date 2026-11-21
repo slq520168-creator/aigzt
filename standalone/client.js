@@ -455,10 +455,33 @@ async function uploadSelected(files){
 
 
 const WORK_PROVIDER_NAMES={
- free:"免费模型",openrouter:"OpenRouter",groq:"Groq",cerebras:"Cerebras",openai:"OpenAI / GPT",
- grok:"Grok",gemini:"Gemini",qwen:"千问",deepseek:"DeepSeek",zhipu:"智谱 GLM",kimi:"Kimi",
- minimax:"MiniMax",siliconflow:"硅基流动",doubao:"豆包",qianfan:"百度千帆",hunyuan:"腾讯混元"
+ free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",
+ grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
+ minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
 };
+const WORK_AGENT_PRODUCTS=[
+ {name:"QwenWork",desc:"千问办公 · Agent 工作平台",url:"https://qwenwork.cn",category:"综合工作"},
+ {name:"ChatGPT Work",desc:"OpenAI · 多步骤工作代理",url:"https://chatgpt.com",category:"综合工作"},
+ {name:"Manus",desc:"通用 AI 执行代理",url:"https://manus.im",category:"综合工作"},
+ {name:"Kimi Work",desc:"Kimi · 桌面工作代理",url:"https://www.kimi.com/en/help/others/product-comparison",category:"综合工作"},
+ {name:"OpenAI Codex",desc:"OpenAI · 编程代理",url:"https://chatgpt.com/codex",category:"编程开发"},
+ {name:"Google Antigravity",desc:"Google · 开发代理工作台",url:"https://antigravity.google",category:"编程开发"},
+ {name:"Kimi Code",desc:"Kimi · 编程代理",url:"https://www.kimi.com/code/en",category:"编程开发"},
+ {name:"Qwen Code",desc:"千问 · 开源编程代理",url:"https://github.com/QwenLM/qwen-code",category:"编程开发"}
+];
+function renderWorkAgentCatalog(){
+ const target=$("workAgentCatalog");target.replaceChildren();
+ const selected=document.createDocumentFragment();
+ for(const item of WORK_AGENT_PRODUCTS){
+  const link=node("a","work-agent-product");
+  link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
+  const details=node("span","work-agent-description");
+  details.append(node("strong","",item.name),node("small","",item.desc));
+  const meta=node("span","work-agent-meta","官网");
+  link.append(details,meta);selected.append(link);
+ }
+ target.append(selected);
+}
 function resetWorkPlan(){
  S.workStages=[
   {name:"规划",instruction:"理解需求，明确任务与交付内容",provider:"auto",model:""},
@@ -476,14 +499,74 @@ function chooseWorkProvider(value,auto=false){
  }
  select.value=value;return select;
 }
-function workModelHints(){
- const d=$("workModelHints");d.replaceChildren();
- const ids=new Set(["free:auto","free:vexa","free:cehpoint","free:vireonix"]);
- for(const m of S.freeModels)ids.add(m.id);
- for(const models of Object.values(S.connected))for(const m of models)if(m?.id)ids.add(m.id);
- for(const model of S.remoteModels.slice(0,500))ids.add(model.id);
- for(const id of [...ids].slice(0,750)){const opt=node("option");opt.value=id;d.append(opt)}
+
+function workModelsFor(provider){
+ if(provider==="auto")return [];
+ if(provider==="free"){
+  return [
+   {id:"free:auto",name:"平台自动选择免费接口（底层模型不固定）"},
+   {id:"free:vexa",name:"Vexa 接口（底层模型未公开）"},
+   {id:"free:vireonix",name:"Vireonix 接口（底层模型未公开）"},
+   {id:"free:cehpoint",name:"Cehpoint 接口（底层模型未公开）"},
+   ...(S.freeModels.some(x=>x.id==="free:groq")?[{id:"free:groq",name:"Groq 接口（GPT-OSS 20B）"}]:[])
+  ];
+ }
+ const models=new Map();
+ const add=(m)=>{if(m&&typeof m.id==="string"&&m.id.trim()&&!models.has(m.id))models.set(m.id,{id:m.id,name:typeof m.name==="string"&&m.name.trim()?m.name:m.id})};
+ if(provider==="openrouter")for(const m of S.remoteModels)add(m);
+ for(const m of S.connected[provider]||[])add(m);
+ const saved=S.savedProviders[provider]?.model;
+ if(saved&&!models.has(saved))add({id:saved,name:saved+"（已保存，需验证）"});
+ return [...models.values()];
 }
+function ensureWorkProviderCatalog(provider){
+ if(!provider||["auto","free"].includes(provider)||!S.savedProviders[provider])return;
+ if(!S.workCatalogLoading)S.workCatalogLoading={};
+ if(S.workCatalogLoading[provider])return;
+ S.workCatalogLoading[provider]="busy";
+ void api("/api/connections/"+provider+"/models",{}).then(d=>{
+  S.workCatalogLoading[provider]="done";
+  if(Array.isArray(d.models)&&d.models.length)S.connected[provider]=d.models;
+  if(S.workMode)renderWorkEditor();
+ }).catch(()=>{S.workCatalogLoading[provider]="error"});
+}
+function workModelPicker(provider,selected,update,disabled){
+ const holder=node("div","work-specific-model");
+ if(provider==="auto"){
+  holder.append(node("span","work-model-explainer","自动接力（按当前任务授权）"));return holder;
+ }
+ const catalog=workModelsFor(provider),choice=node("select","work-model-select");
+ choice.disabled=disabled;
+ const place=node("option","",provider==="free"?"请选择免费接口":"请选择真实模型");
+ place.value="";choice.append(place);
+ const known=catalog.some(m=>m.id===selected);
+ if(selected&&!known){
+  const customOpt=node("option","",selected+"（自定义，未验证）");
+  customOpt.value=selected;choice.append(customOpt);
+ }
+ for(const m of catalog.slice(0,500)){
+  const label=m.name===m.id?m.id:m.name+" · "+m.id;
+  const opt=node("option","",label);opt.value=m.id;choice.append(opt);
+ }
+ const custom=node("option","","输入官方模型 ID…");custom.value="__manual";choice.append(custom);
+ const input=node("input","work-model-manual");
+ input.type="text";input.maxLength=160;input.placeholder="填写该平台官方模型 ID";input.autocomplete="off";input.disabled=disabled;
+ input.hidden=!selected||known;input.value=selected&&!known?selected:"";
+ choice.value=selected||"";
+ choice.addEventListener("change",()=>{
+  if(choice.value==="__manual"){input.hidden=false;input.value="";update("");input.focus()}
+  else{input.hidden=true;input.value="";update(choice.value)}
+ });
+ input.addEventListener("input",()=>update(input.value.trim()));
+ const note=node("small","work-model-hint",provider==="free"?"免费接口不是具体模型，真实底层模型可能变化":
+   !connected(provider)?"此 API 尚未连接；不能参与自动接力":
+   catalog.length?"模型名称与 ID 来自当前服务商的模型目录":"未获取到模型目录，请输入官方模型 ID");
+ holder.append(choice,input,note);return holder;
+}
+function workModelHints(){
+ if(S.workMode)renderWorkEditor();
+}
+
 function renderWorkEditor(){
  const locked=S.workBusy||["completed","cancelled","running"].includes(S.workDetail?.task?.status);
  const completed=S.workDetail?.task?.nextStep||0;
@@ -499,10 +582,14 @@ function renderWorkEditor(){
   instructions.disabled=locked||i<completed;instructions.addEventListener("input",()=>{item.instruction=instructions.value});
   const rowModel=node("div","work-stage-model"),provider=chooseWorkProvider(item.provider,true);
   provider.disabled=locked||i<completed;
-  const model=node("input","work-model-id");model.placeholder="模型ID（留空使用当前默认）";model.value=item.model;
-  model.setAttribute("list","workModelHints");model.disabled=locked||i<completed;
-  provider.addEventListener("change",()=>{item.provider=provider.value;item.model="";model.value=""});
-  model.addEventListener("input",()=>{item.model=model.value.trim()});
+  provider.setAttribute("aria-label","选择 API 服务商");
+  provider.addEventListener("change",()=>{
+   item.provider=provider.value;
+   item.model=item.provider==="free"?"free:auto":item.provider==="auto"?"":S.savedProviders[item.provider]?.model||"";
+   ensureWorkProviderCatalog(item.provider);
+   renderWorkEditor();
+  });
+  const model=workModelPicker(item.provider,item.model,v=>item.model=v,locked||i<completed);
   rowModel.append(provider,model);
   row.append(head,title,instructions,rowModel);stageBox.append(row);
  }
@@ -510,9 +597,12 @@ function renderWorkEditor(){
  if(!S.workRoutes.length)routeBox.append(node("p","work-no-routes","未指定候补线路，将优先使用免费模型与已授权的连接"));
  for(const [i,item] of S.workRoutes.entries()){
   const row=node("div","work-route-row"),provider=chooseWorkProvider(item.provider,false);
-  provider.disabled=locked;provider.addEventListener("change",()=>{item.provider=provider.value;item.model=provider.value==="free"?"free:auto":S.savedProviders[provider.value]?.model||"";renderWorkEditor()});
-  const model=node("input","work-model-id");model.value=item.model;model.placeholder="输入模型 ID";model.setAttribute("list","workModelHints");model.disabled=locked;
-  model.addEventListener("input",()=>item.model=model.value.trim());
+  provider.disabled=locked;provider.setAttribute("aria-label","候补 API 服务商");
+  provider.addEventListener("change",()=>{
+   item.provider=provider.value;item.model=provider.value==="free"?"free:auto":S.savedProviders[provider.value]?.model||"";
+   ensureWorkProviderCatalog(item.provider);renderWorkEditor();
+  });
+  const model=workModelPicker(item.provider,item.model,v=>item.model=v,locked);
   const up=node("button","work-route-move","↑");up.type="button";up.title="上移";up.disabled=locked||i===0;
   up.addEventListener("click",()=>{[S.workRoutes[i-1],S.workRoutes[i]]=[S.workRoutes[i],S.workRoutes[i-1]];renderWorkEditor()});
   const down=node("button","work-route-move","↓");down.type="button";down.title="下移";down.disabled=locked||i===S.workRoutes.length-1;
@@ -526,7 +616,6 @@ function renderWorkEditor(){
  $("workFallback").disabled=locked;
  $("workFallback").checked=S.workFallback;
  $("workConfigSummary").textContent=S.workStages.length+" 个步骤 · "+S.workRoutes.length+" 条自选候补线路";
- workModelHints();
 }
 function newWorkDraft(){
  if(S.workBusy)return;
@@ -561,7 +650,7 @@ function initDomesticProviderLinks(){
 const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
  S.workMode=on;
- if(on){if(!S.workStages.length)resetWorkPlan();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("chatTop").classList.remove("active");$("workOpen").setAttribute("aria-pressed","true");$("chatTop").setAttribute("aria-pressed","false");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
+ if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";$("workOpen").classList.add("active");$("chatTop").classList.remove("active");$("workOpen").setAttribute("aria-pressed","true");$("chatTop").setAttribute("aria-pressed","false");hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
  else{$("workBoard").hidden=true;$("conversation").hidden=false;$("workOpen").classList.remove("active");$("chatTop").classList.add("active");$("workOpen").setAttribute("aria-pressed","false");$("chatTop").setAttribute("aria-pressed","true");$("prompt").placeholder="向 AI 提问…";}
  closeMenu();
 }
@@ -778,14 +867,14 @@ function modelMatches(m){
 function renderModels(){
  const visible=allModels().filter(modelMatches);
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*45);
- $("modelCount").textContent="符合条件的真实模型 "+count+" 个 · 已显示 "+shown.length+" 个";
+ $("modelCount").textContent="符合条件 "+count+" 项 · 已显示 "+shown.length+" 项";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList");list.replaceChildren();
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的真实模型，请切换筛选。":"模型目录尚未连接成功。"));return}
  for(const item of shown){
   const row=node("div","model-row"),info=node("div","model-info"),title=node("strong","",item.name||item.id);
-  const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费·额度有限":item.free?"免费·需个人Key":"需授权·可能收费");
-  title.append(tag);info.append(title,node("small","",item.provider+" · "+item.id));
+  const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费接口":item.free?"零价模型 · 需密钥":"需授权 · 可能收费");
+  title.append(tag);info.append(title,node("small","",item.provider==="free"?"平台路由 · 真实模型由上游决定":"接入平台："+item.provider+" · 模型 ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
   const button=node("button","model-action",actionable?(item.type!=="text"?"选择聊天创作":S.model===item.id?"当前模型":"选择模型"):"暂不支持");
   button.disabled=!actionable||S.model===item.id;

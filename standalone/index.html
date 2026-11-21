@@ -50,12 +50,17 @@
     <div class="top-right"><button class="icon-btn" id="themeToggle" title="切换呼吸主题" aria-label="切换呼吸主题"><span class="ui-icon" data-icon="palette" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <div class="work-header"><div><h2>工作模式</h2><p>自定义步骤、执行 AI 和候补顺序</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
+    <div class="work-header"><div><h2>工作模式</h2><p>工作代理与聊天模型是不同产品</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
+    <details class="work-agents" id="workAgents" open><summary>官方工作代理 <small>官网入口 · 不是普通模型</small></summary>
+     <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
+     <div id="workAgentCatalog" class="work-agent-catalog"></div>
+     <p class="work-agent-disclaimer">第三方工作代理需分别登录官方账号；当前仅提供官方入口，尚不能通过普通聊天 API 在本站代它们执行任务。</p>
+    </details>
     <details class="work-config" id="workConfig" open>
      <summary>执行配置 <span id="workConfigSummary">按任务自由配置</span></summary>
      <div class="work-config-body">
-      <div class="work-config-section"><div class="work-section-heading"><strong>执行团队</strong><span>每一步指定 AI 和工作内容，可添加至12步</span></div><div id="workStageEditor" class="work-stage-editor"></div><datalist id="workModelHints"></datalist><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
-      <div class="work-config-section"><div class="work-section-heading"><strong>模型接力</strong><span>按顺序切换，不会使用未经授权的收费模型</span></div><div id="workRouteEditor" class="work-route-editor"></div><button type="button" class="work-add" id="workAddRoute">+ 添加候补模型</button><label class="work-checkbox"><input type="checkbox" id="workFallback" checked>当前模型不可用时，自动尝试其他授权模型</label></div>
+      <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
+      <div class="work-config-section"><div class="work-section-heading"><strong>模型接力</strong><span>仅已授权的 API 模型参与自动切换</span></div><div id="workRouteEditor" class="work-route-editor"></div><button type="button" class="work-add" id="workAddRoute">+ 添加候补模型</button><label class="work-checkbox"><input type="checkbox" id="workFallback" checked>当前模型不可用时，自动尝试其他授权模型</label></div>
       <div class="work-config-foot"><button type="button" class="outline" id="workSaveConfig">保存任务配置</button><span id="workConfigMessage" role="status"></span></div>
      </div>
     </details>

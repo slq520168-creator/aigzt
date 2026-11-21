@@ -5,15 +5,15 @@
 const HTML=__HTML__;
 const CSS=__CSS__;
 const CLIENT=__CLIENT__;
-const VERSION="aigzt-cf-4.9.1-handoff";
+const VERSION="aigzt-cf-5.0-agent-identity";
 const USER_DAILY=8;
 const SITE_DAILY=45;
 const FREE_MODELS=[
- {id:"free:auto",name:"免费自动 · 多线路",provider:"free",type:"text",free:true},
- {id:"free:vireonix",name:"Vireonix 免费文本",provider:"free",type:"text",free:true},
- {id:"free:cehpoint",name:"Cehpoint 免费文本",provider:"free",type:"text",free:true},
- {id:"free:vexa",name:"Vexa · 免费对话",provider:"free",type:"text",free:true},
- {id:"free:groq",name:"Groq · 免费额度",provider:"free",type:"text",free:true}
+ {id:"free:auto",name:"平台免费线路 · 自动切换",provider:"free",type:"text",free:true,isRoute:true},
+ {id:"free:vireonix",name:"Vireonix · 免费接口",provider:"free",type:"text",free:true,isRoute:true},
+ {id:"free:cehpoint",name:"Cehpoint · 免费接口",provider:"free",type:"text",free:true,isRoute:true},
+ {id:"free:vexa",name:"Vexa · 免费接口",provider:"free",type:"text",free:true,isRoute:true},
+ {id:"free:groq",name:"Groq 免费接口 · GPT-OSS 20B",provider:"free",type:"text",free:true,isRoute:true,actualModel:"openai/gpt-oss-20b"}
 ];
 const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
@@ -697,7 +697,7 @@ async function workFree(route,prompt,timeout){
  const j=await r.json(),v=route.model==="vexa"?(j.success===true?j.response:null):j.choices?.[0]?.message?.content;
  const out=typeof v==="string"?v:Array.isArray(v)?v.map(x=>x.text||"").join("\n"):"";
  if(!out.trim())throw Object.assign(new Error("模型没有返回内容"),{status:503});
- return {content:truncate(out,11000),actualModel:j.model||route.model};
+ return {content:truncate(out,11000),actualModel:typeof j.model==="string"&&j.model!=="auto"?j.model:"上游未公开"};
 }
 async function workPrompt(env,user,t,index,prior){
  const steps=workStepPlan(t),step=steps[index],role=step?.name||"任务执行";
@@ -755,7 +755,7 @@ async function workStepWithFailover(env,user,t,index,prior){
     result=await callExternal(route.provider,route.model,key,[{role:"system",body:"请如实执行文本/代码工作，不虚构外部操作。继续用户现有任务。"}, {role:"user",body:prompts.full}],true,Math.min(7700,available-500),index>=workStepPlan(t).length-1?1300:1000);
    }
    if(!result?.content?.trim())throw Error("模型没有返回内容");
-   answer={body:truncate(result.content,12000),provider:route.label,model:result.actualModel||route.model};break;
+   answer={body:truncate(result.content,12000),provider:route.provider==="free"?"免费线路 · "+route.label:route.label,model:result.actualModel||"上游未公开"};break;
   }catch(e){attempts.push({provider:route.label,reason:truncate(e?.message||"连接失败",85)});blocked.add(route.id)}
  }
  if(freeRefund&&!freeOK)await freeRefund().catch(()=>{});
