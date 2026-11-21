@@ -54,6 +54,7 @@ export default function Home() {
  const [gatewayReady,setGatewayReady]=useState(false)
  const [gatewayModels,setGatewayModels]=useState<GatewayModel[]>([])
  const [showModels,setShowModels]=useState(false)
+ const [modelInitialTab,setModelInitialTab]=useState<"favorites"|"browse">("favorites")
  const [modelQuery,setModelQuery]=useState("")
  const [selectedImages,setSelectedImages]=useState<File[]>([])
  const [converting,setConverting]=useState(false)
@@ -285,7 +286,7 @@ export default function Home() {
    {chatsError?<p className="p-3 text-xs text-destructive">{issueText(chatsError)}</p>:entries===undefined?<p className="p-3 text-xs text-muted-foreground">正在同步…</p>:chats.length===0?<p className="p-3 text-xs text-muted-foreground">暂无聊天</p>:chats.map(item=><button type="button" disabled={busy} key={item.key} onClick={()=>openChat(item.key)} className={"chat-history-row "+(selected===item.key?"chat-history-selected":"")}><span className="truncate">{item.value.title}</span></button>)}
   </div>
   <div className="shrink-0 border-t border-border/60 pt-2">
-   <Link to="/directory" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Layers3 className="size-4"/>AI 模型</Link>
+   <Link to="/directory" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Layers3 className="size-4"/>模型管理</Link>
    <Link to="/projects" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><FolderKanban className="size-4"/>项目</Link>
    <Link to="/settings" className="chat-sidebar-action" onClick={()=>setShowHistory(false)}><Settings2 className="size-4"/>设置</Link>
    {me?<button type="button" onClick={()=>setShowAccount(v=>!v)} className="chat-sidebar-action truncate"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{me.email.slice(0,1).toUpperCase()}</span><span className="truncate">{me.email}</span></button>:<button type="button" className="chat-sidebar-action" onClick={()=>tiny.login()}>登录工作台</button>}
@@ -297,7 +298,8 @@ export default function Home() {
   <div className="chat-main">
    <header className="chat-topbar">
     <button className="chat-icon md:hidden" type="button" aria-label="打开会话列表" onClick={()=>setShowHistory(true)}><PanelLeft className="size-5"/></button>
-    <button type="button" className="chat-model-selector" onClick={()=>{editor.current?.blur();setShowModels(true)}} aria-label="切换 AI 模型"><span className="max-w-[min(54vw,330px)] truncate">{engineName(engine)} · {modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0 text-muted-foreground"/></button>
+    <button type="button" className="chat-model-selector" onClick={()=>{editor.current?.blur();setModelInitialTab("favorites");setShowModels(true)}} aria-label="切换 AI 模型"><span className="max-w-[min(43vw,230px)] truncate">{engine==="native"&&strategy==="auto"?"AIGZT":modelName(engine,strategy)}</span><ChevronDown className="size-4 shrink-0 text-muted-foreground"/></button>
+    <button type="button" className="chat-icon chat-quick-add" aria-label="快捷添加模型" title="添加模型" onClick={()=>{editor.current?.blur();setModelInitialTab("browse");setShowModels(true)}}><Plus className="size-5"/></button>
     <div className="ml-auto flex shrink-0 gap-1">
      <button type="button" className="chat-icon" aria-label="新建对话" onClick={startNew}><SquarePen className="size-5"/></button>
      <div className="relative"><button type="button" className="chat-icon" aria-label="更多操作" onClick={()=>setShowMore(v=>!v)}><Ellipsis className="size-5"/></button>
@@ -349,6 +351,6 @@ export default function Home() {
    </div>
   </div>
   {showHistory&&<div className="chat-drawer-bg"><button type="button" className="absolute inset-0 bg-foreground/25" aria-label="关闭会话列表" onClick={()=>setShowHistory(false)}/><aside role="dialog" aria-modal="true" aria-label="会话列表" className="chat-drawer"><button className="chat-icon absolute right-3 top-3 z-10" type="button" aria-label="关闭侧栏" onClick={()=>setShowHistory(false)}><X className="size-5"/></button>{side}</aside></div>}
-  {showModels&&<ModelPicker currentSource={engine} currentModel={strategy} onClose={()=>setShowModels(false)} onChoose={(source,id)=>void chooseModel(source,id)}/>}
+  {showModels&&<ModelPicker currentSource={engine} currentModel={strategy} initialTab={modelInitialTab} onClose={()=>setShowModels(false)} onChoose={(source,id)=>void chooseModel(source,id)}/>}
  </section>
 }
