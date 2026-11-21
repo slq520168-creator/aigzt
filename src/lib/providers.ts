@@ -1,5 +1,5 @@
 import type {WorkspaceMessage} from "@/lib/workspace"
-import {requestPersonal} from "@/lib/user-keys"
+import {requestPersonal,hasPersonalKey} from "@/lib/user-keys"
 export type ExternalProvider = "openai"|"grok"|"gemini"|"qwen"|"openrouter"|"groq"|"cerebras"
 export type ModelEngine = "free"|"native"|"gateway"|ExternalProvider
 export type ModelRecord={id:string;name?:string;description?:string}
@@ -23,7 +23,17 @@ function errStatus(status:number,id:ExternalProvider):string{
  if(status>=500)return name+" 上游出现 HTTP "+status
  return name+" 返回 HTTP "+status+"；请检查模型与账户"
 }
-export function providerRequest(id:ExternalProvider,path:string,method:"GET"|"POST"="GET",json?:unknown,overrideKey?:string){
+export async function providerRequest(id:ExternalProvider,path:string,method:"GET"|"POST"="GET",json?:unknown,overrideKey?:string):Promise<unknown>{
+ // Restore the original site-managed Groq connection when the visitor does
+ // not have a personal Groq API key. This is the existing Tiniest secure key,
+ // never copied to the browser or application source.
+ if(id==="groq"&&!overrideKey&&!hasPersonalKey("groq")){
+  let response:Awaited<ReturnType<typeof tiny.fetch>>
+  try{response=await tiny.fetch("groq",{path,method,...(json===undefined?{}:{json})})}
+  catch(e){throw Error("网站 Groq 免费连接失败："+(e instanceof Error?e.message:String(e)))}
+  if(!response.ok)throw Error(errStatus(response.status,id))
+  return response.json
+ }
  return requestPersonal(id,path,method,json,overrideKey)
 }
 export async function listNativeModels(){

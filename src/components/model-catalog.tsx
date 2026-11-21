@@ -44,7 +44,7 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
     setRemaining(limits.remaining)
    }else if(id==="gateway")records=(await discoverGatewayModels()).map(v=>({id:v.id}))
    else{
-    if(!hasPersonalKey(id)){setPersonalOpen(true);throw Error("该服务商需要你的个人 API Key。网站免费池不要求你提供密钥。")}
+    if(id!=="groq"&&!hasPersonalKey(id)){setPersonalOpen(true);throw Error("该服务商需要你的个人 API Key。网站免费池不要求你提供密钥。")}
     records=await discoverProviderModels(id)
    }
    if(!records.length)throw Error("此连接暂时没有可用模型")
@@ -61,7 +61,7 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
  },[view,onClose])
  function selectSource(id:ModelEngine){
   setTab("browse")
-  if(id!=="free"&&id!=="native"&&id!=="gateway"&&!hasPersonalKey(id)){
+  if(id!=="free"&&id!=="native"&&id!=="gateway"&&id!=="groq"&&!hasPersonalKey(id)){
    setSource(id);setPersonalOpen(true);setError("请先连接自己的 "+engineName(id)+" 账号或 API Key");return
   }
   if(loaded[id]){setSource(id);setError("");setQuery("")}
@@ -112,7 +112,7 @@ export default function ModelCatalog({view,currentSource="free",currentModel="au
    {filtered.slice(0,250).map(model=>{
     const key=favKey(model.source,model.id),isSaved=saved.has(key)
     return <div key={key} role="listitem" className="model-list-row flex min-w-0 items-center gap-2 rounded-xl px-2 py-1.5">
-     <button type="button" className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left" onClick={()=>{if(model.source!=="free"&&model.source!=="native"&&model.source!=="gateway"&&!hasPersonalKey(model.source)){setSource(model.source);setPersonalOpen(true);return}onChoose(model.source,model.id);onClose?.()}}>
+     <button type="button" className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left" onClick={()=>{if(model.source!=="free"&&model.source!=="native"&&model.source!=="gateway"&&model.source!=="groq"&&!hasPersonalKey(model.source)){setSource(model.source);setPersonalOpen(true);return}onChoose(model.source,model.id);onClose?.()}}>
       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold">{engineName(model.source).slice(0,1)}</span>
       <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{model.name}</span><span className="block truncate text-[11px] text-muted-foreground">{engineName(model.source)}{model.name!==model.id?" · "+model.id:""}</span></span>
       {currentSource===model.source&&currentModel===model.id&&<Check className="size-4 shrink-0 text-primary"/>}
