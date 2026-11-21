@@ -50,6 +50,7 @@ a{color:inherit}
 .hint{padding:12px;color:#859094;font-size:13px}
 .side-bottom{display:flex;align-items:center;gap:4px;border-top:1px solid #e5e9eb;padding-top:12px;margin-top:auto}
 .account-btn{flex:1;min-width:0}
+.account-avatar{width:31px;height:31px;display:grid;place-items:center;flex:none;border-radius:50%;font-size:13px;font-weight:750;background:#e0edef;color:#38676b}
 .side-shade{display:none}
 .main{min-width:0;flex:1;display:flex;flex-direction:column;height:100%;position:relative;background:#fff}
 .topbar{height:66px;min-height:66px;padding:0 25px;display:flex;justify-content:space-between;align-items:center;gap:8px}

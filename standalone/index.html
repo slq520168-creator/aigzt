@@ -32,13 +32,13 @@
    <div id="projectsList" class="project-list" aria-label="项目列表"></div>
    <div class="side-heading"><span id="historyHeading">最近聊天</span><span id="chatCount"></span></div>
    <div id="history" class="history" aria-label="历史会话"></div>
-   <div class="side-bottom"><button id="accountBtn" class="nav-row account-btn"><span class="ui-icon" data-icon="circle-user" aria-hidden="true"></span><span id="accountName">登录 / 注册</span></button><button class="icon-btn small-btn" id="settingsBtn" aria-label="设置"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></button></div>
+   <div class="side-bottom"><button id="accountBtn" class="nav-row account-btn"><span id="accountAvatar" class="account-avatar" aria-hidden="true">A</span><span id="accountName">登录 / 注册</span></button><button class="icon-btn small-btn" id="settingsBtn" aria-label="设置"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></button></div>
    <span id="quotaLabel" hidden></span>
   </aside>
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="menu" aria-hidden="true"></span></button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button><button class="model-select" id="pickModel"><span id="modelTitle">免费模型</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button></div>
     <div class="top-right"><button class="icon-btn" id="themeToggle" title="切换呼吸主题" aria-label="切换呼吸主题"><span class="ui-icon" data-icon="palette" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
    <div class="conversation" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
