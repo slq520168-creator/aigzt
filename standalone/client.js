@@ -40,6 +40,7 @@ const ICONS={
  blocks:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 14v7M14 17.5h7"/>',
  'arrow-up':'<path d="m12 19 0-14m-7 7 7-7 7 7"/>',
  mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5m-5 0h10"/>',
+ 'sliders-horizontal':'<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
  'brain-circuit':'<path d="M9 18a4 4 0 0 1-4-4 4 4 0 0 1 .3-1.5A4 4 0 0 1 7 5a4 4 0 0 1 5-1 4 4 0 0 1 5 1 4 4 0 0 1 1.7 7.5A4 4 0 0 1 15 18v2a2 2 0 0 1-4 0v-2"/><path d="M9 9v3m6-3v3"/>',
  video:'<rect x="2" y="5" width="15" height="14" rx="2"/><path d="m17 10 5-3v10l-5-3"/>',
  'code-2':'<path d="m8 17-5-5 5-5m8 10 5-5-5-5m-4-8-4 20"/>',
@@ -56,7 +57,7 @@ const ICON_TONES={
  "square-pen":"blue",search:"teal","message-circle":"teal",compass:"teal",paperclip:"blue",link:"teal",
  "circle-user":"violet",settings:"slate",folder:"amber","chevron-down":"slate",ellipsis:"slate",
  palette:"rose",camera:"blue",image:"rose",blocks:"violet","arrow-up":"teal",mic:"teal",
- "brain-circuit":"violet",video:"rose","code-2":"blue",pin:"amber",archive:"slate",trash:"rose",
+ "brain-circuit":"violet",video:"rose","code-2":"blue","sliders-horizontal":"violet",pin:"amber",archive:"slate",trash:"rose",
  share:"teal",download:"blue"
 };
 let iconGradientSerial=0;
@@ -636,7 +637,97 @@ async function revealCompletedReply(row,reply){
 }
 
 
-const VOICE_FEATURE_ENABLED=false; // Pause voice capture and playback until real-device verification.
+const VOICE_FEATURE_ENABLED=false; // Continuous voice chat and read-aloud stay suspended.
+const REPLY_LEVELS={short:"简短",standard:"标准",long:"详细"};
+let replyLevel="standard";
+function closeReplyLevel(){
+ $("replyLevelMenu").hidden=true;
+ $("replyLevelTrigger").setAttribute("aria-expanded","false");
+}
+function chooseReplyLevel(level){
+ if(!Object.hasOwn(REPLY_LEVELS,level))return;
+ replyLevel=level;
+ $("replyLevelLabel").textContent=REPLY_LEVELS[level];
+ const button=$("replyLevelTrigger");
+ button.title="回复长度："+REPLY_LEVELS[level];
+ button.setAttribute("aria-label",button.title);
+ for(const el of $("replyLevelMenu").querySelectorAll("[data-reply-level]")){
+  const selected=el.dataset.replyLevel===level;
+  el.classList.toggle("selected",selected);
+  el.setAttribute("aria-pressed",String(selected));
+ }
+ try{localStorage.setItem("aigzt:reply-level:v1",level)}catch{}
+ closeReplyLevel();
+}
+function wireReplyLevel(){
+ let saved="standard";
+ try{saved=localStorage.getItem("aigzt:reply-level:v1")||saved}catch{}
+ chooseReplyLevel(saved);
+ const button=$("replyLevelTrigger"),menu=$("replyLevelMenu");
+ button.addEventListener("click",()=>{
+  hideAttachMenu();menu.hidden=!menu.hidden;
+  button.setAttribute("aria-expanded",String(!menu.hidden));
+ });
+ menu.addEventListener("click",event=>{
+  const option=event.target.closest("[data-reply-level]");
+  if(option)chooseReplyLevel(option.dataset.replyLevel);
+ });
+ document.addEventListener("pointerdown",event=>{
+  if(!menu.hidden&&!menu.contains(event.target)&&!button.contains(event.target))closeReplyLevel();
+ });
+ document.addEventListener("keydown",event=>{if(event.key==="Escape")closeReplyLevel()});
+}
+let dictationRecognition=null;
+function finishDictation(rec){
+ if(dictationRecognition!==rec)return;
+ dictationRecognition=null;
+ const button=$("voiceInput");
+ button.classList.remove("listening");
+ button.setAttribute("aria-pressed","false");
+ button.title="语音转文字，点击开始或结束录音";
+}
+function stopDictation(abort=false){
+ const rec=dictationRecognition;
+ if(!rec)return;
+ if(abort){finishDictation(rec);try{rec.abort()}catch{};return}
+ if(rec._stopping)return;
+ rec._stopping=true;
+ try{rec.stop()}catch{finishDictation(rec)}
+}
+function startDictation(){
+ if(dictationRecognition){stopDictation();return}
+ const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!Speech){flashError("当前浏览器不支持网页语音识别，可使用系统键盘的语音听写");return}
+ const input=$("prompt"),button=$("voiceInput"),rec=new Speech();
+ dictationRecognition=rec;
+ rec.lang=/^zh/i.test(navigator.language)?navigator.language:"zh-CN";
+ rec.interimResults=false;
+ rec.continuous=false;
+ rec.onresult=event=>{
+  if(dictationRecognition!==rec)return;
+  const transcript=Array.from(event.results).filter(r=>r.isFinal).map(r=>r[0]?.transcript||"").join("").trim();
+  if(!transcript)return;
+  const before=input.value,separator=before&&!before.endsWith(" ")?" ":"";
+  input.value=before+separator+transcript;
+  settlePromptSize();input.focus();
+ };
+ rec.onerror=event=>{
+  if(dictationRecognition!==rec)return;
+  finishDictation(rec);
+  if(!["aborted","no-speech"].includes(event.error))
+   flashError(event.error==="not-allowed"?"请允许麦克风权限后重试":"语音识别中断，请重试");
+ };
+ rec.onend=()=>finishDictation(rec);
+ try{
+  rec.start();button.classList.add("listening");
+  button.setAttribute("aria-pressed","true");
+  button.title="正在听写，点击结束";
+ }catch{finishDictation(rec);flashError("无法开始语音识别，请检查麦克风权限")}
+}
+function wireDictation(){
+ $("voiceInput").addEventListener("click",startDictation);
+ document.addEventListener("visibilitychange",()=>{if(document.hidden)stopDictation(true)});
+}
 const voiceSession={active:false,pending:false,listening:false,reading:false,resumePending:false,recognition:null,token:0,button:null,voice:"",lang:"zh-CN",rate:1};
 function sayStatus(t){$("voiceStatus").textContent=t}
 function voiceSave(){try{localStorage.setItem("aigzt:voice:v1",JSON.stringify({voice:voiceSession.voice,lang:voiceSession.lang,rate:voiceSession.rate}))}catch{}}
@@ -724,16 +815,7 @@ function voiceWire(){
  $("voiceLang").addEventListener("change",e=>{voiceSession.lang=e.target.value;voiceSave();voiceChoices()});
  $("voiceRate").addEventListener("change",e=>{voiceSession.rate=Number(e.target.value);voiceSave()});
  window.speechSynthesis?.addEventListener?.("voiceschanged",voiceChoices);
- const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(Speech){
-  $("voiceInput").hidden=false;
-  $("voiceInput").addEventListener("click",()=>{
-   const sr=new Speech();sr.lang=voiceSession.lang;
-   sr.onresult=e=>{$("prompt").value+=e.results[0]?.[0]?.transcript||"";settlePromptSize();$("prompt").focus()};
-   sr.onerror=e=>flashError("语音输入不可用："+e.error);
-   try{sr.start()}catch{flashError("浏览器未允许开始录音")}
-  });
- }
+ // One-shot dictation is wired independently from suspended voice conversation.
  document.addEventListener("visibilitychange",()=>{if(document.hidden&&voiceSession.active)voiceStop()});
 }
 
@@ -1661,7 +1743,7 @@ async function sendMessage(){
      });
     };
     try{result=await apiChatStream({chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),
-      mode:S.code?"code":"general",creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
+      mode:S.code?"code":"general",replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
@@ -2498,6 +2580,7 @@ function wire(){
  $("videoConnectKey").addEventListener("click",()=>{S.videoPendingKeyReturn=true;hide("createDialog");openKeyPanel(S.videoProvider)});
  $("keyDialog").addEventListener("close",()=>{S.videoPendingKeyReturn=false});
  if(VOICE_FEATURE_ENABLED)voiceWire();
+ wireDictation();wireReplyLevel();
 }
 function hideAttachMenu(){$("attachMenu").hidden=true}
 

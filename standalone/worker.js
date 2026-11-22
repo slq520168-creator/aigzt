@@ -433,8 +433,9 @@ async function freeRouteCatalog(env){
  // Do not expose provider names, failures or cooldowns to the public UI.
  return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false){
- const system=mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。";
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard"){
+ const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
+ const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
  const history=messages.slice(-14).map(m=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:truncate(m.body,3000)}));
  const sources=freeSources(env);
  const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
@@ -450,7 +451,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   const sourceState=states.get(source.id),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
   const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n").slice(-2800);
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
-   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:900,stream:false};
+   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
   let res;
   try{
    res=await fetch(source.endpoint,{
@@ -495,6 +496,7 @@ const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助�
 async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
+ const replyLevel=["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
  const typed=truncate(body.message,8000).trim(),attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(attachments.length>4)throw Error("一次最多四个附件");
  const lines=[],context=[];
@@ -555,14 +557,16 @@ async function chat(req,env,user,onDelta=null){
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
  if(lines.length&&!context.length&&provider==="free"&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n提示：外部免费文字模型不能直接解析图片或PDF像素，不要虚构文件内容。"};
  const mode=body.mode==="code"?"code":"general";
- if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。默认像自然对话一样直接回答，段落简洁、有针对性；不要未经要求堆叠长报告、多份答案或大量编号清单。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。不得虚构执行状态。"});
+ if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。不要虚构执行状态。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。"});
+ const levelInstruction={short:"简短回复：先回答核心问题，只保留必要的要点，不冗长。",standard:"标准回复：自然对话，说明关键原因、步骤和必要细节。",long:"详细回复：全面回答，包含充分的解释、可执行步骤和必要边界条件，不随意省略关键内容。"}[replyLevel];
+ messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
  let result;
  try{
   if(provider==="free"){
-   result=await freeText(env,messages,mode,model);
+   result=await freeText(env,messages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
-   const outputLimit=provider==="groq"&&model==="openai/gpt-oss-120b"?4096:750;
+   const outputLimit=replyLevel==="short"?600:replyLevel==="long"?2600:1200;
     result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,outputLimit,onDelta);
   }
 
