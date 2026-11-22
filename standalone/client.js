@@ -2119,6 +2119,9 @@ const VIDEO_FREE_SITES=Object.freeze({
  pixverse:{name:"PixVerse",url:"https://app.pixverse.ai/",description:"官网可能提供免费积分；需登录查看实际可用次数及分辨率。"},
  dreamina:{name:"Dreamina",url:"https://dreamina.capcut.com/",description:"官网可能提供免费额度，需在官方页面完成视频生成。"},
  vidu:{name:"Vidu",url:"https://www.vidu.com/",description:"官网可能提供免费额度，实际权益需登录确认。"},
+ runway:{name:"Runway",url:"https://runway.com/",description:"官方免费套餐有一次性的试用积分，可用于符合条件的视频模型。"},
+ pika:{name:"Pika",url:"https://pika.art/",description:"有免费账户，但当前免费积分是否随账号附送须以官网为准。"},
+ kling:{name:"可灵 Kling",url:"https://kling.ai/",description:"部分免费创作功能及活动积分，需登录确认账号可用配额。"},
  huggingface:{name:"Hugging Face Spaces",url:"https://huggingface.co/spaces?category=video-generation",description:"社区视频生成 Space，是否在线及限制取决于具体 Space。"}
 });
 function updateVideoProvider(){
