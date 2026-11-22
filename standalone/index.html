@@ -149,6 +149,11 @@
     </div>
     <form class="composer" id="chatForm">
      <div id="attachmentPreview" class="attachment-preview"></div>
+     <div class="composer-model-line" id="composerModelLine">
+      <button type="button" class="composer-model-switch" id="composerSwitchModel" aria-label="切换聊天模型" title="切换模型"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button>
+      <span class="composer-model-caption" id="composerModelCaption">聊天模型</span>
+      <span class="composer-model-name" id="composerModelName" aria-live="polite" title="当前选择：免费自动">免费自动</span>
+     </div>
      <div class="composer-inner">
       <button type="button" class="plus-tool icon-btn" id="attachButton" aria-label="添加附件或工具"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button>
       <textarea id="prompt" rows="1" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea>

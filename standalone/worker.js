@@ -554,7 +554,7 @@ async function chat(req,env,user,onDelta=null){
  const stamp=Date.now();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",crypto.randomUUID(),chatId,user.id,"assistant",result.content,result.actualModel,stamp);
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,provider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,provider};
+ return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -565,7 +565,7 @@ function chatStream(req,env,user){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
-    send({type:"done",chatId:result.chatId,reply:result.reply,model:result.model,provider:result.provider});
+    send({type:"done",chatId:result.chatId,reply:result.reply,model:result.model,usedModel:result.usedModel,provider:result.provider});
    }catch(e){send({type:"error",error:e?.message||"回复未完成"})}
    finally{controller.close()}
   }

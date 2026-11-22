@@ -601,20 +601,28 @@ function appendMessage(role,content,model,existingRow=null){
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
   if(!pending&&!picture&&String(content||"").trim()){
    renderAssistantText(bubble,content);
-   // Draft the same question in this chat; the separate model picker selects the next model.
+   // Show the returned model with a small model-switch action for the same question.
    const previous=row.previousElementSibling||(!existingRow?$("messageList").lastElementChild:null);
    const question=previous?.classList.contains("user")?previous.dataset.sourceText:"";
+   const actions=node("div","message-retry-actions");
    if(question&&question.trim()&&!question.includes("[文件：")&&!/^(请求未完成|作图失败)：/.test(String(content))){
-    const actions=node("div","message-retry-actions"),retry=node("button","message-retry-model","换模型再问");
-    retry.type="button";retry.title="保留当前会话，填回原问题；选好模型后手动发送，会新增一条回答";
+    const retry=node("button","message-retry-model");
+    retry.type="button";retry.title="换模型再问";retry.setAttribute("aria-label","换模型再问");
+    retry.append(iconSlot("layers"));renderIcons(retry);
     retry.addEventListener("click",()=>{
      if(S.busy||S.workMode||S.freeToolsMode||!row.isConnected)return;
      const input=$("prompt");
-     if(input.value.trim()&&input.value.trim()!==question.trim()&&!confirm("替换尚未发送的草稿，重新提问？"))return;
+     if(input.value.trim()&&input.value.trim()!==question.trim()&&!confirm("替换未发送的草稿，重新提问？"))return;
      input.value=question;setComposerMode("text");settlePromptSize();openModels();
     });
-    actions.append(retry);bubble.append(actions);
+    actions.append(retry);
    }
+   if(typeof model==="string"&&model.trim()){
+    const full=model.trim(),short=full.length>64?full.slice(0,62)+"…":full;
+    const used=node("small","message-used-model","本次模型 · "+short);
+    used.title="本次回复模型："+full;actions.append(used);
+   }
+   if(actions.childNodes.length)bubble.append(actions);
   }
 
  }else{
@@ -680,9 +688,19 @@ function updateChatActiveModel(){
  note.textContent=S.provider==="free"?"免费线路自动选择上游，具体模型按每次请求决定":
  "选定模型 ID："+S.model+" · "+(S.savedProviders[S.provider]?.verified?"连接已保存":"连接尚待验证");
 }
+function updateComposerModel(){
+ const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
+ if(!line||!name||!switcher)return;
+ line.hidden=S.composerMode!=="text"||S.freeToolsMode;
+ const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
+ name.textContent=active;name.title=(work?"当前工作选择：":"当前聊天选择：")+active;
+ $("composerModelCaption").textContent=work?"工作模型":"聊天模型";
+ switcher.setAttribute("aria-label",work?"切换工作模型":"切换聊天模型");
+ switcher.title=work?"切换工作模型":"切换聊天模型";
+}
 function updateModelTitle(){
  $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
- updateChatActiveModel();
+ updateChatActiveModel();updateComposerModel();
 }
 function setModel(row){
  if(row.type!=="text"){
@@ -706,9 +724,9 @@ function setModel(row){
 
 function resizePrompt(){
  const textarea=$("prompt");if(!textarea)return;
- textarea.style.height="24px";
- const needed=textarea.scrollHeight,max=96;
- textarea.style.height=Math.max(24,Math.min(needed,max))+"px";
+ textarea.style.height="32px";
+ const needed=Math.max(32,textarea.scrollHeight),max=112;
+ textarea.style.height=Math.min(needed,max)+"px";
  textarea.style.overflowY=needed>max?"auto":"hidden";
 }
 let promptLayoutFrame=0;
@@ -740,7 +758,7 @@ function setComposerMode(mode){
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
  $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
  $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":"向 AI 提问…";
- resizePrompt();
+ resizePrompt();updateComposerModel();
 }
 function renderAttachments(){
  const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
@@ -798,6 +816,7 @@ function updateWorkSelectedModel(){
   note.textContent=(automatic?"实际免费模型由线路自动选择":"当前阶段已选择具体模型")+(same?"":" · 后续阶段可不同")+
    (S.workDetail?.steps?.length&&last&&last!=="free:auto"?" · 上次执行："+last:"");
  }
+ updateComposerModel();
 }
 async function chooseDedicatedWorkModel(provider,model){
  if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="执行中不能更改模型";return}
@@ -1265,7 +1284,7 @@ function setWorkMode(on){
   $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");
   $("prompt").placeholder="向 AI 提问…";syncWorkspaceRoute("");
  }
- closeMenu();syncHomeAmbient();syncTopMode();
+ closeMenu();syncHomeAmbient();syncTopMode();updateComposerModel();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
 function renderWorkTasks(){
@@ -1484,23 +1503,24 @@ async function sendMessage(){
    if(result.requestId)S.videoTask=result.requestId;
   }
   if(loading.isConnected&&S.composerMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
-  if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,isFreeMessage?null:result.model,loading)}
+  if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading)}
   await fetchChats();void fetchMe();
  }catch(e){
   loading.remove();
   if(isFreeMessage){
-   // All free-provider diagnostics remain on the server. No red alert,
-   // no synthetic assistant error and no lost user input or attachment.
-   sentRow.remove();flashError("");
-   const input=$("prompt"),newDraft=input.value.trim();
-   input.value=newDraft?(prompt&&newDraft!==prompt?prompt+"\n"+newDraft:prompt||newDraft):prompt;
-   if(attached.length){
-    const ids=new Set(S.attachments.map(a=>a.id));
-    for(const a of attached)if(!ids.has(a.id)){S.attachments.push(a);ids.add(a.id)}
-    renderAttachments();
-   }
-   settlePromptSize();
-   if(isNew&&!$("messageList").children.length)showWelcome();
+   // Never put a submitted question back into the live text area.
+   // Preserve the unconfirmed message in-place with an explicit manual retry instead.
+   const bubble=sentRow.querySelector(".bubble"),status=node("span","message-send-pending");
+   const retry=node("button","message-resend","重新发送");retry.type="button";
+   retry.setAttribute("aria-label","手动重试这条未完成的消息");
+   retry.addEventListener("click",()=>{
+    if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
+    const input=$("prompt");
+    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送将替换当前尚未发送的草稿和附件，继续吗？"))return;
+    input.value=prompt;S.attachments=attached.slice();renderAttachments();
+    sentRow.remove();settlePromptSize();void sendMessage();
+   });
+   status.append(node("span","","尚未收到回复"),retry);bubble.append(status);flashError("");
   }else{
    flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e));
   }
@@ -2089,8 +2109,9 @@ function wire(){
  $("imageMode").addEventListener("click",()=>{openCreate();$("toolTray").hidden=true});
  $("videoMode").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=true;openVideoCreate()});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
+ $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.workMode)$("workModelChoose").click();else openModels()});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
- $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendMessage()}});
+ $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);
  $("prompt").addEventListener("blur",()=>{syncMobileHeight();settlePromptSize()});
  window.addEventListener("resize",syncMobileHeight);
