@@ -775,6 +775,7 @@ function renderWorkAgentCatalog(){
   detail.append(node("strong","",name),node("small","",id==="free"?"免费自动 · 本站执行":authorized?"已授权 · 本站执行":record?"需要授权额度 · 点击配置":"点击连接 API · 之后本站执行"));
   button.append(detail,node("span","work-agent-meta",selected?"已选":authorized?"使用":"连接"));
   button.addEventListener("click",()=>{
+   if(pendingWorkModelSave){$("workConfigMessage").textContent="正在保存上次选择的模型";return}
    if(!authorized){openKeyPanel(id);return}
    if(["completed","cancelled"].includes(S.workDetail?.task?.status))newWorkDraft();
    if(!S.workStages.length)resetWorkPlan();
@@ -792,7 +793,9 @@ function renderWorkAgentCatalog(){
    }
    if(S.workTaskId&&["pending","paused"].includes(S.workDetail?.task?.status)){
     $("workConfigMessage").textContent="正在保存模型选择…";
-    void saveWorkConfiguration();
+    const taskSave=saveWorkConfiguration();
+    pendingWorkModelSave=taskSave;
+    void taskSave.finally(()=>{if(pendingWorkModelSave===taskSave)pendingWorkModelSave=null});
    }else{
     $("workConfigMessage").textContent="已选择 "+name+" · 输入任务后直接执行";
    }
@@ -966,15 +969,16 @@ function loadWorkEditor(task){
  S.workFallback=task?.fallback!==false;
  renderWorkEditor();
 }
+let pendingWorkModelSave=null;
 async function saveWorkConfiguration(){
  const id=S.workTaskId;
- if(!id){$("workConfigMessage").textContent="已准备好，新任务发送时自动保存";return}
- if(!S.workStages.length){$("workConfigMessage").textContent="至少保留一个步骤";return}
+ if(!id){$("workConfigMessage").textContent="已准备好，新任务发送时自动保存";return true}
+ if(!S.workStages.length){$("workConfigMessage").textContent="至少保留一个步骤";return false}
  const payload={steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback};
- $("workSaveConfig").disabled=true;
- try{const d=await api("/api/work/tasks/"+id+"/configure",payload);S.workDetail=d;renderWorkDetail();$("workConfigMessage").textContent="已保存到当前任务"}
- catch(e){$("workConfigMessage").textContent=humanError(e)}
- finally{renderWorkEditor()}
+ $("workSaveConfig").disabled=true;$("workContinue").disabled=true;
+ try{const d=await api("/api/work/tasks/"+id+"/configure",payload);S.workDetail=d;renderWorkDetail();$("workConfigMessage").textContent="已保存到当前任务";return true}
+ catch(e){$("workConfigMessage").textContent="模型配置保存失败："+humanError(e);return false}
+ finally{renderWorkEditor();$("workContinue").disabled=S.workBusy}
 }
 function initDomesticProviderLinks(){
  const el=$("domesticProviderList");el.replaceChildren();
@@ -1126,6 +1130,10 @@ async function startWorkTask(){
  if(epoch===S.workEpoch&&S.workTaskId===S.workDetail?.task?.id)void executeWorkTask(S.workTaskId);
 }
 async function executeWorkTask(id){
+ if(pendingWorkModelSave){
+  const saved=await pendingWorkModelSave;
+  if(!saved){$("workState").textContent="新模型尚未保存，任务未继续";return}
+ }
  if(S.workBusy||!S.user)return;
  S.workBusy=true;const epoch=++S.workEpoch;
  $("sendBtn").disabled=true;$("workContinue").disabled=true;
@@ -1785,16 +1793,16 @@ function wire(){
  $("accountAvatar").addEventListener("click",event=>{
   event.stopPropagation();
   if(!S.user){show("authDialog");return}
-  $("avatarInput").click();
+  $("avatarQuickInput").click();
  });
  $("settingsBtn").addEventListener("click",()=>void openSettings());
  $("changeAvatar").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("avatarInput").click()}});
- $("avatarInput").addEventListener("change",e=>{
+ for(const id of ["avatarInput","avatarQuickInput"]){$(id).addEventListener("change",e=>{
   const file=e.target.files?.[0];e.target.value="";
   if(!file)return;
   if(S.user&&!$("settingsDialog").open){$("settingsEmail").textContent=S.user.email;show("settingsDialog")}
   void uploadAvatar(file);
- });
+ })}
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
  $("deleteProject").addEventListener("click",()=>void deleteProject());

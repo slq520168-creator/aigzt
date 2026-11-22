@@ -573,7 +573,7 @@ async function avatarUpload(req,env,user){
  const file=(await upload.formData()).get("file");
  if(!(file instanceof File)||!file.size||file.size>1400000)return fail("请选择小于1.4MB的图片",400);
  if(!["image/jpeg","image/png","image/webp"].includes(file.type.toLowerCase()))return fail("只支持 JPEG、PNG、WebP 图片",400);
- await env.MEDIA.put("profile-avatars/"+user.id,file.stream(),{httpMetadata:{contentType:file.type},customMetadata:{name:"用户头像"}});
+ await env.MEDIA.put("profile-avatars/"+user.id,await file.arrayBuffer(),{httpMetadata:{contentType:file.type},customMetadata:{name:"用户头像"}});
  return response({ok:true});
 }
 async function avatarRead(env,user){
