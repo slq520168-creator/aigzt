@@ -210,6 +210,7 @@
  <div id="videoSettings" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">视频可能按秒收费，必须使用自己的 Grok API Key，并明确确认费用。</p><label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok 额度，可能产生费用。</label></div>
   <div class="draw-main-action">
    <button class="primary full" id="createButton">生成免费图片</button>
+   <time class="draw-stopwatch" id="drawElapsed" aria-label="本批图片生成耗时" hidden>00:00</time>
    <button type="button" class="outline" id="drawCancel" hidden>停止查询</button>
   </div>
   <p id="createStatus" class="form-message" role="status" aria-live="polite"></p>

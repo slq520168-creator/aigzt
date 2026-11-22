@@ -1223,9 +1223,22 @@ function wireImageViewer(){
 }
 
 function drawTile(index,status="准备生成",shape="portrait"){
- const tile=node("article","draw-tile"),picture=node("div","draw-photo",status),caption=node("small","draw-caption","第 "+index+" 张 · "+status);
- picture.dataset.shape=shape;tile.append(picture,caption);
- $("drawResults").append(tile);return {tile,picture,caption};
+ const tile=node("article","draw-tile"),picture=node("div","draw-photo",status),caption=node("small","draw-caption","第 "+index+" 张 · "+status),clock=node("time","draw-tile-clock","00:00");
+ picture.dataset.shape=shape;clock.hidden=true;tile.append(picture,clock,caption);
+ $("drawResults").append(tile);return {tile,picture,caption,clock};
+}
+function drawElapsedText(ms){
+ const seconds=Math.floor(Math.max(0,ms)/1000);
+ const two=n=>String(n).padStart(2,"0");
+ return seconds>=3600?Math.floor(seconds/3600)+":"+two(Math.floor(seconds/60)%60)+":"+two(seconds%60):two(Math.floor(seconds/60))+":"+two(seconds%60);
+}
+function paintDrawStopwatch(batch,tiles){
+ const now=Date.now();
+ $("drawElapsed").textContent=drawElapsedText(now-batch.startedAt);
+ for(const tile of tiles){
+  if(!tile.startedAt)continue;
+  tile.clock.textContent=drawElapsedText((tile.finishedAt||now)-tile.startedAt);
+ }
 }
 function drawResult(tile,url){
  const img=node("img");img.src=url;img.alt="生成图片";img.loading="lazy";tile.picture.replaceChildren(img);
@@ -1265,7 +1278,7 @@ async function drawTrackJob(id,tile,batch){
 function stopDrawBatch(){
  const b=S.drawBatch;
  if(!b)return;
- b.cancelled=true;b.controller.abort();S.drawBatch=null;
+ b.cancelled=true;b.controller.abort();clearInterval(b.clockTimer);S.drawBatch=null;
  $("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
  $("createStatus").textContent="已停止查询；提交过的任务可以稍后重新打开查看";
 }
@@ -1275,34 +1288,49 @@ async function runFreeDraw(){
  if(!S.user){show("authDialog");return}
  if(S.drawBatch){$("createStatus").textContent="上一批作图尚未完成";return}
  const count=Number(drawChoice("drawCount")),shape=drawChoice("drawShape"),style=drawChoice("drawStyle");
- if(![1,2,4].includes(count)){ $("createStatus").textContent="图片数量不正确";return }
- const batch={cancelled:false,controller:new AbortController()};
+ if(![1,2,4].includes(count)){$("createStatus").textContent="图片数量不正确";return}
+ const batch={cancelled:false,controller:new AbortController(),startedAt:Date.now(),clockTimer:null};
  S.drawBatch=batch;$("drawResults").replaceChildren();
- $("drawResultTitle").textContent="本次生成";
- $("drawRefresh").disabled=true;
+ $("drawResultTitle").textContent="本次生成";$("drawRefresh").disabled=true;
  const tiles=Array.from({length:count},(_,i)=>drawTile(i+1,"准备生成",shape));
- $("createButton").disabled=true;$("drawCancel").hidden=false;
- $("createStatus").textContent="正在生成 "+count+" 张图片";
- let index=0,success=0,failed=0;
- const task=async()=>{
-  while(!batch.cancelled&&index<count){
-   const i=index++,tile=tiles[i];
-   tile.picture.textContent="正在提交";
-   try{
-    const result=await api("/api/image",{prompt,style,shape});
-    if(batch.cancelled)return;
-    if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
-    tile.picture.textContent="生成中";
-    if(await drawTrackJob(result.jobId,tile,batch))success++;
-    else{failed++;if(!batch.cancelled){for(let k=index;k<count;k++){tiles[k].picture.textContent="未提交";tiles[k].caption.textContent="上一张失败，已停止后续请求"}break}}
-   }catch(e){failed++;tile.picture.textContent="未完成";tile.caption.textContent=humanError(e);for(let k=index;k<count;k++){tiles[k].picture.textContent="未提交";tiles[k].caption.textContent="生成来源不可用，已停止后续请求"}break}
-   if(!batch.cancelled)$("createStatus").textContent="已生成 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");
+ $("createButton").disabled=true;$("drawCancel").hidden=false;$("drawElapsed").hidden=false;
+ const renderClock=()=>{if(S.drawBatch===batch)paintDrawStopwatch(batch,tiles)};
+ renderClock();
+ // The stopwatch changes only local DOM once per second; no extra API reads or D1 queries.
+ batch.clockTimer=setInterval(renderClock,1000);
+ $("createStatus").textContent="同时生成 "+count+" 张图片";
+ let success=0,failed=0,finished=0;
+ const task=async tile=>{
+  if(batch.cancelled)return;
+  tile.startedAt=Date.now();tile.clock.hidden=false;tile.picture.textContent="正在提交";
+  try{
+   const result=await api("/api/image",{prompt,style,shape});
+   if(batch.cancelled)return;
+   if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
+   tile.picture.textContent="生成中";tile.caption.textContent="正在等待结果";
+   const ok=await drawTrackJob(result.jobId,tile,batch);
+   if(batch.cancelled)return;
+   if(ok)success++;else failed++;
+  }catch(error){
+   if(batch.cancelled)return;
+   failed++;tile.picture.textContent="未完成";tile.caption.textContent=humanError(error);
+  }finally{
+   tile.finishedAt=Date.now();finished++;
+   if(!batch.cancelled&&S.drawBatch===batch)
+    $("createStatus").textContent="已完成 "+finished+"/"+count+" 张 · 成功 "+success+" 张"+(failed?" · 失败 "+failed+" 张":"");
+   renderClock();
   }
  };
- try{await task()}
- finally{
-  if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
-   $("createStatus").textContent="生成结束：成功 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");
+ try{
+  // Start all selected 1 / 2 / 4 tasks together. Each task keeps its own existing
+  // 12-second bounded status polling and IM's fixed model fallback order.
+  await Promise.all(tiles.map(task));
+ }finally{
+  clearInterval(batch.clockTimer);
+  if(S.drawBatch===batch){
+   paintDrawStopwatch(batch,tiles);
+   S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
+   $("createStatus").textContent="生成结束：成功 "+success+"/"+count+" 张"+(failed?" · 失败 "+failed+" 张":"");
   }
  }
 }
@@ -1362,6 +1390,7 @@ function setCreationMode(mode){
  $("drawSettings").hidden=!isImage;
  $("drawResultSection").hidden=!isImage;
  $("drawCancel").hidden=!isImage||!S.drawBatch;
+ $("drawElapsed").hidden=!isImage||!S.drawBatch&&$("drawElapsed").textContent==="00:00";
  $("drawRefresh").disabled=Boolean(S.drawBatch);
  $("createButton").textContent=isImage?"生成免费图片":"使用我的 Grok 生成视频";
  $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
@@ -1377,18 +1406,16 @@ function openVideoCreate(){
 }
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
+ if(S.createMode==="image"){await runFreeDraw();return}
  const prompt=$("createPrompt").value.trim();if(!prompt){$("createStatus").textContent="请填写画面描述";return}
  const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在创建…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
  try{
-  if(S.createMode==="image"){await runFreeDraw();return;
-  }else{
    if(!connected("grok"))throw Error("请先连接 Grok 密钥");
    if(!$("confirmVideo").checked)throw Error("视频可能收费，请先勾选费用确认");
    const d=await api("/api/video",{prompt,model:$("videoModel").value,confirmed:true});
    S.videoTask=d.requestId;
    $("createStatus").textContent="视频请求已提交，任务编号 "+d.requestId+"。点击「查询视频任务」获取结果。";
    $("refreshVideo").hidden=false;
-  }
  }catch(e){$("createStatus").textContent="未完成："+humanError(e)}
  finally{btn.disabled=false}
 }
@@ -1490,7 +1517,13 @@ async function verifyKey(event){
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
 }
+function syncInstalledPwaLayout(){
+ const ios=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+ const installed=navigator.standalone===true||(ios&&window.matchMedia("(display-mode: standalone)").matches);
+ document.documentElement.classList.toggle("aigzt-ios-pwa",ios&&installed);
+}
 function wire(){
+ syncInstalledPwaLayout();
  wireDrawerGestures();
  $("menuBtn").addEventListener("click",openMenu);
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
