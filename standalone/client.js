@@ -599,7 +599,7 @@ function appendMessage(role,content,model,existingRow=null){
   if(!pending&&!picture&&String(content||"").trim()){
    renderAssistantText(bubble,content);
    // Draft the same question in this chat; the separate model picker selects the next model.
-   const previous=row.previousElementSibling;
+   const previous=row.previousElementSibling||(!existingRow?$("messageList").lastElementChild:null);
    const question=previous?.classList.contains("user")?previous.dataset.sourceText:"";
    if(question&&question.trim()&&!question.includes("[文件：")&&!/^(请求未完成|作图失败)：/.test(String(content))){
     const actions=node("div","message-retry-actions"),retry=node("button","message-retry-model","换模型再问");
