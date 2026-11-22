@@ -41,6 +41,9 @@ const HOSTS={
  yandex:{host:"ai.api.cloud.yandex.net",path:"/v1/chat/completions",models:"/v1/models"},
  gigachat:{host:"api.giga.chat",path:"/v1/chat/completions",models:"/v1/models"}
 };
+const VIDEO_PROVIDERS=Object.freeze({runway:["gen4.5","veo3.1_fast","seedance2_fast"],luma:["ray-2","ray-flash-2"],vidu:["viduq3-turbo","viduq3-pro","viduq2"]});
+const VIDEO_MODELS=Object.freeze({grok:["grok-imagine-video-1.5"],...VIDEO_PROVIDERS});
+const isVideoOnlyProvider=p=>Object.hasOwn(VIDEO_PROVIDERS,p);
 const utf=s=>new TextEncoder().encode(s);
 const hex=a=>Array.from(new Uint8Array(a),x=>x.toString(16).padStart(2,"0")).join("");
 const random=n=>{const u=crypto.getRandomValues(new Uint8Array(n));return hex(u)};
@@ -176,7 +179,7 @@ async function revealKey(env,userId,provider,iv,ciphertext){
  }catch{throw Object.assign(new Error("已保存的密钥无法读取，请重新连接"),{status:503})}
 }
 async function loadUserProvider(env,userId,provider){
- if(!HOSTS[provider])throw Object.assign(new Error("服务商不支持"),{status:400});
+ if(!HOSTS[provider]&&!isVideoOnlyProvider(provider))throw Object.assign(new Error("服务商不支持"),{status:400});
  return dbGet(env.DB,"SELECT provider,iv,ciphertext,model_id,consent,updated_at,verified FROM user_api_keys WHERE user_id=? AND provider=?",userId,provider);
 }
 async function keyForProvider(env,user,provider,provided){
@@ -188,7 +191,7 @@ async function keyForProvider(env,user,provider,provided){
 async function saveUserProvider(env,user,body){
  requireUser(user);
  const provider=String(body?.provider||""),plain=String(body?.apiKey||"").trim();
- if(!HOSTS[provider])throw Object.assign(new Error("服务商不支持"),{status:400});
+ if(!HOSTS[provider]&&!isVideoOnlyProvider(provider))throw Object.assign(new Error("服务商不支持"),{status:400});
  if(plain.length<12||plain.length>1500||/[\r\n\0]/.test(plain))
   throw Object.assign(new Error("请输入有效格式的 API Key"),{status:400});
  const older=await loadUserProvider(env,user.id,provider);
@@ -197,6 +200,11 @@ async function saveUserProvider(env,user,body){
  // Save ciphertext before any external API request. Upstream outages must not lose a user key.
  await dbRun(env.DB,"INSERT INTO user_api_keys(user_id,provider,iv,ciphertext,model_id,consent,updated_at,verified) VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(user_id,provider) DO UPDATE SET iv=excluded.iv,ciphertext=excluded.ciphertext,model_id=excluded.model_id,consent=excluded.consent,updated_at=excluded.updated_at,verified=0",
   user.id,provider,sealed.iv,sealed.ciphertext,desired,consent,now);
+ if(isVideoOnlyProvider(provider)){
+  // Never submit a billable generation merely to test a newly saved key.
+  return {ok:true,connection:{provider,model:"",consent:consent===1,updatedAt:now,verified:false},
+   models:[],warning:"视频密钥已加密保存；只有明确点击生成才调用可能收费的视频接口。"};
+ }
  let models=[],verified=false,model=desired,warning="";
  try{
   const catalog=await providerModels({provider,apiKey:plain,model:desired||undefined});
@@ -1057,39 +1065,78 @@ async function imageJobStatus(env,user,id){
   return response({ok:true,done:true,image:"/api/files/"+final,model:"免费作图"});
  }catch{return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
 }
+async function authorizedVideoKey(env,user,provider){
+ if(!Object.hasOwn(VIDEO_MODELS,provider))throw Object.assign(new Error("不支持此视频服务商"),{status:400});
+ const entry=await keyForProvider(env,user,provider,null);
+ if(!entry.consent)throw Object.assign(new Error("请先为 "+provider+" 绑定密钥并授权使用个人额度"),{status:403});
+ return entry.key;
+}
+async function requestVideoApi(url,options,provider,submitting){
+ let r;
+ try{r=await fetch(url,{...options,redirect:"manual",signal:AbortSignal.timeout(submitting?19000:15000)})}
+ catch(e){
+  const possiblySent=submitting?"；可能已创建收费任务，请到服务商后台确认，切勿直接重复提交":"";
+  throw Object.assign(new Error(provider+" 网络请求未确定完成"+possiblySent),{status:503});
+ }
+ if(r.status>=300&&r.status<400)throw Object.assign(new Error("上游重定向已拦截"),{status:502});
+ if(!r.ok){
+  const reason=r.status===401||r.status===403?"密钥无效或没有此模型权限":
+   r.status===402?"账户余额不足":r.status===429?"额度或速率受限":
+   r.status>=500?"服务商暂时不可用":"视频请求被拒绝";
+  throw Object.assign(new Error(provider+"："+reason+"（HTTP "+r.status+"）"),{status:r.status===429?429:r.status===401||r.status===403?403:502});
+ }
+ try{return await r.json()}catch{throw Object.assign(new Error("服务商没有返回有效 JSON"),{status:502})}
+}
+function videoStatus(provider,data){
+ const state=String(provider==="runway"?data?.status:provider==="vidu"?data?.state:provider==="luma"?data?.state:data?.status||"").toLowerCase();
+ return ["completed","succeeded","success","done"].includes(state)?"completed":
+  ["failed","error","canceled","cancelled"].includes(state)?"failed":"pending";
+}
 async function createVideo(req,env,user){
  requireUser(user);
- const body=await parseJSON(req);
- if(body.confirmed!==true)throw Error("视频可能收费，必须明确确认");
- const key=(await keyForProvider(env,user,"grok",body.apiKey)).key,model=body.model,prompt=truncate(body.prompt,1400).trim();
- if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("请先填写自己的 Grok API Key");
- if(model!=="grok-imagine-video-1.5")throw Error("仅支持经官方确认的 Grok Imagine Video 1.5 模型");
- if(!prompt)throw Error("请输入视频描述");
- const r=await fetch("https://api.x.ai/v1/videos/generations",{
-  method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+key},
-  body:JSON.stringify({model,prompt,duration:6,resolution:"720p"}),
-  redirect:"manual",signal:AbortSignal.timeout(19000)
- });
- if(r.status>=300&&r.status<400)throw Error("上游重定向已安全拦截");
- if(!r.ok)throw Error(r.status===429?"个人视频额度或速率已用完":"Grok 视频提交失败 HTTP "+r.status);
- const data=await r.json();
- if(typeof data?.request_id!=="string")throw Error("视频服务没有返回任务编号");
- return {ok:true,requestId:data.request_id,status:data.status||"pending"};
+ const b=await parseJSON(req),provider=String(b.provider||"grok"),model=String(b.model||""),prompt=truncate(b.prompt,1400).trim();
+ if(b.confirmed!==true)throw Object.assign(new Error("生成可能收费，必须由用户确认"),{status:400});
+ if(!Object.hasOwn(VIDEO_MODELS,provider)||!VIDEO_MODELS[provider].includes(model))throw Object.assign(new Error("该视频模型没有适配的官方接口"),{status:400});
+ if(!prompt)throw Object.assign(new Error("请输入视频描述"),{status:400});
+ const key=await authorizedVideoKey(env,user,provider),ratio=b.ratio==="9:16"?"9:16":"16:9";
+ let endpoint,params,headers={"content-type":"application/json",accept:"application/json"};
+ if(provider==="grok"){
+  endpoint="https://api.x.ai/v1/videos/generations";headers.authorization="Bearer "+key;
+  params={model,prompt,duration:6,resolution:"720p"};
+ }else if(provider==="runway"){
+  if(prompt.length>1000)throw Object.assign(new Error("Runway 提示词最多 1000 字符"),{status:400});
+  endpoint="https://api.dev.runwayml.com/v1/text_to_video";headers.authorization="Bearer "+key;headers["X-Runway-Version"]="2024-11-06";
+  params={model,promptText:prompt,ratio:ratio==="9:16"?"720:1280":"1280:720",duration:model==="veo3.1_fast"?8:5};
+ }else if(provider==="luma"){
+  endpoint="https://api.lumalabs.ai/dream-machine/v1/generations/video";headers.authorization="Bearer "+key;
+  params={model,prompt,aspect_ratio:ratio};
+ }else if(provider==="vidu"){
+  endpoint="https://api.vidu.com/ent/v2/text2video";headers.authorization="Token "+key;
+  params={model,prompt,duration:5,aspect_ratio:ratio,resolution:"720p"};
+ }
+ const result=await requestVideoApi(endpoint,{method:"POST",headers,body:JSON.stringify(params)},provider,true);
+ const id=provider==="grok"?result?.request_id:provider==="vidu"?result?.task_id:result?.id;
+ if(typeof id!=="string"||!/^[A-Za-z0-9_-]{4,160}$/.test(id))
+  throw Object.assign(new Error("服务商可能已创建任务但未返回有效编号；请先到服务商后台核对，禁止盲目重试"),{status:502});
+ return {ok:true,provider,model,requestId:id,status:"pending"};
 }
 async function queryVideo(req,env,user){
  requireUser(user);
- const body=await parseJSON(req);
- const key=(await keyForProvider(env,user,"grok",body.apiKey)).key,id=body.requestId;
- if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("缺少 Grok 授权");
- if(typeof id!=="string"||!/^[A-Za-z0-9_-]{4,160}$/.test(id))throw Error("视频任务编号无效");
- const res=await fetch("https://api.x.ai/v1/videos/"+encodeURIComponent(id),{
-  headers:{authorization:"Bearer "+key},redirect:"manual",signal:AbortSignal.timeout(16000)
- });
- if(res.status>=300&&res.status<400)throw Error("上游重定向已拦截");
- if(!res.ok)throw Error("查询视频任务失败 HTTP "+res.status);
- const data=await res.json();
- const url=typeof data?.video?.url==="string"&&data.video.url.startsWith("https://")?data.video.url:null;
- return {ok:true,status:data.status||"pending",url};
+ const b=await parseJSON(req),provider=String(b.provider||"grok"),id=String(b.requestId||"");
+ if(!Object.hasOwn(VIDEO_MODELS,provider))throw Object.assign(new Error("不支持此视频服务商"),{status:400});
+ if(!/^[A-Za-z0-9_-]{4,160}$/.test(id))throw Object.assign(new Error("无效的视频任务编号"),{status:400});
+ const key=await authorizedVideoKey(env,user,provider),headers={accept:"application/json"};
+ let endpoint;
+ if(provider==="grok"){endpoint="https://api.x.ai/v1/videos/"+encodeURIComponent(id);headers.authorization="Bearer "+key}
+ else if(provider==="runway"){endpoint="https://api.dev.runwayml.com/v1/tasks/"+encodeURIComponent(id);headers.authorization="Bearer "+key;headers["X-Runway-Version"]="2024-11-06"}
+ else if(provider==="luma"){endpoint="https://api.lumalabs.ai/dream-machine/v1/generations/"+encodeURIComponent(id);headers.authorization="Bearer "+key}
+ else if(provider==="vidu"){endpoint="https://api.vidu.com/ent/v2/tasks/"+encodeURIComponent(id)+"/creations";headers.authorization="Token "+key}
+ const data=await requestVideoApi(endpoint,{method:"GET",headers},provider,false);
+ const status=videoStatus(provider,data);
+ const found=provider==="grok"?data?.video?.url:provider==="runway"?(Array.isArray(data?.output)?data.output[0]:null):
+  provider==="luma"?data?.assets?.video:data?.creations?.[0]?.url;
+ const url=status==="completed"&&typeof found==="string"&&/^https:\/\/[^ ]{8,4096}$/i.test(found)?found:null;
+ return {ok:true,provider,status,url,temporaryUrl:Boolean(url),error:status==="failed"?"服务商生成失败，请检查官方后台任务详情":null};
 }
 async function upstreamConnectivity(req){
  const cache=caches.default,key=new Request(new URL("/health/connectivity",req.url).toString());
@@ -1523,6 +1570,7 @@ async function main(req,env){
    return response({ok:true});
   }
   if(action==="models"){
+   if(isVideoOnlyProvider(provider))return response({ok:true,verified:false,models:[]});
    const catalog=await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext),model:row.model_id||undefined});
    if(catalog.verified&&catalog.models?.length){
     const next=catalog.models.some(x=>x.id===row.model_id)?row.model_id:catalog.models.find(x=>x.type==="text")?.id||catalog.models[0].id;

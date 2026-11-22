@@ -4,7 +4,7 @@ const S={
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",workModelRegion:"推荐",busy:false,code:false,
- authRegister:false,createMode:"image",drawBatch:null,videoTask:null,composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
+ authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"grok",videoModel:"grok-imagine-video-1.5",videoTaskProvider:"grok",videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
 const $=id=>document.getElementById(id);
 const els=id=>document.querySelectorAll(id);
@@ -208,6 +208,9 @@ const KEY_SITES={
  novai:{url:"https://once-cf.novai.su/",name:"Nova AI（novai.su）创建令牌"},
  novai_pro:{url:"https://aiapi-pro.com/",name:"NovAI（aiapi-pro.com）创建令牌"},
  grok:{url:"https://console.x.ai/",name:"打开 xAI 控制台"},
+ runway:{url:"https://dev.runwayml.com/",name:"获取 Runway API Key"},
+ luma:{url:"https://platform.lumalabs.ai/",name:"获取 Luma API Key"},
+ vidu:{url:"https://platform.vidu.com/",name:"获取 Vidu API Key"},
  gemini:{url:"https://aistudio.google.com/apikey",name:"获取 Gemini 密钥"},
  qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"},
  deepseek:{url:"https://platform.deepseek.com/api_keys",name:"获取DeepSeek密钥"},
@@ -227,6 +230,14 @@ const KEY_SITES={
  yandex:{url:"https://console.yandex.cloud/",name:"打开 Yandex Cloud API 密钥设置"},
  gigachat:{url:"https://developers.sber.ru/",name:"获取 GigaChat 授权密钥"}
 };
+const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu"]);
+const VIDEO_OPTIONS=Object.freeze({
+ grok:["grok-imagine-video-1.5"],
+ runway:["gen4.5","veo3.1_fast","seedance2_fast"],
+ luma:["ray-2","ray-flash-2"],
+ vidu:["viduq3-turbo","viduq3-pro","viduq2"]
+});
+const VIDEO_PROVIDER_NAMES={grok:"xAI Grok",runway:"Runway",luma:"Luma",vidu:"Vidu"};
 function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
 function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
@@ -235,6 +246,7 @@ function refreshKeyPanel(){
  provider==="gigachat"?"填写 GigaChat 项目的授权密钥（默认个人版 PERS；企业版可加 B2B: 前缀）。本站按需兑换短期令牌。":
  provider==="iflytek"?"使用官方 HTTP API Password；模型目录可能不支持，请按控制台填写实际模型 ID（例如 generalv3.5），未实测不会显示已验证。":
  provider==="sensetime"?"使用 TokenPlan 的 API Key，模型是否可调用以该账号目录和权限为准。":
+ VIDEO_ONLY_PROVIDERS.has(provider)?"专用于视频生成。密钥加密保存，只有点击生成并授权额度才会发起可能收费的请求。":
  provider==="qwen"?"请选择新加坡地区的密钥。":
  provider==="novai"?"聚合多个模型。API 使用 us.novaiapi.com/v1，免费模型可能变化。":
  provider==="novai_pro"?"部分 Flash 模型限额免费；其他模型可能收费。":
@@ -247,10 +259,10 @@ function refreshKeyPanel(){
  $("disconnectProvider").hidden=!rec;
  if(!$("personalKey").value)$("keyAdvanced").open=!rec;
  $("keyAdvancedSummary").textContent=rec?"更换 API Key（不需要时无需展开）":"首次连接 · 输入 API Key";
- $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini";
+ $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini"||VIDEO_ONLY_PROVIDERS.has(provider);
  $("manualModel").placeholder=provider==="yandex"?"gpt://你的FolderID/yandexgpt-5.1":provider==="gigachat"?"GigaChat":"官方模型 ID";
  $("allowPaid").checked=Boolean(rec?.consent);
- $("keyStatus").textContent=rec?(rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
+ $("keyStatus").textContent=rec?(VIDEO_ONLY_PROVIDERS.has(provider)?"视频密钥已加密保存（未收费测试）":rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
  $("openrouterLogin").hidden=provider!=="openrouter";
 }
 async function fetchConnections(){
@@ -319,6 +331,7 @@ async function useSavedConnection(){
  if(!entry){$("keyStatus").textContent="请先保存密钥";return}
  const button=$("useSavedKey");button.disabled=true;
  try{
+  if(VIDEO_ONLY_PROVIDERS.has(provider)||S.videoPendingKeyReturn){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;openVideoCreate()}else if($("createDialog").open)syncVideoSelector();return}
   let model=chatTextModel(provider,entry.model);
   if(!model){
    const manual=$("manualModel").value.trim();
@@ -2128,57 +2141,120 @@ function setCreationMode(mode){
  $("drawCancel").hidden=!isImage||!S.drawBatch;
  $("drawElapsed").hidden=!isImage||!S.drawBatch&&$("drawElapsed").textContent==="00:00";
  $("createButton").textContent=isImage?"生成免费图片":"提交视频任务";
+ if(!isImage)$("createPrompt").placeholder="描述想生成的视频：人物、场景、镜头、动作…";else $("createPrompt").placeholder="描述你要生成的图片…";
  $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=isImage||!S.videoTask;
 }
 function openCreate(){
  if(!S.user){show("authDialog");return}
  setCreationMode("image");show("createDialog");closeMenu();
 }
-function rememberVideoTask(id){
- if(!S.user||typeof id!=="string"||!/^[A-Za-z0-9_-]{4,160}$/.test(id))return;
- S.videoTask=id;
- try{sessionStorage.setItem("aigzt:video-task:"+S.user.id,id)}catch{}
+function videoKeyPermitted(provider){
+ const record=S.savedProviders[provider];return Boolean(record&&record.consent);
+}
+function videoStorageKey(provider){return "aigzt:video-task:"+S.user.id+":"+provider}
+function rememberVideoTask(provider,model,id){
+ if(!S.user||!VIDEO_OPTIONS[provider]?.includes(model)||!/^[A-Za-z0-9_-]{4,160}$/.test(id))return;
+ S.videoTask=id;S.videoTaskProvider=provider;
+ try{sessionStorage.setItem(videoStorageKey(provider),JSON.stringify({id,model,at:Date.now()}))}catch{}
 }
 function restoreVideoTask(){
- S.videoTask=null;
+ S.videoTask=null;S.videoTaskProvider=S.videoProvider;
  if(!S.user)return;
  try{
-  const id=sessionStorage.getItem("aigzt:video-task:"+S.user.id);
-  if(typeof id==="string"&&/^[A-Za-z0-9_-]{4,160}$/.test(id))S.videoTask=id;
+  const raw=sessionStorage.getItem(videoStorageKey(S.videoProvider));
+  const record=raw?JSON.parse(raw):null;
+  if(record&&VIDEO_OPTIONS[S.videoProvider].includes(record.model)&&/^[A-Za-z0-9_-]{4,160}$/.test(record.id)){
+   S.videoTask=record.id;return;
+  }
+  // Compatibility with the original Grok session task; never read it under another provider.
+  if(S.videoProvider==="grok"){
+   const old=sessionStorage.getItem("aigzt:video-task:"+S.user.id);
+   if(typeof old==="string"&&/^[A-Za-z0-9_-]{4,160}$/.test(old))S.videoTask=old;
+  }
  }catch{}
+}
+function syncVideoSelector(){
+ for(const el of els("#videoModelGrid [data-video-provider][data-video-model]")){
+  const active=el.dataset.videoProvider===S.videoProvider&&el.dataset.videoModel===S.videoModel;
+  el.classList.toggle("selected",active);el.setAttribute("aria-pressed",String(active));
+  const badge=el.querySelector(".video-card-status"),provider=el.dataset.videoProvider;
+  if(badge)badge.textContent=videoKeyPermitted(provider)?"已授权":connected(provider)?"未授权":"需绑定";
+ }
+ for(const el of els("#videoRatio [data-ratio]")){
+  const active=el.dataset.ratio===S.videoRatio;
+  el.classList.toggle("active",active);el.setAttribute("aria-pressed",String(active));
+  el.disabled=S.videoProvider==="grok";
+ }
+ const provider=S.videoProvider,connectedKey=connected(provider),allowed=videoKeyPermitted(provider);
+ $("videoConnectedStatus").textContent=allowed?"已授权 "+VIDEO_PROVIDER_NAMES[provider]+" API（提交才可能计费）":
+  connectedKey?"已保存 "+VIDEO_PROVIDER_NAMES[provider]+" 密钥，但未授权调用":"未连接 "+VIDEO_PROVIDER_NAMES[provider]+" API Key";
+ $("videoConnectKey").textContent=connectedKey?"查看/授权 API Key":"连接 API Key";
+ $("videoModelInfo").textContent=provider==="grok"?"Grok Imagine：固定 6 秒、720p；以 xAI 账号实际计费为准。":
+  provider==="runway"?"Runway 多模型 API：按照所选视频模型和时长计费。":
+  provider==="luma"?"Luma Dream Machine：画质、时长由服务商支持的参数和额度决定。":
+  "Vidu 视频 API：默认 5 秒、720p，按服务商实际积分计费。";
+ $("refreshVideo").hidden=!S.videoTask||S.videoTaskProvider!==provider;
+ $("createButton").textContent=allowed?"提交视频任务":"先连接并授权 API Key";
+}
+function selectVideoModel(provider,model){
+ if(!VIDEO_OPTIONS[provider]?.includes(model))return;
+ S.videoProvider=provider;S.videoModel=model;S.videoRatio=provider==="grok"?"16:9":S.videoRatio;
+ $("confirmVideo").checked=false;
+ try{if(S.user)sessionStorage.setItem("aigzt:video-selection:"+S.user.id,JSON.stringify({provider,model,ratio:S.videoRatio}))}catch{}
+ restoreVideoTask();$("mediaPreview").replaceChildren();$("createStatus").textContent="";
+ syncVideoSelector();
+ if(S.videoTask)$("createStatus").textContent="此服务商有一条已保存的视频任务，可以查询状态。";
 }
 function openVideoCreate(){
  if(!S.user){show("authDialog");return}
- restoreVideoTask();setCreationMode("video");show("createDialog");closeMenu();
- if(S.videoTask)$("createStatus").textContent="上一条视频任务可点击「查询视频任务」查看进度和结果。";
+ try{
+  const prev=JSON.parse(sessionStorage.getItem("aigzt:video-selection:"+S.user.id)||"null");
+  if(prev&&VIDEO_OPTIONS[prev.provider]?.includes(prev.model)){
+   S.videoProvider=prev.provider;S.videoModel=prev.model;
+   S.videoRatio=prev.ratio==="9:16"?"9:16":"16:9";
+  }
+ }catch{}
+ restoreVideoTask();setCreationMode("video");syncVideoSelector();show("createDialog");closeMenu();
+ if(S.videoTask)$("createStatus").textContent="上一条视频任务仍可查询，生成结果链接可能具有有效期。";
 }
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
  if(S.createMode==="image"){await runFreeDraw();return}
- const prompt=$("createPrompt").value.trim();if(!prompt){$("createStatus").textContent="请填写画面描述";return}
- const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在创建…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
+ const prompt=$("createPrompt").value.trim();
+ if(!prompt){$("createStatus").textContent="请填写视频画面描述";return}
+ const provider=S.videoProvider,model=S.videoModel;
+ if(!VIDEO_OPTIONS[provider]?.includes(model)){$("createStatus").textContent="请选择有效的视频模型";return}
+ if(!videoKeyPermitted(provider)){
+  $("createStatus").textContent="需要先保存并授权 "+VIDEO_PROVIDER_NAMES[provider]+" 个人 API 额度";
+  S.videoPendingKeyReturn=true;hide("createDialog");openKeyPanel(provider);return;
+ }
+ if(!$("confirmVideo").checked){$("createStatus").textContent="请先勾选费用确认";return}
+ const btn=$("createButton");btn.disabled=true;$("refreshVideo").hidden=true;$("mediaPreview").replaceChildren();
+ $("createStatus").textContent="正在向 "+VIDEO_PROVIDER_NAMES[provider]+" 提交视频任务…";
  try{
-   if(!connected("grok"))throw Error("请先连接 Grok 密钥");
-   if(!$("confirmVideo").checked)throw Error("视频可能收费，请先勾选费用确认");
-   const d=await api("/api/video",{prompt,model:"grok-imagine-video-1.5",confirmed:true});
-   rememberVideoTask(d.requestId);
-   $("createStatus").textContent="视频请求已提交，点击「查询视频任务」查看结果。";
-   $("refreshVideo").hidden=false;
- }catch(e){$("createStatus").textContent="未完成："+humanError(e)}
- finally{btn.disabled=false}
+  const response=await api("/api/video",{provider,model,prompt,ratio:S.videoRatio,confirmed:true});
+  if(!response.requestId)throw Error("视频 API 未返回任务编号，可能已经扣费，请到服务商后台核查");
+  rememberVideoTask(provider,model,response.requestId);
+  $("createStatus").textContent="视频任务已提交。点击「查询视频任务」查看进度（无自动请求）。";
+  $("refreshVideo").hidden=false;$("confirmVideo").checked=false;
+ }catch(e){$("createStatus").textContent="视频提交未确认："+humanError(e)+"。如果已扣费，请到服务商后台查任务，勿立即重复提交。"}
+ finally{btn.disabled=false;syncVideoSelector()}
 }
 async function queryVideo(){
- if(!S.videoTask||!connected("grok"))return;
- $("refreshVideo").disabled=true;$("createStatus").textContent="正在查询真实视频任务…";
+ const provider=S.videoTaskProvider,id=S.videoTask;
+ if(!S.user||!id||!VIDEO_OPTIONS[provider]||!videoKeyPermitted(provider))return;
+ $("refreshVideo").disabled=true;$("createStatus").textContent="查询视频任务状态…";
  try{
-  const d=await api("/api/video/status",{requestId:S.videoTask});
-  $("createStatus").textContent="任务状态："+d.status;
-  if(d.url){
-   const video=node("video");video.controls=true;video.src=d.url;video.playsInline=true;
-   const link=node("a","","打开原始视频");link.href=d.url;link.rel="noopener noreferrer";link.target="_blank";
+  const response=await api("/api/video/status",{provider,requestId:id});
+  if(S.videoTask!==id||S.videoTaskProvider!==provider)return;
+  $("createStatus").textContent=response.status==="completed"?"视频生成完成（下载地址可能过期）":
+   response.status==="failed"?"服务商生成失败，可查看账户中的任务详情":"视频仍在排队或生成中，稍后手动查询即可。";
+  if(response.url){
+   const video=node("video");video.controls=true;video.playsInline=true;video.src=response.url;video.preload="metadata";
+   const link=node("a","","打开或保存视频");link.href=response.url;link.target="_blank";link.rel="noopener noreferrer";
    $("mediaPreview").replaceChildren(video,link);$("refreshVideo").hidden=true;
-  }else if(d.status==="failed")$("refreshVideo").hidden=true;
- }catch(e){$("createStatus").textContent=humanError(e)}
+  }else $("refreshVideo").hidden=response.status==="failed";
+ }catch(e){$("createStatus").textContent="视频任务查询失败："+humanError(e)}
  finally{$("refreshVideo").disabled=false}
 }
 const oauthBase64=(b)=>btoa(Array.from(b,x=>String.fromCharCode(x)).join("")).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
@@ -2254,7 +2330,7 @@ async function verifyKey(event){
   if(!rec)throw Error("密钥保存失败");
   S.savedProviders[p]={model:rec.model||"",consent:!!rec.consent,verified:!!rec.verified,updatedAt:rec.updatedAt};
   S.connected[p]=Array.isArray(data.models)?data.models:[];delete S.keys[p];
-  if(rec.model){
+  if(rec.model&&!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn){
    S.provider=p;S.model=rec.model;
    S.modelTitle=p+" · "+(S.connected[p].find(m=>m.id===rec.model)?.name||rec.model);
    S.selectedFree=isFreeModel(p,rec.model);
@@ -2262,7 +2338,10 @@ async function verifyKey(event){
   }
   S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
   refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已保存，下次打开直接使用":(data.warning||"密钥已保存，请选择官方模型 ID");
-  if(rec.consent&&rec.verified&&rec.model){hide("keyDialog");$("prompt").focus()}
+  if(VIDEO_ONLY_PROVIDERS.has(p)||S.videoPendingKeyReturn){
+   $("keyStatus").textContent=rec.consent?"视频密钥已加密保存并授权，可以返回视频页面。":"视频密钥已保存，但尚未授权收费调用。";
+   if(rec.consent){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;openVideoCreate()}else if($("createDialog").open)syncVideoSelector()}
+  }else if(rec.consent&&rec.verified&&rec.model){hide("keyDialog");$("prompt").focus()}
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
 }
@@ -2406,6 +2485,15 @@ function wire(){
   $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
  });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
+ for(const button of els("#videoModelGrid [data-video-provider][data-video-model]")){
+  button.addEventListener("click",()=>selectVideoModel(button.dataset.videoProvider,button.dataset.videoModel));
+ }
+ for(const button of els("#videoRatio [data-ratio]")){
+  button.addEventListener("click",()=>{if(S.videoProvider==="grok")return;S.videoRatio=button.dataset.ratio;
+   $("confirmVideo").checked=false;syncVideoSelector();
+  });
+ }
+ $("videoConnectKey").addEventListener("click",()=>{S.videoPendingKeyReturn=true;hide("createDialog");openKeyPanel(S.videoProvider)});
  if(VOICE_FEATURE_ENABLED)voiceWire();
 }
 function hideAttachMenu(){$("attachMenu").hidden=true}
