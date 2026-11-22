@@ -622,6 +622,104 @@ async function revealCompletedReply(row,reply){
  });
 }
 
+
+const voiceSession={active:false,pending:false,listening:false,reading:false,recognition:null,token:0,button:null,voice:"",lang:"zh-CN",rate:1};
+function sayStatus(t){$("voiceStatus").textContent=t}
+function voiceSave(){try{localStorage.setItem("aigzt:voice:v1",JSON.stringify({voice:voiceSession.voice,lang:voiceSession.lang,rate:voiceSession.rate}))}catch{}}
+function voiceChoices(){
+ if(!window.speechSynthesis)return;
+ const sel=$("voiceSelect"),voices=window.speechSynthesis.getVoices();
+ sel.replaceChildren(new Option("系统默认声音",""));
+ for(const v of voices)sel.add(new Option(v.name+" ("+v.lang+")",v.voiceURI));
+ sel.value=voices.some(v=>v.voiceURI===voiceSession.voice)?voiceSession.voice:"";
+}
+function voiceCancel(){
+ voiceSession.token++;voiceSession.reading=false;
+ if(voiceSession.button){voiceSession.button.textContent="朗读";voiceSession.button.setAttribute("aria-pressed","false");voiceSession.button=null}
+ try{window.speechSynthesis?.cancel()}catch{}
+}
+function speechContent(v){return String(v||"").replace(/\x60{3}[\s\S]*?\x60{3}/g,"代码已省略").replace(/!\[[^\]]*\]\([^)]+\)/g,"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").replace(/https?:\/\/\S+/g,"链接").replace(/[*_#|~]+/g," ").trim()}
+function voiceSpeak(value,button=null,continueAfter=false){
+ if(!window.speechSynthesis||typeof SpeechSynthesisUtterance!=="function"){sayStatus("浏览器不支持朗读");return false}
+ const t=speechContent(value);if(!t)return false;
+ voiceCancel();const token=voiceSession.token,synth=window.speechSynthesis,voice=synth.getVoices().find(v=>v.voiceURI===voiceSession.voice);
+ voiceSession.reading=true;voiceSession.button=button;
+ if(button){button.textContent="停止朗读";button.setAttribute("aria-pressed","true")}
+ let pos=0;sayStatus("正在朗读…");
+ const next=()=>{
+  if(token!==voiceSession.token)return;
+  if(pos>=t.length){
+   voiceSession.reading=false;voiceSession.button=null;
+   if(button){button.textContent="朗读";button.setAttribute("aria-pressed","false")}
+   if(continueAfter&&voiceSession.active){sayStatus("朗读结束，继续收听");voiceListen(true)}
+   return;
+  }
+  const u=new SpeechSynthesisUtterance(t.slice(pos,pos+140));pos+=140;
+  u.lang=voice?.lang||voiceSession.lang;u.rate=voiceSession.rate;if(voice)u.voice=voice;
+  u.onend=next;u.onerror=()=>{if(token===voiceSession.token){voiceCancel();sayStatus("播报中断，请手动继续")}};
+  try{synth.speak(u)}catch{voiceCancel();sayStatus("播放失败，请检查设备音量")}
+ };
+ next();return true;
+}
+function voiceStop(){
+ voiceSession.active=false;voiceSession.pending=false;voiceSession.listening=false;
+ const rec=voiceSession.recognition;voiceSession.recognition=null;
+ if(rec)try{rec.abort()}catch{}
+ voiceCancel();sayStatus("已停止对话");
+}
+function voiceListen(auto=false){
+ const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!Speech){sayStatus("浏览器不支持语音识别，可使用键盘听写");return}
+ if(!S.user){sayStatus("请先登录");return}
+ if(S.workMode||S.freeToolsMode||S.busy||voiceSession.pending){sayStatus("请返回聊天或等待回复结束");return}
+ if(voiceSession.listening)return;
+ voiceCancel();voiceSession.active=true;voiceSession.listening=true;
+ const rec=new Speech();voiceSession.recognition=rec;rec.lang=voiceSession.lang;rec.interimResults=true;rec.continuous=false;
+ let text="",failed=false;
+ rec.onresult=e=>{
+  let partial="";text="";
+  for(let i=0;i<e.results.length;i++){const v=e.results[i]?.[0]?.transcript||"";if(e.results[i].isFinal)text+=v;else partial+=v}
+  $("voiceHeard").textContent=text+partial||"正在收听";
+ };
+ rec.onerror=e=>{failed=true;sayStatus(e.error==="not-allowed"?"麦克风权限未开放":"识别中断："+e.error)};
+ rec.onend=()=>{
+  if(voiceSession.recognition!==rec)return;
+  voiceSession.recognition=null;voiceSession.listening=false;
+  if(!voiceSession.active)return;
+  if(!text.trim()){if(!failed)sayStatus("没听到完整语句，请重新点击说话");return}
+  if($("prompt").value.trim()||S.attachments.length){sayStatus("输入框已有草稿，已保留，请先处理");return}
+  $("prompt").value=text.trim();settlePromptSize();voiceSession.pending=true;sayStatus("正在等待 AI 回复…");void sendMessage();
+ };
+ try{rec.start();sayStatus(auto?"正在尝试自动收听…":"正在收听…");$("voiceHeard").textContent="正在收听…"}
+ catch{voiceSession.recognition=null;voiceSession.listening=false;sayStatus("浏览器要求手动点击开始说话")}
+}
+function voiceOpen(){
+ try{const x=JSON.parse(localStorage.getItem("aigzt:voice:v1")||"null");if(x){if(typeof x.voice==="string")voiceSession.voice=x.voice;if(["zh-CN","zh-TW","en-US","ja-JP"].includes(x.lang))voiceSession.lang=x.lang;if([0.85,1,1.15,1.3].includes(Number(x.rate)))voiceSession.rate=Number(x.rate)}}catch{}
+ $("voiceLang").value=voiceSession.lang;$("voiceRate").value=String(voiceSession.rate);
+ voiceChoices();show("voiceDialog");sayStatus(window.SpeechRecognition||window.webkitSpeechRecognition?"点击开始说话":"此浏览器只能朗读回复，不能识别语音");
+}
+function voiceWire(){
+ $("voiceChatOpen").addEventListener("click",voiceOpen);
+ $("voiceStart").addEventListener("click",()=>voiceListen());
+ $("voiceStop").addEventListener("click",voiceStop);
+ $("voiceDialog").addEventListener("close",voiceStop);
+ $("voiceSelect").addEventListener("change",e=>{voiceSession.voice=e.target.value;voiceSave()});
+ $("voiceLang").addEventListener("change",e=>{voiceSession.lang=e.target.value;voiceSave();voiceChoices()});
+ $("voiceRate").addEventListener("change",e=>{voiceSession.rate=Number(e.target.value);voiceSave()});
+ window.speechSynthesis?.addEventListener?.("voiceschanged",voiceChoices);
+ const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(Speech){
+  $("voiceInput").hidden=false;
+  $("voiceInput").addEventListener("click",()=>{
+   const sr=new Speech();sr.lang=voiceSession.lang;
+   sr.onresult=e=>{$("prompt").value+=e.results[0]?.[0]?.transcript||"";settlePromptSize();$("prompt").focus()};
+   sr.onerror=e=>flashError("语音输入不可用："+e.error);
+   try{sr.start()}catch{flashError("浏览器未允许开始录音")}
+  });
+ }
+ document.addEventListener("visibilitychange",()=>{if(document.hidden&&voiceSession.active)voiceStop()});
+}
+
 function appendMessage(role,content,model,existingRow=null,incomplete=false){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
  if(role==="user")row.dataset.sourceText=String(content||"");
@@ -649,6 +747,11 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false){
      input.value=question;setComposerMode("text");settlePromptSize();openModels();
     });
     actions.append(retry);
+   }
+   if(window.speechSynthesis&&typeof SpeechSynthesisUtterance==="function"){
+    const b=node("button","message-speak","朗读");b.type="button";b.setAttribute("aria-pressed","false");
+    b.addEventListener("click",()=>{if(voiceSession.button===b&&voiceSession.reading)voiceCancel();else voiceSpeak(content,b)});
+    actions.append(b);
    }
    if(typeof model==="string"&&model.trim()){
     const full=model.trim(),short=full.length>64?full.slice(0,62)+"…":full;
@@ -1556,8 +1659,13 @@ async function sendMessage(){
   }
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
   if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete))}
+  if(submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
+   voiceSession.pending=false;$("voiceReply").textContent=result.reply;
+   if(!voiceSpeak(result.reply,null,true))sayStatus("本设备无法朗读，请手动点击开始说话");
+  }
   await fetchChats();void fetchMe();
  }catch(e){
+  if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
   loading.remove();
   if(isFreeMessage||isImageMessage){
    // Keep submitted messages in the conversation; never overwrite the user's new draft.
@@ -2310,8 +2418,7 @@ function wire(){
  });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
  $("videoProvider").addEventListener("change",updateVideoProvider);
- const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(Speech){$("voiceInput").hidden=false;$("voiceInput").addEventListener("click",()=>{const sr=new Speech();sr.lang="zh-CN";sr.interimResults=false;sr.onresult=e=>{$("prompt").value+=(e.results[0]?.[0]?.transcript||"");$("prompt").focus()};sr.onerror=e=>flashError("语音识别不可用："+e.error);sr.start()})}
+ voiceWire();
 }
 function hideAttachMenu(){$("attachMenu").hidden=true}
 
