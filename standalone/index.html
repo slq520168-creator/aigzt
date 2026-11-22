@@ -154,7 +154,7 @@
   <div class="settings-group"><h3>聊天管理</h3><button class="outline full" id="archivedChats">查看归档聊天</button></div>
  </dialog>
  <dialog id="authDialog" class="modal" aria-labelledby="authTitle">
-  <div class="modal-head"><h2 id="authTitle">登录</h2><button type="button" class="close-modal" data-close="authDialog" aria-label="关闭">×</button></div>
+  <div class="modal-head"><h2 id="authTitle">登录</h2><button type="button" class="close-modal" data-close="authDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <form id="authForm">
    <label class="sr-only" for="authEmail">邮箱</label><input id="authEmail" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" required placeholder="邮箱">
    <label class="sr-only" for="authPassword">密码</label><input id="authPassword" type="password" name="password" autocomplete="current-password" minlength="8" maxlength="160" required placeholder="密码（至少 8 位）">
@@ -165,7 +165,7 @@
  </dialog>
 
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
-  <div class="modal-head"><div><h2>模型</h2><p id="modelSummary">默认使用免费自动线路</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
+  <div class="modal-head"><div><h2>模型</h2><p id="modelSummary">默认使用免费自动线路</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">全部模型</button><button class="chip" data-source="free">免费线路</button><button class="chip" data-source="family:international">海外</button><button class="chip" data-source="family:russian">俄罗斯</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:claude">Claude</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button><button class="chip" data-source="family:novai">NovaAI</button><button class="chip" data-source="family:deepseek">DeepSeek</button><button class="chip" data-source="connected">已连接</button></div><div id="modelRegionLinks" class="model-region-links" hidden></div>
   <details class="model-extra" id="modelExtra"><summary>连接更多服务商</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
@@ -179,7 +179,7 @@
  </dialog>
 
  <dialog id="keyDialog" class="modal workspace-view">
-  <div class="modal-head"><div><h2>连接 AI</h2></div><button class="close-modal" data-close="keyDialog" aria-label="关闭">×</button></div>
+  <div class="modal-head"><div><h2>连接 AI</h2></div><button class="close-modal" data-close="keyDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <form id="keyForm">
   <label>服务商<select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option></select></label>
   <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">官方密钥页面</a><span id="providerHelp">登录服务商账号获取密钥。</span></div>
@@ -198,7 +198,7 @@
  </dialog>
 
  <dialog id="createDialog" class="modal workspace-view">
-  <div class="modal-head"><div><h2 id="createDialogTitle">免费作图</h2></div><button class="close-modal" data-close="createDialog" aria-label="关闭">×</button></div>
+  <div class="modal-head"><div><h2 id="createDialogTitle">免费作图</h2></div><button class="close-modal" data-close="createDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <label class="draw-description">画面描述<textarea id="createPrompt" rows="4" maxlength="1400" placeholder="描述你要生成的图片…"></textarea></label>
   <div id="drawSettings" class="draw-settings">
  <fieldset class="draw-field"><legend>风格</legend><div id="drawStyle" class="draw-choices draw-style-options" data-value="portrait-master" role="group" aria-label="绘画风格"><button type="button" class="draw-choice active" data-value="portrait-master" aria-pressed="true">人像写真</button><button type="button" class="draw-choice" data-value="natural-portrait" aria-pressed="false">自然写真</button><button type="button" class="draw-choice" data-value="studio-portrait" aria-pressed="false">棚拍</button><button type="button" class="draw-choice" data-value="fashion-editorial" aria-pressed="false">时尚</button><button type="button" class="draw-choice" data-value="cinematic-portrait" aria-pressed="false">电影人像</button><button type="button" class="draw-choice" data-value="casual-photo" aria-pressed="false">随手拍</button><button type="button" class="draw-choice" data-value="pro-photo" aria-pressed="false">专业摄影</button><button type="button" class="draw-choice" data-value="cinematic" aria-pressed="false">电影感</button><button type="button" class="draw-choice" data-value="none" aria-pressed="false">通用</button><button type="button" class="draw-choice" data-value="anime" aria-pressed="false">动漫</button><button type="button" class="draw-choice" data-value="cute-anime" aria-pressed="false">萌系</button><button type="button" class="draw-choice" data-value="digital-painting" aria-pressed="false">数字绘画</button><button type="button" class="draw-choice" data-value="oil" aria-pressed="false">油画</button><button type="button" class="draw-choice" data-value="watercolor" aria-pressed="false">水彩</button><button type="button" class="draw-choice" data-value="pencil" aria-pressed="false">素描</button><button type="button" class="draw-choice" data-value="cartoon" aria-pressed="false">卡通</button><button type="button" class="draw-choice" data-value="fantasy" aria-pressed="false">奇幻</button></div><button type="button" id="drawMore" class="draw-more" aria-expanded="false">更多风格</button></fieldset>
@@ -220,7 +220,7 @@
   <button id="refreshVideo" class="outline full" hidden>查询视频任务</button>
  </dialog>
 <div id="imageViewer" class="image-viewer" hidden role="dialog" aria-modal="true" aria-label="图片查看" tabindex="-1">
- <div class="iv-header"><span id="ivCounter"></span><button type="button" id="ivClose" aria-label="关闭图片">×</button></div>
+ <div class="iv-header"><span id="ivCounter"></span><button type="button" id="ivClose" aria-label="关闭图片"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
  <div id="ivStage" class="iv-stage" tabindex="0" aria-label="双击放大、左右切换、下滑关闭"><img id="ivImage" alt="图片预览" draggable="false"></div>
  <div class="iv-footer"><button id="ivPrev" type="button" aria-label="上一张">‹</button><div id="ivThumbs" class="iv-thumbs" aria-label="缩略图"></div><button id="ivNext" type="button" aria-label="下一张">›</button></div>
  </div></body>

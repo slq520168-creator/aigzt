@@ -588,7 +588,7 @@ function setComposerMode(mode){
 function renderAttachments(){
  const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
  for(const item of S.attachments){
-  const badge=node("span","attachment-item"),title=node("span","",item.name),del=node("button","","×");
+  const badge=node("span","attachment-item"),title=node("span","",item.name),del=node("button");del.append(iconSlot("x"));del.setAttribute("aria-label","移除附件");renderIcons(del);
   del.type="button";del.title="取消附件";
   del.addEventListener("click",()=>{S.attachments=S.attachments.filter(x=>x.id!==item.id);renderAttachments()});
   badge.append(title,del);el.append(badge);
