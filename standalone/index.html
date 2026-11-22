@@ -170,7 +170,7 @@
  <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">
   <div class="modal-head"><div><h2>选择工作模型</h2><p>只影响工作任务，不修改聊天模型</p></div><button type="button" class="close-modal" data-close="workModelDialog" aria-label="关闭工作模型"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="work-model-dialog-content">
-   <p class="work-model-explain">免费自动可直接选择；其他模型连接 API 后由本站工作执行器调用。未接入的外部产品不会作为假按钮展示。</p>
+   <p class="work-model-explain">工作模型与聊天分开。支持按国家选择服务商；官方 API 连接验证后才能在本站执行。</p>
    <div id="workAgentCatalog" class="work-agent-catalog" aria-label="工作模型服务商"></div>
    <div id="workSpecificChooser" class="work-specific-chooser" hidden></div>
    <div id="workModelMessage" class="work-model-message" role="status"></div>
@@ -193,7 +193,7 @@
  <dialog id="keyDialog" class="modal workspace-view">
   <div class="modal-head"><div><h2>连接 AI</h2></div><button class="close-modal" data-close="keyDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <form id="keyForm">
-  <label>服务商<select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option></select></label>
+  <label>服务商<select id="keyProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="grok">Grok / xAI</option><option value="gemini">Google Gemini</option><option value="qwen">阿里千问</option><option value="deepseek">DeepSeek</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="siliconflow">硅基流动</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option><option value="yandex">Yandex AI Studio · 俄罗斯</option><option value="gigachat">GigaChat · 俄罗斯</option></select></label>
   <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">官方密钥页面</a><span id="providerHelp">登录服务商账号获取密钥。</span></div>
   <button id="openrouterLogin" type="button" class="outline full" hidden>使用 OpenRouter 官方授权</button>
   <div id="savedConnectionPanel" class="saved-connection-panel" hidden><strong>密钥已保存在此账号</strong><small>刷新或重新登录无需再次填写</small><button class="primary full" type="button" id="useSavedKey">使用已保存连接</button></div>

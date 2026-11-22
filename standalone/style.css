@@ -784,3 +784,46 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  .topbar .top-left{gap:2px}
 }
 @media(prefers-reduced-motion:reduce){.top-mode-tab{transition:none}}
+
+/* Work-model sheet: never place its title beneath the installed iPhone status bar. */
+#workModelDialog[open]{
+ position:fixed;
+ inset:auto;
+ top:calc(env(safe-area-inset-top,0px) + 12px);
+ left:50%;
+ right:auto;
+ bottom:auto;
+ transform:translateX(-50%);
+ margin:0;
+ width:min(760px,calc(100vw - 24px));
+ max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px);
+ overflow-y:auto;
+ overscroll-behavior:contain;
+ box-sizing:border-box;
+}
+html.aigzt-ios-pwa #workModelDialog[open]{
+ top:calc(var(--aigzt-ios-safe-top) + 7px);
+ max-height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top) - env(safe-area-inset-bottom,0px) - 13px);
+}
+#workModelDialog .modal-head{position:sticky;top:0;z-index:5;margin:0;padding:14px 17px 11px;border-bottom:1px solid #e5ecf6;box-sizing:border-box}
+#workModelDialog .modal-head h2{font-size:19px;color:#294e78}
+#workModelDialog .modal-head .close-modal{flex:none;width:36px;height:36px}
+#workModelDialog .work-model-dialog-content{padding:12px 16px 16px}
+.work-region-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:4px;border-radius:12px;background:#edf3fc;margin-bottom:12px}
+.work-region-tab{min-width:0;border:1px solid transparent;border-radius:10px;background:transparent;color:#6482a3;min-height:37px;font-weight:680;font-size:13px;text-align:center;cursor:pointer;touch-action:manipulation}
+.work-region-tab.active{background:#fff;color:#3168a9;border-color:#bfd7f5;box-shadow:0 2px 6px rgba(42,101,168,.1)}
+.work-region-tab:focus-visible{outline:2px solid #498dde}
+.work-region-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.russian-model-guide{margin:12px 0 0;padding:11px 13px;background:linear-gradient(135deg,#eff5ff,#f0f9fb);border:1px solid #d8e8f8;border-radius:12px;color:#385c81}
+.russian-model-guide strong{display:block;font-size:13px;font-weight:730}
+.russian-model-guide p{margin:6px 0 5px;font-size:12px;line-height:1.6;font-weight:620}
+.russian-model-guide small{color:#65849c;line-height:1.55;font-size:11px}
+@media(max-width:650px){
+ #workModelDialog[open]{top:calc(env(safe-area-inset-top,0px) + 7px);width:calc(100vw - 12px);max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 14px);border-radius:15px}
+ html.aigzt-ios-pwa #workModelDialog[open]{top:calc(var(--aigzt-ios-safe-top) + 6px);max-height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top) - env(safe-area-inset-bottom,0px) - 12px)}
+ #workModelDialog .modal-head{padding:11px 12px 10px;min-height:59px}
+ #workModelDialog .modal-head h2{font-size:17px}
+ #workModelDialog .work-model-dialog-content{padding:9px 11px 14px}
+ .work-region-tab{font-size:12px;min-height:36px}
+ .work-region-models{gap:7px}
+}

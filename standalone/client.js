@@ -3,7 +3,7 @@ const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
- modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
+ modelPage:0,source:"all",filter:"all",query:"",workModelRegion:"推荐",busy:false,code:false,
  authRegister:false,createMode:"image",drawBatch:null,videoTask:null,composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
 const $=id=>document.getElementById(id);
@@ -217,13 +217,17 @@ const KEY_SITES={
  siliconflow:{url:"https://cloud.siliconflow.cn/account/ak",name:"获取硅基流动密钥"},
  doubao:{url:"https://console.volcengine.com/ark/region:cn-beijing/apikey",name:"获取豆包 / 方舟密钥"},
  qianfan:{url:"https://console.bce.baidu.com/qianfan/overview",name:"获取百度千帆密钥"},
- hunyuan:{url:"https://console.cloud.tencent.com/hunyuan",name:"获取腾讯混元密钥"}
+ hunyuan:{url:"https://console.cloud.tencent.com/hunyuan",name:"获取腾讯混元密钥"},
+ yandex:{url:"https://console.yandex.cloud/",name:"打开 Yandex Cloud API 密钥设置"},
+ gigachat:{url:"https://developers.sber.ru/",name:"获取 GigaChat 授权密钥"}
 };
 function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
 function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
  const a=$("providerKeyLink");a.href=site.url;a.textContent=site.name;
- $("providerHelp").textContent=provider==="qwen"?"请选择新加坡地区的密钥。":
+ $("providerHelp").textContent=provider==="yandex"?"请输入 Yandex AI Studio API Key，且在模型 ID 中填写 gpt://你的FolderID/yandexgpt-5.1 或 gpt://你的FolderID/aliceai-llm。":
+ provider==="gigachat"?"填写 GigaChat 项目的授权密钥（默认个人版 PERS；企业版可加 B2B: 前缀）。本站按需兑换短期令牌。":
+ provider==="qwen"?"请选择新加坡地区的密钥。":
  provider==="novai"?"聚合多个模型。API 使用 us.novaiapi.com/v1，免费模型可能变化。":
  provider==="novai_pro"?"部分 Flash 模型限额免费；其他模型可能收费。":
  provider==="openrouter"?"可用官方账号授权，或创建 API Key。":"登录服务商账号创建 API Key，再返回粘贴。";
@@ -236,6 +240,7 @@ function refreshKeyPanel(){
  if(!$("personalKey").value)$("keyAdvanced").open=!rec;
  $("keyAdvancedSummary").textContent=rec?"更换 API Key（不需要时无需展开）":"首次连接 · 输入 API Key";
  $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini";
+ $("manualModel").placeholder=provider==="yandex"?"gpt://你的FolderID/yandexgpt-5.1":provider==="gigachat"?"GigaChat":"官方模型 ID";
  $("allowPaid").checked=Boolean(rec?.consent);
  $("keyStatus").textContent=rec?(rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
  $("openrouterLogin").hidden=provider!=="openrouter";
@@ -734,7 +739,7 @@ async function uploadSelected(files){
 const WORK_PROVIDER_NAMES={
  free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",claude:"Anthropic Claude API",novai:"Nova AI · 多模型",novai_pro:"NovAI · 中国模型",
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
- minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
+ minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API",yandex:"Yandex AI Studio · 俄罗斯",gigachat:"GigaChat · 俄罗斯"
 };
 /* Work-task models are independent from the chat model and its selector. */
 function updateWorkSelectedModel(){
@@ -789,22 +794,68 @@ function renderWorkProviderModels(provider){
 function renderWorkAgentCatalog(){
  updateWorkSelectedModel();
  const target=$("workAgentCatalog");target.replaceChildren();
- const options=[["free","免费自动"],...Object.entries(WORK_PROVIDER_NAMES).filter(([id])=>id!=="free")];
- options.sort((a,b)=>{
-  const rank=id=>id==="free"?0:S.savedProviders[id]?.verified?1:S.savedProviders[id]?2:3;
-  return rank(a[0])-rank(b[0]);
- });
- for(const [provider,name] of options){
-  const record=S.savedProviders[provider],ready=provider==="free"||!!record?.verified&&(!!record.consent||isFreeModel(provider,record.model));
-  const button=node("button","work-model-option "+(ready?"ready":"connect"));button.type="button";
-  button.append(node("strong","",name),node("small","",provider==="free"?"自动使用已配置免费线路":ready?"已验证 · 可选模型":record?"需要验证连接或授权":"连接 API 后使用"),node("span","work-model-option-action",ready?"选择":"连接"));
+ const regions=["推荐","中国","国际","俄罗斯"];
+ const regionMap={
+  推荐:["free","groq","openrouter","deepseek","yandex","gigachat"],
+  中国:["free","qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","novai_pro"],
+  国际:["free","groq","openrouter","cerebras","openai","claude","novai","grok","gemini"],
+  俄罗斯:["yandex","gigachat"]
+ };
+ if(!regions.includes(S.workModelRegion))S.workModelRegion="推荐";
+ const selector=node("div","work-region-tabs");
+ for(const region of regions){
+  const button=node("button","work-region-tab"+(S.workModelRegion===region?" active":""));
+  button.type="button";button.textContent=region;
+  button.setAttribute("aria-pressed",String(S.workModelRegion===region));
   button.addEventListener("click",()=>{
-   if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前正在执行，不能更改";return}
+   S.workModelRegion=region;$("workSpecificChooser").hidden=true;
+   $("workModelMessage").textContent="";
+   renderWorkAgentCatalog();
+  });
+  selector.append(button);
+ }
+ target.append(selector);
+ const grid=node("div","work-region-models");
+ for(const provider of regionMap[S.workModelRegion]){
+  const name=provider==="free"?"免费自动":WORK_PROVIDER_NAMES[provider];
+  const record=S.savedProviders[provider];
+  const ready=provider==="free"||!!record?.verified&&(!!record.consent||isFreeModel(provider,record.model));
+  const button=node("button","work-model-option "+(ready?"ready":"connect"));
+  button.type="button";
+  button.append(node("strong","",name),node("small","",provider==="free"?"使用现有免费线路":ready?"连接已验证 · 选择模型":record?"需要验证连接或授权":"点击配置官方 API"),node("span","work-model-option-action",ready?"选择":"连接"));
+  button.addEventListener("click",()=>{
+   if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前任务正在执行，不能更换模型";return}
    if(!ready){hide("workModelDialog");openKeyPanel(provider);return}
    if(provider==="free"){void chooseDedicatedWorkModel("free","");return}
    renderWorkProviderModels(provider);
+   // Fetch only after an actual user click, not on each render or dialog open.
+   if(S.savedProviders[provider]&&S.workCatalogLoading?.[provider]!=="done"&&S.workCatalogLoading?.[provider]!=="busy"){
+    if(!S.workCatalogLoading)S.workCatalogLoading={};
+    S.workCatalogLoading[provider]="busy";
+    $("workModelMessage").textContent="正在读取已连接的官方模型…";
+    void api("/api/connections/"+provider+"/models",{}).then(data=>{
+     if(!Array.isArray(data.models)||!data.models.length)throw Error("没有获取到可用模型");
+     S.connected[provider]=data.models;
+     S.workCatalogLoading[provider]="done";
+     if($("workModelDialog").open&&!$("workSpecificChooser").hidden){
+      renderWorkProviderModels(provider);$("workModelMessage").textContent="";
+     }
+    }).catch(e=>{
+     S.workCatalogLoading[provider]="error";
+     $("workModelMessage").textContent=humanError(e);
+    });
+   }
   });
-  target.append(button);
+  grid.append(button);
+ }
+ target.append(grid);
+ if(S.workModelRegion==="俄罗斯"){
+  const details=node("div","russian-model-guide");
+  details.append(node("strong","","俄罗斯官方模型"));
+  details.append(node("p","","YandexGPT Pro 5.1 · Alice AI LLM · Alice AI LLM Flash · GigaChat"));
+  details.append(node("small","","Yandex 需要 API Key 与 Folder ID；GigaChat 需要项目授权密钥。官方模型列表只有连接验证后才能选择和执行。"));
+  details.append(node("small","","原有俄罗斯工作产品：GigaAgent · GigaCowork · GigaCode · Alice AI Agents。它们不是独立模型 API，不冒充本站可执行代理。"));
+  target.append(details);
  }
 }
 function resetWorkPlan(){
@@ -1766,6 +1817,7 @@ function wire(){
   $("workSpecificChooser").hidden=true;
   $("workSpecificChooser").replaceChildren();
   renderWorkAgentCatalog();show("workModelDialog");
+  requestAnimationFrame(()=>{$("workModelDialog").scrollTop=0});
  });
  $("workAddStage").addEventListener("click",()=>{if(S.workStages.length<12){S.workStages.push({name:"新步骤",instruction:"",provider:"auto",model:""});renderWorkEditor()}});
  $("workAddRoute").addEventListener("click",()=>{if(S.workRoutes.length<20){S.workRoutes.push({provider:"free",model:"free:auto"});renderWorkEditor()}});

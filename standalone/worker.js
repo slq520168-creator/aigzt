@@ -33,7 +33,9 @@ const HOSTS={
  siliconflow:{host:"api.siliconflow.cn",path:"/v1/chat/completions",models:"/v1/models"},
  doubao:{host:"ark.cn-beijing.volces.com",path:"/api/v3/chat/completions",models:"/api/v3/models"},
  qianfan:{host:"qianfan.baidubce.com",path:"/v2/chat/completions",models:"/v2/models"},
- hunyuan:{host:"api.hunyuan.cloud.tencent.com",path:"/v1/chat/completions",models:"/v1/models"}
+ hunyuan:{host:"api.hunyuan.cloud.tencent.com",path:"/v1/chat/completions",models:"/v1/models"},
+ yandex:{host:"ai.api.cloud.yandex.net",path:"/v1/chat/completions",models:"/v1/models"},
+ gigachat:{host:"api.giga.chat",path:"/v1/chat/completions",models:"/v1/models"}
 };
 const utf=s=>new TextEncoder().encode(s);
 const hex=a=>Array.from(new Uint8Array(a),x=>x.toString(16).padStart(2,"0")).join("");
@@ -207,12 +209,39 @@ async function saveUserProvider(env,user,body){
  return {ok:true,connection:{provider,model,consent:consent===1,updatedAt:now,verified},models,warning};
 }
 
+/* GigaChat authorization keys are exchanged on demand and held in isolate memory only. */
+const gigaOAuthCache=new Map();
+async function getGigaChatAccessToken(authKey){
+ const raw=String(authKey||"").trim();
+ const scopeMatch=raw.match(/^(PERS|B2B|CORP):(.+)$/i);
+ const scope="GIGACHAT_API_"+(scopeMatch?scopeMatch[1].toUpperCase():"PERS");
+ const secret=(scopeMatch?scopeMatch[2]:raw).replace(/^Basic\s+/i,"").trim();
+ if(!/^[A-Za-z0-9+/=_-]{16,1450}$/.test(secret))throw Error("GigaChat 授权密钥格式不正确");
+ const cacheKey=await sha(scope+":"+secret),hit=gigaOAuthCache.get(cacheKey);
+ if(hit&&hit.expiry>Date.now()+20000)return hit.token;
+ const resp=await fetch("https://api.giga.chat/api/v2/oauth",{
+  method:"POST",headers:{"content-type":"application/x-www-form-urlencoded",accept:"application/json","RqUID":crypto.randomUUID(),Authorization:"Basic "+secret},
+  body:new URLSearchParams({scope}),redirect:"manual",signal:AbortSignal.timeout(10000)
+ });
+ if(!resp.ok)throw Object.assign(new Error(resp.status===401||resp.status===403?"GigaChat 授权密钥无效或权限不符":"GigaChat 获取令牌失败 HTTP "+resp.status),{status:400});
+ const data=await resp.json();
+ if(typeof data.access_token!=="string"||data.access_token.length<12)throw Error("GigaChat 没有返回有效令牌");
+ if(gigaOAuthCache.size>=64)gigaOAuthCache.clear();
+ const expires=Number(data.expires_at)*1000,life=Number.isFinite(expires)&&expires>Date.now()?expires-Date.now()-30000:25*60000;
+ gigaOAuthCache.set(cacheKey,{token:data.access_token,expiry:Date.now()+Math.max(30000,Math.min(25*60000,life))});
+ return data.access_token;
+}
 async function providerModels(body){
  const id=String(body.provider||""),key=body.apiKey;
  if(!HOSTS[id])throw Error("不支持该服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500)throw Error("请输入自己的有效 API Key");
  const h=HOSTS[id],manual=validModelIdentifier(body.model)?body.model:null;
  const headers=id==="gemini"?{"x-goog-api-key":key}:id==="claude"?{"x-api-key":key,"anthropic-version":"2026-10-21"}:{Authorization:"Bearer "+key};
+ if(id==="yandex"){
+  const folder=String(manual||"").match(/^gpt:\/\/([a-zA-Z0-9_-]{5,64})\/[a-zA-Z0-9._-]+(?:\/latest)?$/)?.[1];
+  if(!folder)throw Error("请填写 Yandex 模型 URI，例如 gpt://你的FolderID/yandexgpt-5.1");
+  headers.Authorization="Api-Key "+key;headers["OpenAI-Project"]=folder;
+ }else if(id==="gigachat")headers.Authorization="Bearer "+await getGigaChatAccessToken(key);
  let resp;
  try{resp=await fetch("https://"+h.host+h.models,{headers,redirect:"manual",signal:AbortSignal.timeout(10000)})}
  catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"连接服务商超时":"无法连接服务商网络，请稍后重试"),{status:503})}
@@ -261,6 +290,11 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  const host=HOSTS[provider],headers={"content-type":"application/json","accept":"application/json"};
  if(provider==="gemini")headers["x-goog-api-key"]=key;
  else if(provider==="claude"){headers["x-api-key"]=key;headers["anthropic-version"]="2026-10-21";}
+ else if(provider==="yandex"){
+  const folder=model.match(/^gpt:\/\/([a-zA-Z0-9_-]{5,64})\/[a-zA-Z0-9._-]+(?:\/latest)?$/)?.[1];
+  if(!folder)throw Error("Yandex 模型必须包含真实 Folder ID");
+  headers.authorization="Api-Key "+key;headers["OpenAI-Project"]=folder;
+ }else if(provider==="gigachat")headers.authorization="Bearer "+await getGigaChatAccessToken(key);
  else headers.authorization="Bearer "+key;
  let target="https://"+host.host+(host.path||"/"),body;
  const history=messages.map(m=>({role:m.role,content:truncate(m.body,3000)}));
