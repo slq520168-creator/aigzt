@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
- allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",drawBatch:null,videoTask:null,composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -73,7 +73,6 @@ function closeMenu(){
  $("menuBtn").setAttribute("aria-expanded","false");
 }
 function openMenu(){
- if(!window.matchMedia("(max-width:900px)").matches)return;
  $("shell").classList.add("menu-open");
  $("sideShade").hidden=false;
  $("menuBtn").setAttribute("aria-expanded","true");
@@ -252,27 +251,27 @@ async function fetchMe(){
 function renderHistory(){
  const recent=$("history"),pinned=$("pinnedHistory"),pinHeading=$("pinHeading");
  recent.replaceChildren();pinned.replaceChildren();
- const rows=S.chats||[];
- $("chatCount").textContent=rows.length?String(rows.length):"";
+ const rows=S.chats||[],showPinned=!S.archivedView&&rows.some(item=>!!item.pinned_at);
+ const normal=rows.filter(item=>!showPinned||!item.pinned_at);
  $("historyHeading").textContent=S.archivedView?"已归档聊天":S.activeProjectId?"项目聊天":"最近聊天";
- const showPinned=!S.archivedView&&rows.some(item=>Boolean(item.pinned_at));
+ $("navChat").hidden=!(S.activeProjectId||S.archivedView);
+ $("chatCount").textContent=rows.length?String(rows.length):"";
+ $("historyToggle").hidden=normal.length<=2;
+ $("historyToggle").textContent=S.historyExpanded?"收起":"展开";
+ $("historyToggle").setAttribute("aria-expanded",String(S.historyExpanded));
  pinHeading.hidden=!showPinned;pinned.hidden=!showPinned;
  if(!S.user){recent.append(node("div","hint","登录后查看聊天记录"));return}
  if(!rows.length){recent.append(node("div","hint",S.archivedView?"暂无归档聊天":"暂无聊天记录"));return}
  const makeRow=item=>{
   const row=node("div","history-row"+(S.chatId===item.id?" active":""));
-  const select=node("button","history-select",item.title||"新对话");
-  select.type="button";select.title=item.title||"";
+  const select=node("button","history-select",item.title||"新对话");select.type="button";select.title=item.title||"";
   select.addEventListener("click",()=>void loadChat(item.id));
-  const more=node("button","history-more");more.type="button";
-  more.title="聊天操作";more.setAttribute("aria-label",(item.title||"聊天")+"的操作");
-  more.append(iconSlot("ellipsis"));more.addEventListener("click",()=>openChatActions(item.id));
-  row.append(select,more);renderIcons(row);return row;
+  const more=node("button","history-more");more.type="button";more.title="聊天操作";
+  more.setAttribute("aria-label",(item.title||"聊天")+"的操作");more.append(iconSlot("ellipsis"));
+  more.addEventListener("click",()=>openChatActions(item.id));row.append(select,more);renderIcons(row);return row;
  };
- for(const item of rows){
-  (showPinned&&item.pinned_at?pinned:recent).append(makeRow(item));
- }
- if(showPinned&&!recent.childElementCount)recent.append(node("div","hint","其他聊天显示在这里"));
+ if(showPinned)for(const item of rows.filter(x=>x.pinned_at))pinned.append(makeRow(item));
+ for(const item of (S.historyExpanded?normal:normal.slice(0,2)))recent.append(makeRow(item));
 }
 async function fetchChats(){
  if(!S.user){S.chats=[];renderHistory();return}
@@ -282,14 +281,16 @@ async function fetchChats(){
  }catch(e){flashError("聊天列表读取失败："+humanError(e))}
 }
 function renderProjects(){
- const box=$("projectsList");box.replaceChildren();
- if(!S.user){box.append(node("div","hint","登录后创建项目"));return}
+ const box=$("projectsList");box.replaceChildren();box.hidden=!S.projectsExpanded;
+ $("projectsToggle").setAttribute("aria-expanded",String(S.projectsExpanded));
+ $("projectsToggle").classList.toggle("expanded",S.projectsExpanded);
+ if(!S.user){if(S.projectsExpanded)box.append(node("div","hint","登录后创建项目"));return}
  for(const p of S.projects){
   const row=node("div","project-row"+(S.activeProjectId===p.id?" active":""));
   const b=node("button","project-select");b.append(iconSlot("folder"),node("span","project-name",p.name));b.title=p.name;
   b.addEventListener("click",()=>{S.activeProjectId=p.id;S.archivedView=false;newChat();void fetchChats();renderProjects()});
-  const edit=node("button","project-edit");edit.title="项目设置";edit.setAttribute("aria-label","编辑项目");edit.append(iconSlot("ellipsis"));
-  edit.addEventListener("click",()=>openProject(p));row.append(b,edit);box.append(row);renderIcons(row);
+  const edit=node("button","project-edit");edit.title="项目设置";edit.setAttribute("aria-label","编辑项目");
+  edit.append(iconSlot("ellipsis"));edit.addEventListener("click",()=>openProject(p));row.append(b,edit);box.append(row);renderIcons(row);
  }
 }
 async function fetchProjects(){
@@ -408,8 +409,8 @@ async function listArchived(){
  hide("settingsDialog");S.archivedView=true;S.activeProjectId=null;newChat();await fetchChats();openMenu();
 }
 
-function hideWelcome(){$("welcome").hidden=true}
-function showWelcome(){$("welcome").hidden=false}
+function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat")}
+function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat")}
 
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
@@ -480,7 +481,7 @@ function newChat(){
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
  S.chatId=null;S.attachments=[];renderAttachments();setFreeDefault();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
- $("prompt").value="";settlePromptSize();flashError("");renderHistory();closeMenu();
+ $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();closeMenu();
  $("prompt").focus();
 }
 function startCoding(){
@@ -619,17 +620,16 @@ const WORK_AGENT_PRODUCTS=[
 function renderWorkAgentCatalog(){
  const target=$("workAgentCatalog");target.replaceChildren();
  for(const region of ["中国","国际","俄罗斯"]){
-  const group=node("details","work-agent-group");
-  // Keep the huge directory compact on mobile while letting all groups open on demand.
-  group.open=region==="中国";
+  const group=node("details","work-agent-group");group.open=true;
   const items=WORK_AGENT_PRODUCTS.filter(x=>x.region===region);
   const heading=node("summary","work-agent-region",region+" · "+items.length+" 项");
   const grid=node("div","work-agent-items");
   for(const item of items){
    const link=node("a","work-agent-product");link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
+   link.setAttribute("aria-label",item.name+" · 打开官方网站");
    const details=node("span","work-agent-description");
    details.append(node("strong","",item.name),node("small","",item.desc));
-   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":item.kind==="api"?"API 入口":item.kind==="web"?"免费官网":"官网");
+   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":item.kind==="api"?"API":item.kind==="web"?"官网":"官网");
    link.append(details,meta);grid.append(link);
   }
   group.append(heading,grid);target.append(group);
@@ -794,75 +794,66 @@ function initDomesticProviderLinks(){
 }
 
 
-const FREE_CREATIVE_MODES=[{"id":"research","name":"研究","icon":"brain-circuit","placeholder":"输入研究主题","action":"chat"},{"id":"imagePrompt","name":"图片提示","icon":"image","placeholder":"描述你想画的内容","action":"chat"},{"id":"group","name":"群聊","icon":"message-circle","placeholder":"输入多角色群聊主题（模拟）","action":"chat"},{"id":"story","name":"故事","icon":"square-pen","placeholder":"输入故事主题","action":"chat"},{"id":"character","name":"角色创作者","icon":"circle-user","placeholder":"描述想创建的角色","action":"chat"},{"id":"code","name":"代码","icon":"code-2","placeholder":"输入编程需求","action":"code"},{"id":"adventure","name":"冒险","icon":"compass","placeholder":"输入冒险设定","action":"chat"},{"id":"mentor","name":"导师","icon":"brain-circuit","placeholder":"输入学习主题","action":"chat"},{"id":"debate","name":"辩论","icon":"message-circle","placeholder":"输入辩论题目","action":"chat"},{"id":"video","name":"视频","icon":"video","placeholder":"","action":"external","url":"https://perchance.org/ai-video-generator"},{"id":"live","name":"直播","icon":"mic","placeholder":"输入直播脚本或流程需求","action":"chat"}];
+
 const EXTERNAL_FREE_TOOLS=[{"provider":"Perchance","name":"AI 文生图","category":"作图","url":"https://perchance.org/ai-text-to-image-generator"},{"provider":"Perchance","name":"写实照片","category":"作图","url":"https://perchance.org/ai-photo-generator"},{"provider":"Perchance","name":"角色形象","category":"角色","url":"https://perchance.org/ai-character-generator"},{"provider":"Perchance","name":"动漫作图","category":"作图","url":"https://perchance.org/ai-anime-generator"},{"provider":"Perchance","name":"人像生成","category":"作图","url":"https://perchance.org/ai-portrait-generator"},{"provider":"Perchance","name":"剧情场景","category":"写作","url":"https://perchance.org/ai-scenario-generator"},{"provider":"Perchance","name":"图片提示词","category":"作图","url":"https://perchance.org/ai-image-prompt"},{"provider":"Perchance","name":"Flux 提示词","category":"作图","url":"https://perchance.org/ai-image-prompt-generator"},{"provider":"Perchance","name":"AI 聊天","category":"聊天","url":"https://perchance.org/ai-chat"},{"provider":"Perchance","name":"故事生成","category":"写作","url":"https://perchance.org/ai-story-generator"},{"provider":"Perchance","name":"文字冒险 RPG","category":"互动","url":"https://perchance.org/ai-rpg"},{"provider":"Perchance","name":"社区视频生成","category":"视频","url":"https://perchance.org/ai-video-generator"},{"provider":"PerchanceAI","name":"文生图","category":"作图","url":"https://perchanceai.com/t/text-to-image"},{"provider":"PerchanceAI","name":"图生图","category":"修图","url":"https://perchanceai.com/t/img2img"},{"provider":"PerchanceAI","name":"照片编辑","category":"修图","url":"https://perchanceai.com/t/photo-editor"},{"provider":"PerchanceAI","name":"照片增强","category":"修图","url":"https://perchanceai.com/t/ai-photo-enhancer"},{"provider":"PerchanceAI","name":"图片转文字","category":"修图","url":"https://perchanceai.com/t/photo-to-text"},{"provider":"PerchanceAI","name":"故事写作","category":"写作","url":"https://perchanceai.com/t/story"},{"provider":"PerchanceAI","name":"AI 助手","category":"聊天","url":"https://perchanceai.com/c/askbuddy"},{"provider":"PerchanceAI","name":"角色扮演聊天","category":"聊天","url":"https://perchanceai.com/c/ai-roleplay-chat"},{"provider":"PerchanceAI","name":"对话训练","category":"聊天","url":"https://perchanceai.com/c/crush-chat"},{"provider":"PerchanceAI","name":"专业图片生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-image-professional"},{"provider":"PerchanceAI","name":"摄影图片生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-photo"},{"provider":"PerchanceAI","name":"像素画生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-pixel-art-generator"},{"provider":"PerchanceAI","name":"无缝纹理生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/texture-generator"},{"provider":"PerchanceAI","name":"角色参考图","category":"角色","url":"https://perchanceai.com/ai/en/generate/character-reference-sheet"},{"provider":"PerchanceAI","name":"产品创意","category":"写作","url":"https://perchanceai.com/t/product-idea-generator"},{"provider":"PerchanceAI","name":"简笔人物画","category":"作图","url":"https://perchanceai.com/t/stick-figure-generator"},{"provider":"PerchanceAI","name":"角色姓名","category":"写作","url":"https://perchanceai.com/t/1920s-name-generator"},{"provider":"PerchanceAI","name":"角色创建","category":"角色","url":"https://perchanceai.com/c/character-creator"},{"provider":"PerchanceAI","name":"故事协作","category":"写作","url":"https://perchanceai.com/c/story-weaver"},{"provider":"PerchanceAI","name":"剧情互动","category":"互动","url":"https://perchanceai.com/c/dating-sim-text-game"},{"provider":"PerchanceAI","name":"图片变换","category":"修图","url":"https://perchanceai.com/t/image-transform-with-seed"},{"provider":"PerchanceAI","name":"艺术图像","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-art-generator"},{"provider":"PerchanceAI","name":"图像变体","category":"作图","url":"https://perchanceai.com/ai/en/generate/image-to-image"},{"provider":"PerchanceAI","name":"AI 绘图","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-drawing-generator"},{"provider":"PerchanceAI","name":"真假 AI 游戏","category":"互动","url":"https://perchanceai.com/c/bot-or-human"},{"provider":"PerchanceAI","name":"魔法灯互动","category":"互动","url":"https://perchanceai.com/c/ask-a-genie"},{"provider":"PerchanceAI","name":"照片工具库","category":"修图","url":"https://perchanceai.com/ai/en/image"},{"provider":"PerchanceAI","name":"所有免费工具","category":"目录","url":"https://perchanceai.com/explore?focus=1"},{"provider":"PerchanceAI","name":"热门工具","category":"目录","url":"https://perchanceai.com/explore/list/top"},{"provider":"PerchanceAI","name":"图像生成目录","category":"目录","url":"https://perchanceai.com/explore?category=image-generators"},{"provider":"PerchanceAI","name":"照片编辑目录","category":"目录","url":"https://perchanceai.com/explore?category=photo-editing"},{"provider":"PerchanceAI","name":"肖像工具目录","category":"目录","url":"https://perchanceai.com/explore?category=portrait"},{"provider":"PerchanceAI","name":"动漫工具目录","category":"目录","url":"https://perchanceai.com/explore?category=anime"},{"provider":"PerchanceAI","name":"长篇写作目录","category":"目录","url":"https://perchanceai.com/explore?category=prose_writing"},{"provider":"PerchanceAI","name":"写作工具目录","category":"目录","url":"https://perchanceai.com/explore?category=writing"},{"provider":"PerchanceAI","name":"角色互动目录","category":"目录","url":"https://perchanceai.com/explore?category=roleplay"},{"provider":"PerchanceAI","name":"AI 助手目录","category":"目录","url":"https://perchanceai.com/explore?type=assistants"},{"provider":"PerchanceAI","name":"命名工具目录","category":"目录","url":"https://perchanceai.com/explore?category=name_generator"},{"provider":"Perchance","name":"更多社区生成器","category":"目录","url":"https://perchance.org/generators"},{"provider":"FURAI","name":"Velorum 世界观","category":"互动","url":"https://furai.space/"}];
-const FREE_TOOL_CATEGORIES=["全部","模式","作图","修图","聊天","写作","角色","互动","视频","目录"];
+const FREE_TOOL_CATEGORIES=["全部","作图","修图","聊天","写作","角色","互动","视频","目录"];
 function freeToolsFilters(){
- const selected=S.freeToolsCategory||"全部",container=$("freeToolFilters");container.replaceChildren();
+ const container=$("freeToolFilters");container.replaceChildren();
  for(const label of FREE_TOOL_CATEGORIES){
-  const b=node("button","free-filter"+(label===selected?" active":""));b.type="button";
-  b.textContent=label;b.setAttribute("aria-pressed",label===selected?"true":"false");
+  const b=node("button","free-filter"+(label===S.freeToolsCategory?" active":""));b.type="button";
+  b.textContent=label;b.setAttribute("aria-pressed",String(label===S.freeToolsCategory));
   b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools()});container.append(b);
  }
 }
-function openFreeTool(url){
- if(navigator.standalone===true||window.matchMedia("(display-mode: standalone)").matches)
-  window.location.assign(url);
- else window.open(url,"_blank","noopener,noreferrer");
-}
-function startFreeCreativeMode(mode){
- if(S.busy)return;
- if(mode.action==="external"){openFreeTool(mode.url);return}
- if(!S.user){show("authDialog");return}
- if(mode.action==="code"){startCoding();return}
- newChat();S.creativeMode=mode.id;$("prompt").placeholder=mode.placeholder;
- const header=$("welcome")?.querySelector("h1");if(header)header.textContent=mode.name;
- $("prompt").focus();
-}
 function renderFreeTools(){
  freeToolsFilters();
- const search=$("freeToolsSearch").value.trim().toLocaleLowerCase(),filter=S.freeToolsCategory||"全部";
- const includes=fields=>!search||fields.some(s=>String(s).toLocaleLowerCase().includes(search));
- const modes=FREE_CREATIVE_MODES.filter(x=>(filter==="全部"||filter==="模式")&&includes([x.name,x.placeholder]));
- const modeList=$("freeModesList");modeList.replaceChildren();$("freeModesSection").hidden=modes.length===0;
- for(const item of modes){
-  const button=node("button","free-mode-card");button.type="button";
-  const marker=node("span","free-mode-icon");marker.append(iconSlot(item.icon));
-  button.append(marker,node("strong","",item.name));
-  button.addEventListener("click",()=>startFreeCreativeMode(item));modeList.append(button);renderIcons(button);
- }
- const items=EXTERNAL_FREE_TOOLS.filter(x=>(filter==="全部"||filter===x.category)&&includes([x.name,x.provider,x.category]));
- $("freeToolsCount").textContent=items.length+" 个";const list=$("freeToolsList");list.replaceChildren();
+ const search=$("freeToolsSearch").value.trim().toLowerCase(),filter=S.freeToolsCategory;
+ const items=EXTERNAL_FREE_TOOLS.filter(x=>(filter==="全部"||x.category===filter)&&(!search||[x.name,x.provider,x.category].some(v=>String(v).toLowerCase().includes(search))));
+ $("freeToolsCount").textContent=items.length+" 个";
+ const list=$("freeToolsList");list.replaceChildren();
+ const icons={作图:"image",修图:"palette",聊天:"message-circle",写作:"square-pen",角色:"circle-user",互动:"compass",视频:"video",目录:"layers"};
  for(const item of items){
-  const a=node("a","free-tool-card");a.href=item.url;
-  a.target=(navigator.standalone===true||window.matchMedia("(display-mode: standalone)").matches)?"_self":"_blank";
-  a.rel="noopener noreferrer";
-  a.append(node("strong","free-tool-name",item.name),node("span","free-tool-provider",item.provider));list.append(a);
+  const a=node("a","free-tool-card");a.href=item.url;a.target="_blank";a.rel="noopener noreferrer";
+  a.dataset.category=item.category;a.setAttribute("aria-label",item.name+" · 在新页面打开");
+  const symbol=node("span","free-tool-symbol");symbol.append(iconSlot(icons[item.category]||"blocks"));
+  const copy=node("span","free-tool-copy");copy.append(node("strong","free-tool-name",item.name),node("span","free-tool-provider",item.provider));
+  a.append(symbol,copy,iconSlot("arrow-up"));list.append(a);renderIcons(a);
  }
- if(!modes.length&&!items.length)list.append(node("p","free-tools-empty","没有匹配的工具"));
+ if(!items.length)list.append(node("p","free-tools-empty","没有匹配的工具"));
+}
+function syncWorkspaceRoute(name){
+ const hash=name?"#"+name:"";
+ if(location.hash!==hash)history.replaceState(history.state,"",location.pathname+location.search+hash);
 }
 function setFreeToolsMode(enabled){
- S.freeToolsMode=!!enabled;
- $("shell").classList.toggle("free-tools-active",S.freeToolsMode);
+ S.freeToolsMode=!!enabled;$("shell").classList.toggle("free-tools-active",S.freeToolsMode);
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
-  
-  
-  $("navFreeTools").classList.add("active");renderFreeTools();
+  $("navFreeTools").classList.add("active");renderFreeTools();syncWorkspaceRoute("tools");
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
-  if(!S.workMode)$("conversation").hidden=false;
+  if(!S.workMode){$("conversation").hidden=false;syncWorkspaceRoute("")}
  }
  closeMenu();
 }
-
+function restoreWorkspaceRoute(){
+ if(location.hash==="#tools")setFreeToolsMode(true);
+ else if(location.hash==="#work")setWorkMode(true);
+}
 const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
- setFreeToolsMode(false);
- S.workMode=on;
- if(on){if(!S.workStages.length)resetWorkPlan();renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;$("prompt").placeholder="描述要完成的工作任务…";hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks()}
- else{$("workBoard").hidden=true;$("conversation").hidden=false;$("prompt").placeholder="向 AI 提问…";}
+ setFreeToolsMode(false);S.workMode=!!on;
+ if(on){
+  if(!S.workStages.length)resetWorkPlan();
+  $("workAgents").open=true;renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();
+  setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;
+  $("prompt").placeholder="描述要完成的工作任务…";
+  hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
+ }else{
+  $("workBoard").hidden=true;$("conversation").hidden=false;
+  $("prompt").placeholder="向 AI 提问…";syncWorkspaceRoute("");
+ }
  closeMenu();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
@@ -1085,27 +1076,54 @@ function allModels(){
 }
 function modelMatches(m){
  const query=S.query.trim().toLowerCase();
- const text=(m.name+" "+m.id+" "+m.provider+" "+(m.description||"")).toLowerCase();
- if(query&&!text.includes(query))return false;
+ const t=(m.name+" "+m.id+" "+m.provider+" "+(m.description||"")).toLowerCase();
+ if(query&&!t.includes(query))return false;
  if(S.source.startsWith("family:")){
-  const name=S.source.slice(7),id=m.id.toLowerCase();
-  const groups={
-   gpt:/gpt|openai\/|\bo[1-9]-|^o[1-9]-/,
-   grok:/grok|x-ai\/|xai\//,
-   gemini:/gemini|google\//,
-   qwen:/qwen|alibaba|tongyi/
-  };
-  if(!groups[name]?.test(id))return false;
- }else if(S.source==="connected"&&!S.savedProviders[m.provider])return false;
+  const family=S.source.slice(7),id=(m.id+" "+m.name).toLowerCase();
+  const re={gpt:/gpt|openai\/|\bo[1-9]-/,claude:/claude|anthropic/,
+   grok:/grok|x-ai\/|xai\//,gemini:/gemini|google\//,qwen:/qwen|alibaba|tongyi/,
+   novai:/novai|nova-ai|novaiapi/,deepseek:/deepseek/,
+   russian:/yandex|gigachat|giga-chat|sber|alice-ai|\.su\//};
+  const groupMatch=family==="russian"&&m.provider==="novai"
+   ||family==="international"&&["openrouter","openai","claude","grok","gemini","groq","cerebras","novai","novai_pro"].includes(m.provider)
+   ||re[family]?.test(id);
+  if(!groupMatch)return false;
+ }else if(S.source==="connected"&&!connected(m.provider))return false;
  else if(S.source!=="all"&&m.provider!==S.source)return false;
  if(S.filter==="free"&&!m.free)return false;
  if(S.filter==="text"&&m.type!=="text")return false;
  if(S.filter==="image"&&m.type!=="image")return false;
  if(S.filter==="video"&&m.type!=="video")return false;
- if(S.filter==="code"&&!/cod(e|er|ing)|deepseek|qwen|gpt|claude|gemini|glm|devstral|starcoder/i.test(text))return false;
+ if(S.filter==="code"&&!/cod(e|er|ing)|deepseek|qwen|gpt|claude|gemini|glm|devstral|starcoder/i.test(t))return false;
  return true;
 }
+function renderProviderSpotlight(){
+ const box=$("modelRegionLinks");box.replaceChildren();
+ const groups={
+  "family:russian":[
+   {name:"GigaChat",desc:"Sber · 俄罗斯 AI",url:"https://giga.chat/portal"},
+   {name:"Alice AI · YandexGPT",desc:"Yandex · 俄罗斯 AI",url:"https://alice.yandex.ru/about"},
+   {name:"Yandex AI Studio",desc:"Yandex Cloud · 模型与代理",url:"https://yandex.cloud/en/ai"},
+   {name:"Nova AI API",provider:"novai"}],
+  "family:international":[
+   {name:"OpenAI · GPT",provider:"openai"},{name:"Anthropic · Claude",provider:"claude"},
+   {name:"xAI · Grok",provider:"grok"},{name:"Google · Gemini",provider:"gemini"},
+   {name:"OpenRouter",provider:"openrouter"},{name:"Groq",provider:"groq"},
+   {name:"Nova AI",provider:"novai"},{name:"Cerebras",provider:"cerebras"}],
+  "family:novai":[{name:"Nova AI · 多模型",provider:"novai"},{name:"NovAI · 中国模型",provider:"novai_pro"}]
+ };
+ const items=groups[S.source]||[];box.hidden=!items.length;
+ for(const item of items){
+  const b=node("button","model-provider-card");b.type="button";
+  b.append(node("strong","",item.name),node("small","",item.desc||(connected(item.provider)?"已连接":"需连接个人 API")));
+  b.addEventListener("click",()=>{
+   if(item.url)window.open(item.url,"_blank","noopener,noreferrer");
+   else{hide("modelDialog");openKeyPanel(item.provider)}
+  });box.append(b);
+ }
+}
 function renderModels(){
+ renderProviderSpotlight();
  const visible=allModels().filter(modelMatches);
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*30);
  $("modelCount").textContent=count+" 项"+(S.source==="free"?" · 当前默认：免费自动":"");
@@ -1146,10 +1164,10 @@ function refreshSourceChips(){
  }
 }
 function openModels(){
- S.modelPage=0;S.filter="all";S.source="free";S.query="";$("modelSearch").value="";
+ S.modelPage=0;S.filter="all";S.source="all";S.query="";$("modelSearch").value="";
  $("modelFilter").value="all";
- for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="free");
- show("modelDialog");void loadCatalog();
+ for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="all");
+ show("modelDialog");renderModels();void loadCatalog();
 }
 function openKeyPanel(provider){
  if(typeof provider==="string"&&$("keyProvider").querySelector('option[value="'+provider+'"]'))$("keyProvider").value=provider;
@@ -1517,13 +1535,16 @@ function syncInstalledPwaLayout(){
 function wire(){
  syncInstalledPwaLayout();
  wireDrawerGestures();
+ window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
- $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
+ $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;S.historyExpanded=false;newChat();void fetchChats();renderProjects()});
+ $("historyToggle").addEventListener("click",()=>{S.historyExpanded=!S.historyExpanded;renderHistory()});
+ $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
  $("navDraw").addEventListener("click",openCreate);
- $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
+ $("freeToolsClose").addEventListener("click",()=>setFreeToolsMode(false));
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
  $("navCode").addEventListener("click",startCoding);
@@ -1532,7 +1553,7 @@ function wire(){
  $("workClose").addEventListener("click",()=>setWorkMode(false));
  $("workNewTask").addEventListener("click",newWorkDraft);
  $("workAddStage").addEventListener("click",()=>{if(S.workStages.length<12){S.workStages.push({name:"新步骤",instruction:"",provider:"auto",model:""});renderWorkEditor()}});
- $("workAddRoute").addEventListener("click",()=>{if(S.workRoutes.length<20){S.workRoutes.push({provider:"free",model:"free:vexa"});renderWorkEditor()}});
+ $("workAddRoute").addEventListener("click",()=>{if(S.workRoutes.length<20){S.workRoutes.push({provider:"free",model:"free:auto"});renderWorkEditor()}});
  $("workFallback").addEventListener("change",e=>{S.workFallback=e.target.checked});
  $("workSaveConfig").addEventListener("click",()=>void saveWorkConfiguration());
  $("workContinue").addEventListener("click",()=>void executeWorkTask(S.workTaskId));
@@ -1617,5 +1638,5 @@ function hideAttachMenu(){$("attachMenu").hidden=true}
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
  applyTheme(enabled?"rainbow":"plain");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
- updateModelTitle();
+ restoreWorkspaceRoute();updateModelTitle();
 });

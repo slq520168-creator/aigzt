@@ -24,11 +24,11 @@
    </div>
    <div class="side-heading pin-heading" id="pinHeading" hidden><span>置顶</span></div>
    <div id="pinnedHistory" class="pinned-history" hidden aria-label="置顶会话"></div>
-   <div class="side-heading side-chat-heading"><span id="historyHeading">最近聊天</span><button class="side-caption-action" id="navChat" aria-label="全部聊天">全部</button><span id="chatCount" class="chat-count" hidden></span></div>
+   <div class="side-heading side-chat-heading"><span id="historyHeading">最近聊天</span><button class="side-caption-action" id="navChat" aria-label="全部聊天" hidden>全部</button><button class="side-caption-action" id="historyToggle" aria-expanded="false" hidden>展开</button><span id="chatCount" class="chat-count" hidden></span></div>
    <div id="history" class="history" aria-label="历史会话"></div>
    <div class="sidebar-lower">
-    <div class="side-heading project-heading"><span>项目</span><button id="newProject" class="icon-btn small-btn" aria-label="新建项目"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button></div>
-    <div id="projectsList" class="project-list" aria-label="项目列表"></div>
+    <div class="side-heading project-heading"><button id="projectsToggle" class="project-collapse-toggle" aria-expanded="false"><span>项目</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button><button id="newProject" class="icon-btn small-btn" aria-label="新建项目"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button></div>
+    <div id="projectsList" class="project-list" aria-label="项目列表" hidden></div>
     <div class="sidebar-links">
      <button class="nav-row" id="navWork"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作任务</span></button>
      <button class="nav-row" id="navCode"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>编程助手</span></button>
@@ -54,10 +54,10 @@
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>任务与阶段自动保存 · 模型不可用时继续接力</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
-    <details class="work-agents" id="workAgents"><summary>其他工作代理 <small>官方入口</small></summary>
+    <details class="work-agents" id="workAgents" open><summary>工作代理 <small>中国 · 国际 · 俄罗斯</small></summary>
      <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
      <div id="workAgentCatalog" class="work-agent-catalog"></div>
-     <p class="work-agent-disclaimer">第三方工作代理使用官方账号独立运行；本站目前只提供官网入口。Claude API 可在「连接 AI」另行使用个人密钥，不等于获得 Claude Cowork 权限。</p>
+     <p class="work-agent-disclaimer">站内任务由 AIGZT 执行；外部代理通过各自官网账号使用。</p>
     </details>
     <details class="work-config" id="workConfig">
      <summary>配置执行步骤与模型 <span id="workConfigSummary">按任务自由配置</span></summary>
@@ -84,11 +84,11 @@
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
     <div class="free-tools-header"><h2>免费工具</h2><button type="button" class="icon-btn" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
     <div class="free-tools-controls"><input id="freeToolsSearch" type="search" placeholder="搜索工具…" aria-label="搜索免费工具"><div id="freeToolFilters" class="free-tool-filters" aria-label="工具分类"></div></div>
-    <section id="freeModesSection" class="free-modes-section" aria-label="创作模式"><h3>创作模式</h3><div id="freeModesList" class="free-modes-list"></div></section>
+    
     <div class="free-tools-list-heading"><h3>工具目录</h3><span id="freeToolsCount"></span></div>
     <div id="freeToolsList" class="free-tools-list"></div>
    </section>
-   <div class="conversation" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
+   <div class="conversation empty-chat" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
    <div class="composer-area" id="composerArea">
     <div class="error-banner" id="errorBanner" role="alert" hidden></div>
     <div class="attach-menu" id="attachMenu" hidden role="menu">
@@ -167,7 +167,7 @@
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
   <div class="modal-head"><div><h2>模型</h2><p id="modelSummary">默认使用免费自动线路</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭">×</button></div>
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
-  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="free">免费线路</button><button class="chip" data-source="connected">已连接</button><button class="chip" data-source="all">全部模型</button></div>
+  <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">全部模型</button><button class="chip" data-source="free">免费线路</button><button class="chip" data-source="family:international">海外</button><button class="chip" data-source="family:russian">俄罗斯</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:claude">Claude</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button><button class="chip" data-source="family:novai">NovaAI</button><button class="chip" data-source="family:deepseek">DeepSeek</button><button class="chip" data-source="connected">已连接</button></div><div id="modelRegionLinks" class="model-region-links" hidden></div>
   <details class="model-extra" id="modelExtra"><summary>连接更多服务商</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
   <div class="model-quick">
    <button type="button" class="quick-entry" id="groqQuick"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span><strong>Groq 免费额度</strong><small>用个人免费 Key 连接</small></span></button>
