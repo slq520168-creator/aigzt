@@ -200,7 +200,7 @@ async function saveUserProvider(env,user,body){
   verified=catalog.verified===true;
   const favorite=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(x=>x.id===id)).find(Boolean):
    ["novai","novai_pro"].includes(provider)?models.find(x=>x.free===true&&x.type==="text"):null;
-  const selected=models.find(x=>x.id===desired)||favorite||models.find(x=>x.type==="text"||!/audio|tts|guard|embed|video/i.test(x.id))||models[0];
+  const selected=models.find(x=>x.id===desired&&x.type==="text")||favorite||models.find(x=>x.type==="text")||models[0];
   model=selected?.id||desired;
   await dbRun(env.DB,"UPDATE user_api_keys SET model_id=?,verified=? WHERE user_id=? AND provider=?",model,verified?1:0,user.id,provider);
  }catch(error){
@@ -231,6 +231,9 @@ async function getGigaChatAccessToken(authKey){
  gigaOAuthCache.set(cacheKey,{token:data.access_token,expiry:Date.now()+Math.max(30000,Math.min(25*60000,life))});
  return data.access_token;
 }
+function isAudioOnlyModel(id){
+ return /(?:^|[\/_-])(?:whisper|transcribe|transcription|tts|speech-to-text|audio-transcription)(?:$|[\/_-])/i.test(String(id||""));
+}
 async function providerModels(body){
  const id=String(body.provider||""),key=body.apiKey;
  if(!HOSTS[id])throw Error("不支持该服务商");
@@ -259,7 +262,7 @@ async function providerModels(body){
   (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired").map(x=>({
   id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":""),
   free:providerModelIsFree(id,x.id),
-  type:/image|cogview|seedream/i.test(x.id)?"image":/video|cogvideox|seedance/i.test(x.id)?"video":"text"
+  type:isAudioOnlyModel(x.id)?"audio":/image|cogview|seedream/i.test(x.id)?"image":/video|cogvideox|seedance/i.test(x.id)?"video":"text"
  }));
  if(!Array.isArray(models)||models.length===0)throw Object.assign(new Error("连接成功但服务商没有返回可用模型"),{status:502});
  if(id==="novai"||id==="novai_pro")models.sort((a,b)=>Number(!!b.free)-Number(!!a.free));
@@ -368,11 +371,14 @@ async function quota(env,userId,kind="text"){
 
 const FREE_ROUTER_SOURCE_IDS=Object.freeze(["vireonix","openrouter","groq","vexa"]);
 function freeSources(env){
- const sources=[{id:"vireonix",name:"Vireonix",endpoint:"https://vireonix.ai/v1/chat/completions",model:"auto",ms:12500}];
- if(typeof env.OPENROUTER_FREE_KEY==="string"&&env.OPENROUTER_FREE_KEY.length>=12)
-  sources.push({id:"openrouter",name:"OpenRouter",endpoint:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY,ms:11000});
+ // Use the existing authenticated text provider before the currently unstable public relays.
+ // A request never submits to two upstreams in parallel or retries an uncertain timeout.
+ const sources=[];
  if(typeof env.GROQ_FREE_KEY==="string"&&env.GROQ_FREE_KEY.length>=12)
   sources.push({id:"groq",name:"Groq",endpoint:"https://api.groq.com/openai/v1/chat/completions",model:"openai/gpt-oss-20b",key:env.GROQ_FREE_KEY,ms:11000});
+ if(typeof env.OPENROUTER_FREE_KEY==="string"&&env.OPENROUTER_FREE_KEY.length>=12)
+  sources.push({id:"openrouter",name:"OpenRouter",endpoint:"https://openrouter.ai/api/v1/chat/completions",model:"openrouter/free",key:env.OPENROUTER_FREE_KEY,ms:11000});
+ sources.push({id:"vireonix",name:"Vireonix",endpoint:"https://vireonix.ai/v1/chat/completions",model:"auto",ms:12500});
  sources.push({id:"vexa",name:"Vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"auto",query:true,ms:9000});
  return sources;
 }
@@ -491,8 +497,10 @@ async function chat(req,env,user,onDelta=null){
  if(!message.trim())throw Error("请输入消息或添加附件");
  const requestedModel=String(body.model||FREE_MODELS[0].id);
  // Existing chat selections from the old dev-only Cehpoint source use the new free auto router.
- const model=provider==="free"&&/^free:(?:vireonix|vexa|openrouter|groq|cehpoint)$/.test(requestedModel)?"free:auto":requestedModel;
+ const adaptedChatModel=provider==="groq"&&isAudioOnlyModel(requestedModel)?"openai/gpt-oss-20b":requestedModel;
+ const model=provider==="free"&&/^free:(?:vireonix|vexa|openrouter|groq|cehpoint)$/.test(requestedModel)?"free:auto":adaptedChatModel;
  requireModelId(model);
+ if(provider!=="free"&&isAudioOnlyModel(model))throw Object.assign(new Error("该模型只支持音频处理，不能用于文字聊天"),{status:400});
  if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("免费模型选择无效");
  if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
  let chatId=typeof body.chatId==="string"?body.chatId:null;

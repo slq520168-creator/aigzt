@@ -253,7 +253,7 @@ async function fetchConnections(){
   const result=await api("/api/connections"),saved={};
   for(const item of result.connections||[]){
    saved[item.provider]={model:item.model||"",consent:!!item.consent,verified:!!item.verified,updatedAt:item.updatedAt};
-   if(item.model&&!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model}];
+   if(item.model&&!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model,type:/(?:^|[\/_-])whisper(?:$|[\/_-])/i.test(item.model)?"audio":"text"}];
   }
   S.savedProviders=saved;S.connectionsLoaded=true;refreshSourceChips();if(S.workMode)renderWorkAgentCatalog();
   if(S.provider!=="free"&&!connected(S.provider))setFreeDefault(false);
@@ -265,6 +265,9 @@ async function fetchConnections(){
   S.connectionsLoaded=false;
   flashError("密钥状态暂未同步："+humanError(e));
  }finally{S.connectionsLoading=false}
+}
+function chatTextModel(provider,model){
+ return provider==="groq"&&/(?:^|[\/_-])whisper(?:$|[\/_-])/i.test(String(model||""))?"openai/gpt-oss-20b":model;
 }
 function isFreeModel(provider,model){
  if(provider==="free")return true;
@@ -283,7 +286,7 @@ async function useSavedConnection(){
  if(!entry){$("keyStatus").textContent="请先保存密钥";return}
  const button=$("useSavedKey");button.disabled=true;
  try{
-  let model=entry.model;
+  let model=chatTextModel(provider,entry.model);
   if(!model){
    const manual=$("manualModel").value.trim();
    if(manual){
@@ -661,7 +664,7 @@ async function loadChat(id){
   for(const m of v.messages)appendMessage(m.role,m.body,m.model);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
-  if(c&&c.model&&c.provider){S.provider=["free","cloudflare"].includes(c.provider)?"free":c.provider;S.model=S.provider==="free"?"free:auto":c.model;S.modelTitle=S.provider==="free"?"免费自动":c.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);S.selectedFree=isFreeModel(S.provider,S.model);updateModelTitle()}
+  if(c&&c.model&&c.provider){S.provider=["free","cloudflare"].includes(c.provider)?"free":c.provider;S.model=S.provider==="free"?"free:auto":chatTextModel(S.provider,c.model);S.modelTitle=S.provider==="free"?"免费自动":S.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);S.selectedFree=isFreeModel(S.provider,S.model);updateModelTitle()}
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
@@ -670,6 +673,7 @@ function updateModelTitle(){
 }
 function setModel(row){
  if(row.type!=="text"){
+  if(row.type==="audio")return;
   hide("modelDialog");
   if(row.type==="image")openCreate();else setComposerMode("video");
   return;
