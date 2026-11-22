@@ -758,40 +758,74 @@ const WORK_PRODUCT_DIRECTORY=[
  {name:"GigaChat",region:"俄罗斯"},
  {name:"YandexGPT / Alice",region:"俄罗斯"}
 ];
+/* Work model selection stays usable even when reviewing an old task.
+   Paused tasks persist their new route before "Continue"; finished tasks create a fresh draft. */
 function renderWorkAgentCatalog(){
  const target=$("workAgentCatalog");target.replaceChildren();
- const locked=S.workBusy||["running","completed","cancelled"].includes(S.workDetail?.task?.status);
+ const active=S.workDetail?.task,status=active?.status,locked=S.workBusy||status==="running";
  const selectable=[["free","AIGZT · 免费自动"],...Object.entries(WORK_PROVIDER_NAMES).filter(([id])=>id!=="free").map(([id,name])=>[id,name])];
- target.append(node("div","work-directory-title","站内可执行模型 · 点击连接或选择"));
+ target.append(node("div","work-directory-title","在本站执行 · 选择模型线路"));
  const grid=node("div","work-agent-items work-agent-live-items");
  for(const [id,name] of selectable){
   const record=S.savedProviders[id],authorized=id==="free"||!!record&&(!!record.consent||isFreeModel(id,record.model));
-  const selected=S.workStages.length>0&&S.workStages.every(step=>id==="free"?step.provider==="auto"||step.provider==="free":step.provider===id);
-  const button=node("button","work-agent-product work-agent-local"+(selected?" selected":""));button.type="button";button.disabled=locked;
+  const selected=S.workStages.length>0&&S.workStages.slice(Math.min(active?.nextStep||0,S.workStages.length-1)).every(step=>id==="free"?(step.provider==="auto"||step.provider==="free"):step.provider===id);
+  const button=node("button","work-agent-product work-agent-local work-provider-"+(id==="free"?"free":authorized?"ready":"connect")+(selected?" selected":""));
+  button.type="button";button.disabled=locked;button.dataset.workProvider=id;
   const detail=node("span","work-agent-description");
-  detail.append(node("strong","",name),node("small","",id==="free"?"本站免费线路 · 自动接力":authorized?"已连接 · 在本站执行":record?"已保存 · 需要授权额度":"未连接 · 点击配置 API"));
-  button.append(detail,node("span","work-agent-meta",selected?"已选择":authorized?"选择":"连接"));
+  detail.append(node("strong","",name),node("small","",id==="free"?"免费自动 · 本站执行":authorized?"已授权 · 本站执行":record?"需要授权额度 · 点击配置":"点击连接 API · 之后本站执行"));
+  button.append(detail,node("span","work-agent-meta",selected?"已选":authorized?"使用":"连接"));
   button.addEventListener("click",()=>{
    if(!authorized){openKeyPanel(id);return}
+   if(["completed","cancelled"].includes(S.workDetail?.task?.status))newWorkDraft();
    if(!S.workStages.length)resetWorkPlan();
-   for(const step of S.workStages){step.provider=id==="free"?"auto":id;step.model=id==="free"?"":record?.model||""}
+   const next=S.workDetail?.task?.nextStep||0;
+   for(let i=next;i<S.workStages.length;i++){
+    const stage=S.workStages[i];
+    stage.provider=id==="free"?"auto":id;
+    stage.model=id==="free"?"":record?.model||"";
+   }
    renderWorkEditor();renderWorkAgentCatalog();
-  });grid.append(button);
+   if(id!=="free"&&!record?.model){
+    $("workConfig").open=true;
+    $("workConfigMessage").textContent="请选择该渠道的具体模型，保存后才能执行";
+    return;
+   }
+   if(S.workTaskId&&["pending","paused"].includes(S.workDetail?.task?.status)){
+    $("workConfigMessage").textContent="正在保存模型选择…";
+    void saveWorkConfiguration();
+   }else{
+    $("workConfigMessage").textContent="已选择 "+name+" · 输入任务后直接执行";
+   }
+  });
+  grid.append(button);
  }
- target.append(grid,node("div","work-directory-title","工作代理产品 · 对应模型 API 与原产品代理不同"));
+ target.append(grid);
+ const catalog=node("details","work-agent-directory");
+ catalog.open=true;
+ catalog.append(node("summary","work-directory-title","中国 · 国际 · 俄罗斯工作代理产品目录"));
+ const wrap=node("div","work-agent-directory-inner");
  for(const region of ["中国","国际","俄罗斯"]){
-  const section=node("section","work-agent-region-group");
-  section.append(node("h4","",region));
+  const group=node("section","work-agent-region-group");
+  group.append(node("h4","",region));
   const products=node("div","work-agent-products");
   for(const item of WORK_PRODUCT_DIRECTORY.filter(x=>x.region===region)){
    const canConnect=!!item.provider&&Object.hasOwn(WORK_PROVIDER_NAMES,item.provider);
-   const el=node("button","work-agent-reference");el.type="button";el.disabled=!canConnect||locked;
-   el.append(node("strong","",item.name),node("small","",canConnect?"连接对应模型 API · 由 AIGZT 执行任务":"尚无站内原生代理接口"));
-   if(canConnect)el.addEventListener("click",()=>openKeyPanel(item.provider));
-   products.append(el);
+   const tile=node(canConnect?"button":"div","work-agent-reference"+(canConnect?" can-connect":" info-only"));
+   if(canConnect){
+    tile.type="button";tile.disabled=locked;
+    tile.addEventListener("click",()=>{
+     const record=S.savedProviders[item.provider];
+     const ready=!!record&&(!!record.consent||isFreeModel(item.provider,record.model));
+     const match=grid.querySelector('[data-work-provider="'+item.provider+'"]');
+     if(ready&&match)match.click();else openKeyPanel(item.provider);
+    });
+   }
+   tile.append(node("strong","",item.name),node("small","",canConnect?"点击连接相关模型 API":"暂无原生代理接口"));
+   products.append(tile);
   }
-  section.append(products);target.append(section);
+  group.append(products);wrap.append(group);
  }
+ catalog.append(wrap);target.append(catalog);
 }
 function resetWorkPlan(){
  S.workStages=[
@@ -872,7 +906,7 @@ function workModelHints(){
 }
 
 function renderWorkEditor(){
- const locked=S.workBusy||["completed","cancelled","running"].includes(S.workDetail?.task?.status);
+ const locked=S.workBusy||S.workDetail?.task?.status==="running"||["completed","cancelled"].includes(S.workDetail?.task?.status);
  const completed=S.workDetail?.task?.nextStep||0;
  const stageBox=$("workStageEditor");stageBox.replaceChildren();
  for(const [i,item] of S.workStages.entries()){
@@ -923,8 +957,8 @@ function renderWorkEditor(){
 }
 function newWorkDraft(){
  if(S.workBusy)return;
- S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderWorkEditor();
- $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=true;$("prompt").focus();
+ S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderWorkEditor();if(S.workMode)renderWorkAgentCatalog();
+ $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=false;$("workBoard").scrollTop=0;
 }
 function loadWorkEditor(task){
  S.workStages=Array.isArray(task?.steps)&&task.steps.length?task.steps.map(x=>({...x})):[];if(!S.workStages.length)resetWorkPlan();
@@ -1004,7 +1038,7 @@ function setWorkMode(on){
  setFreeToolsMode(false);S.workMode=!!on;
  if(on){
   if(!S.workStages.length)resetWorkPlan();
-  $("workAgents").open=true;renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();
+  $("workAgents").open=true;$("workConfig").open=false;renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();
   setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;
   $("prompt").placeholder="描述要完成的工作任务…";
   hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
@@ -1028,9 +1062,15 @@ function renderWorkTasks(){
 function renderWorkDetail(){
  const d=S.workDetail,task=d?.task,container=$("workDetail");
  container.hidden=!task;$("workEmpty").hidden=!!task;
- if(!task){$("workStepList").replaceChildren();$("workTitle").textContent="";$("workState").textContent="";return;}
+ if(!task){$("workStepList").replaceChildren();$("workTitle").textContent="";$("workState").textContent="";$("workErrorSlot").replaceChildren();return;}
  $("workTitle").textContent=task.title;
- $("workState").textContent=workStatus(task)+(task.error?" · "+task.error:"");
+ const failed=task.status==="paused",stageName=task.steps?.[task.nextStep]?.name||"当前阶段";
+ $("workState").textContent=failed?"执行暂停 · "+stageName+"未完成，请选择可用模型再继续":workStatus(task);
+ const errorSlot=$("workErrorSlot");errorSlot.replaceChildren();
+ if(task.error){
+  const details=node("details","work-error-detail"),summary=node("summary","",failed?"查看线路失败详情":"查看执行详情");
+  details.append(summary,node("p","",task.error));errorSlot.append(details);
+ }
  const progress=$("workProgress");progress.replaceChildren();
  for(let i=0;i<task.totalSteps;i++){
   const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1);
@@ -1052,7 +1092,7 @@ function renderWorkDetail(){
  $("workStop").hidden=task.status==="completed"||task.status==="cancelled";
  $("workExport").disabled=!(d.steps||[]).length;
  $("workDelete").disabled=S.workBusy;
- if(S.workMode)renderWorkEditor();
+ if(S.workMode){renderWorkEditor();renderWorkAgentCatalog()}
 }
 async function fetchWorkTasks(){
  if(!S.user){S.workTasks=[];renderWorkTasks();return}
@@ -1065,7 +1105,7 @@ async function selectWorkTask(id){
  if(S.workBusy&&S.workTaskId!==id)return;
  try{
   const d=await api("/api/work/tasks/"+id);S.workTaskId=id;S.workDetail=d;
-  loadWorkEditor(d.task);renderWorkDetail();renderWorkTasks();
+  loadWorkEditor(d.task);$("workConfig").open=false;renderWorkDetail();renderWorkTasks();
  }catch(e){$("workState").textContent=humanError(e)}
 }
 async function startWorkTask(){
@@ -1742,9 +1782,19 @@ function wire(){
  $("searchBtn").addEventListener("click",()=>{closeMenu();show("searchDialog");$("chatSearchInput").focus()});
  $("newProject").addEventListener("click",()=>openProject());
  $("accountBtn").addEventListener("click",()=>{if(!S.user)show("authDialog");else void openSettings()});
+ $("accountAvatar").addEventListener("click",event=>{
+  event.stopPropagation();
+  if(!S.user){show("authDialog");return}
+  $("avatarInput").click();
+ });
  $("settingsBtn").addEventListener("click",()=>void openSettings());
  $("changeAvatar").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("avatarInput").click()}});
- $("avatarInput").addEventListener("change",e=>{const file=e.target.files?.[0];e.target.value="";if(file)void uploadAvatar(file)});
+ $("avatarInput").addEventListener("change",e=>{
+  const file=e.target.files?.[0];e.target.value="";
+  if(!file)return;
+  if(S.user&&!$("settingsDialog").open){$("settingsEmail").textContent=S.user.email;show("settingsDialog")}
+  void uploadAvatar(file);
+ });
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
  $("deleteProject").addEventListener("click",()=>void deleteProject());

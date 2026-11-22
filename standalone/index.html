@@ -41,11 +41,12 @@
     </div>
    </div>
    <div class="side-bottom">
-    <button id="accountBtn" class="nav-row account-btn"><span id="accountAvatar" class="account-avatar" aria-hidden="true">A</span><span id="accountName">登录 / 注册</span></button>
+    <button id="accountBtn" class="nav-row account-btn"><span id="accountAvatar" class="account-avatar avatar-pick" title="点击更换头像" aria-label="更换头像">A</span><span id="accountName">登录 / 注册</span></button>
     <button class="icon-btn small-btn" id="settingsBtn" aria-label="设置"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></button>
    </div>
    <span id="quotaLabel" hidden></span>
   </aside>
+  <input id="avatarInput" class="avatar-native-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" aria-label="选择个人头像">
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
@@ -55,12 +56,12 @@
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>任务与阶段自动保存 · 模型不可用时继续接力</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
     <details class="work-agents" id="workAgents" open><summary>站内工作模型 <small>模型在 AIGZT 内执行，不跳转官网</small></summary>
-     <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
+     <div class="work-agent-status"><strong>在本站执行任务</strong><span>先选可用模型，直接发送任务；高级步骤按需展开</span></div>
      <div id="workAgentCatalog" class="work-agent-catalog"></div>
-     <p class="work-agent-disclaimer">选定已连接的 API 模型后，规划、制作与复核由本站工作执行器依次完成，并保留任务记录。未连接的第三方工作产品不会被冒充为已接入代理。</p>
+     <p class="work-agent-disclaimer">中国、国际及俄罗斯工作产品均保留展示；只有完成 API 接入的模型能在本站参与执行，未接入产品明确标注。</p>
     </details>
     <details class="work-config" id="workConfig">
-     <summary>配置执行步骤与模型 <span id="workConfigSummary">按任务自由配置</span></summary>
+     <summary>高级任务配置 <span id="workConfigSummary">默认自动 · 点击自定义步骤与接力</span></summary>
      <div class="work-config-body">
       <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
       <div class="work-config-section"><div class="work-section-heading"><strong>模型接力</strong><span>仅已授权的 API 模型参与自动切换</span></div><div id="workRouteEditor" class="work-route-editor"></div><button type="button" class="work-add" id="workAddRoute">+ 添加候补模型</button><label class="work-checkbox"><input type="checkbox" id="workFallback" checked>当前模型不可用时，自动尝试其他授权模型</label></div>
@@ -69,11 +70,11 @@
     </details>
     <div id="workEmpty" class="work-empty"><strong>开始一项工作</strong><span>输入任务直接执行，需要调整 AI 时再展开配置。</span></div>
     <div id="workDetail" class="work-detail" hidden>
-     <h3 id="workTitle"></h3><div id="workState" class="work-state" role="status"></div>
+     <h3 id="workTitle"></h3><div id="workState" class="work-state" role="status"></div><div id="workErrorSlot" class="work-error-slot"></div>
      <div id="workProgress" class="work-progress"></div>
      <div id="workStepList" class="work-step-list"></div>
      <div class="work-actions">
-      <button type="button" id="workContinue" class="outline">继续执行</button>
+      <button type="button" id="workContinue" class="primary work-continue-primary">继续执行</button>
       <button type="button" id="workStop" class="outline">停止</button>
       <button type="button" id="workExport" class="outline">导出 Markdown</button>
       <button type="button" id="workDelete" class="danger-link">删除</button>
@@ -145,7 +146,7 @@
  </dialog>
  <dialog id="settingsDialog" class="modal settings-dialog workspace-view" aria-label="设置">
   <div class="modal-head"><h2>设置</h2><button class="close-modal" data-close="settingsDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
-  <div class="settings-group"><h3>账号</h3><div class="profile-editor"><span id="settingsAvatarThumb" class="settings-avatar-thumb" aria-hidden="true">A</span><div class="profile-editor-info"><strong>个人头像</strong><small id="avatarStatus">支持照片上传，自动裁剪为正方形</small><label for="avatarInput" class="outline avatar-picker-label" id="changeAvatar" role="button" tabindex="0">更换头像</label></div></div><input id="avatarInput" class="avatar-native-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" aria-label="选择个人头像"><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
+  <div class="settings-group"><h3>账号</h3><div class="profile-editor"><span id="settingsAvatarThumb" class="settings-avatar-thumb" aria-hidden="true">A</span><div class="profile-editor-info"><strong>个人头像</strong><small id="avatarStatus">支持照片上传，自动裁剪为正方形</small><label for="avatarInput" class="outline avatar-picker-label" id="changeAvatar" role="button" tabindex="0">更换头像</label></div></div><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
   <div class="settings-group"><h3>外观</h3><label class="setting-switch">七彩呼吸效果<input type="checkbox" id="settingRainbow"></label></div>
   <div class="settings-group"><h3>跨会话记忆</h3><label class="setting-switch">在新对话中引用历史上下文<input type="checkbox" id="settingMemory"></label>
    <form id="memoryForm" class="memory-form"><input id="memoryInput" maxlength="450" placeholder="保存需要长期记住的内容" required><button class="primary" type="submit">保存</button></form>

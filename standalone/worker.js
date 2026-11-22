@@ -377,16 +377,20 @@ async function freeRouteCatalog(env){
  // Do not expose provider names, failures or cooldowns to the public UI.
  return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto"){
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false){
  const system=mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。";
  const history=messages.slice(-14).map(m=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:truncate(m.body,3000)}));
- const all=freeSources(env);
+ const sources=freeSources(env);
+ const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
+ const started=Date.now();
  const states=await freeRouteStates(env),now=Date.now();
  // Free route choice never reaches the UI; failover order belongs exclusively to the server.
  const available=all.filter(s=>(states.get(s.id)?.cool_until||0)<=now);
  if(!available.length)throw Object.assign(new Error("当前免费来源全部在限额冷却中，请稍后重试"),{status:429});
  const errors=[],attempts=available.length;
  for(const source of available.slice(0,attempts)){
+  const remaining=timeBudget-(Date.now()-started);
+  if(remaining<1500)break;
   const sourceState=states.get(source.id),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
   const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n").slice(-2800);
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
@@ -396,7 +400,7 @@ async function freeText(env,messages,mode,preferred="free:auto"){
    res=await fetch(source.endpoint,{
     method:"POST",
     headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},
-    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(source.ms)
+    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(Math.min(source.ms,Math.max(1500,remaining)))
    });
   }catch(error){
    // A timeout may have been processed upstream: never double-submit to the next provider.
@@ -1103,14 +1107,14 @@ async function workCreate(req,env,user){
 }
 function workRoutes(t,saved,index=0){
  const result=[],seen=new Set(),add=r=>{if(!seen.has(r.id)){result.push(r);seen.add(r.id)}};
- const authorized=saved.filter(x=>x.consent===1||providerModelIsFree(x.provider,x.model_id)||
+ // Automatic fallback must not silently attempt consented paid models.
+ const authorized=saved.filter(x=>providerModelIsFree(x.provider,x.model_id)||
  (x.provider==="openrouter"&&(x.model_id==="openrouter/free"||String(x.model_id).endsWith(":free"))));
  const selectedStep=workStepPlan(t)[index];
- const freeIds=["vexa","cehpoint","vireonix"];
+ // Reuse the exact configured, authenticated free router used by ordinary chat.
+ // Legacy names map to one free:auto candidate, never three speculative public retries.
  const addFree=model=>{
-  const id=String(model||"").replace(/^free:/,"");
-  if(id==="auto"||!id)for(const n of freeIds)add({id:"free:"+n,provider:"free",model:n,label:n});
-  else if(freeIds.includes(id))add({id:"free:"+id,provider:"free",model:id,label:id});
+  add({id:"free:auto",provider:"free",model:"auto",label:"免费自动"});
  };
  const addSelected=(provider,model)=>{
   if(provider==="free"){addFree(model);return}
@@ -1130,24 +1134,6 @@ function workRoutes(t,saved,index=0){
   for(const row of authorized)addSelected(row.provider,row.model_id);
  }
  return result;
-}
-async function workFree(route,prompt,timeout){
- let url,init={method:"GET",headers:{accept:"application/json"},redirect:"manual",signal:AbortSignal.timeout(timeout)};
- if(route.model==="vexa"){
-  url="https://vexa-ai.pages.dev/query";
-  init.method="POST";init.headers["content-type"]="application/json";
-  init.body=JSON.stringify({prompt:truncate(prompt,3500)});
- }else{
-  url=route.model==="cehpoint"?"https://ai-api.cehpoint.co.in/v1/chat/completions":"https://vireonix.ai/v1/chat/completions";
-  init.method="POST";init.headers["content-type"]="application/json";
-  init.body=JSON.stringify({model:route.model==="cehpoint"?"cehpoint-ai":"auto",messages:[{role:"user",content:truncate(prompt,4200)}],max_tokens:1200,stream:false});
- }
- const r=await fetch(url,init);
- if(!r.ok||r.status>=300)throw Object.assign(new Error("HTTP "+r.status),{status:r.status});
- const j=await r.json(),v=route.model==="vexa"?(j.success===true?j.response:null):j.choices?.[0]?.message?.content;
- const out=typeof v==="string"?v:Array.isArray(v)?v.map(x=>x.text||"").join("\n"):"";
- if(!out.trim())throw Object.assign(new Error("模型没有返回内容"),{status:503});
- return {content:truncate(out,11000),actualModel:typeof j.model==="string"&&j.model!=="auto"?j.model:"上游未公开"};
 }
 async function workPrompt(env,user,t,index,prior){
  const steps=workStepPlan(t),step=steps[index],role=step?.name||"任务执行";
@@ -1199,14 +1185,19 @@ async function workStepWithFailover(env,user,t,index,prior){
      try{freeRefund=await quota(env,user.id)}
      catch{freeLimit=true;attempts.push({provider:"免费额度",reason:"本站免费额度已用完"});for(const r of candidates.filter(x=>x.provider==="free"))blocked.add(r.id);continue}
     }
-    result=await workFree(route,route.model==="vexa"?prompts.compact:prompts.full,Math.min(7700,available-500));freeOK=true;
+    result=await freeText(env,[{role:"user",body:prompts.compact}], "code","free:auto",Math.min(23000,available-500),true);freeOK=true;
    }else{
     const key=await revealKey(env,user.id,route.provider,route.entry.iv,route.entry.ciphertext);
     result=await callExternal(route.provider,route.model,key,[{role:"system",body:"请如实执行文本/代码工作，不虚构外部操作。继续用户现有任务。"}, {role:"user",body:prompts.full}],true,Math.min(7700,available-500),index>=workStepPlan(t).length-1?1300:1000);
    }
    if(!result?.content?.trim())throw Error("模型没有返回内容");
    answer={body:truncate(result.content,12000),provider:route.provider==="free"?"免费线路 · "+route.label:route.label,model:result.actualModel||"上游未公开"};break;
-  }catch(e){attempts.push({provider:route.label,reason:truncate(e?.message||"连接失败",85)});blocked.add(route.id)}
+  }catch(e){
+   attempts.push({provider:route.label,reason:truncate(e?.message||"连接失败",85)});
+   blocked.add(route.id);
+   // Timeout might already have consumed upstream quota: do not submit the same stage to another provider.
+   if(route.provider==="free"&&/连接中断|未自动重发|网络无法连接|连接超时/.test(String(e?.message||"")))break;
+  }
  }
  if(freeRefund&&!freeOK)await freeRefund().catch(()=>{});
  return {answer,attempts,blocked:[...blocked].slice(0,20)};
@@ -1220,7 +1211,7 @@ async function workAdvance(env,user,id){
  const stagePlan=workStepPlan(t),step=Math.min(stagePlan.length-1,Math.max(0,Number(t.next_step)||0));
  try{
   const prior=(await env.DB.prepare("SELECT step_idx,body FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 12").bind(id,user.id).all()).results||[];
-  const r=await workStepWithFailover(env,user,{...t,blocked_json:t.status==="paused"?"[]":t.blocked_json},step,prior);
+  const r=await workStepWithFailover(env,user,t,step,prior);
   if(!r.answer){
    const reason=r.attempts.length?r.attempts.map(a=>a.provider+"："+a.reason).join("；").slice(0,400):"当前没有可使用的授权模型";
    await dbRun(env.DB,"UPDATE work_tasks SET status='paused',last_error=?,attempts_json=?,blocked_json=?,updated_at=?,lease_at=0 WHERE id=? AND user_id=? AND lease_at=? AND status='running'",reason,JSON.stringify(r.attempts),JSON.stringify(r.blocked),Date.now(),id,user.id,now);
