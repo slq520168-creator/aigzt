@@ -456,7 +456,7 @@ function appendMessage(role,content,model){
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
 
-  if(model&&!/^free:(?:auto|vireonix|vexa|openrouter|groq|cehpoint)$|^(?:vireonix|vexa|groq)\//i.test(model))bubble.append(node("div","message-model",model));
+  if(model&&!/^free:(?:auto|vireonix|vexa|openrouter|groq|cehpoint)$|^(?:vireonix|vexa|groq)\/|^openrouter\/openrouter\/free(?:$|\b)/i.test(model))bubble.append(node("div","message-model",model));
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   if(lines.length>1){
@@ -900,9 +900,9 @@ function renderWorkDetail(){
  for(const step of d.steps||[]){
   const section=node("section","work-step");
   const header=node("div","work-step-head");
-  header.append(node("strong","",step.phase),node("small","",step.provider+(step.model&&step.model!==step.provider?" · "+step.model:"")));
+  header.append(node("strong","",step.phase),node("small","",step.provider==="free"?"免费自动":step.provider+(step.model&&step.model!==step.provider?" · "+step.model:"")));
   section.append(header,node("div","work-step-body",step.body));
-  if(step.attempts?.length){section.append(node("div","work-switch-note","已切换 "+step.attempts.length+" 条不可用线路，继续使用 "+step.provider))}
+  if(step.attempts?.length&&step.provider!=="free"){section.append(node("div","work-switch-note","已切换 "+step.attempts.length+" 条不可用线路，继续使用 "+step.provider))}
   list.append(section);
  }
  $("workContinue").hidden=task.status==="completed"||task.status==="cancelled";
