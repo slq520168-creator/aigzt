@@ -623,6 +623,7 @@ async function revealCompletedReply(row,reply){
 }
 
 
+const VOICE_FEATURE_ENABLED=false; // Pause voice capture and playback until real-device verification.
 const voiceSession={active:false,pending:false,listening:false,reading:false,resumePending:false,recognition:null,token:0,button:null,voice:"",lang:"zh-CN",rate:1};
 function sayStatus(t){$("voiceStatus").textContent=t}
 function voiceSave(){try{localStorage.setItem("aigzt:voice:v1",JSON.stringify({voice:voiceSession.voice,lang:voiceSession.lang,rate:voiceSession.rate}))}catch{}}
@@ -751,7 +752,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false){
     });
     actions.append(retry);
    }
-   if(window.speechSynthesis&&typeof SpeechSynthesisUtterance==="function"){
+   if(VOICE_FEATURE_ENABLED&&window.speechSynthesis&&typeof SpeechSynthesisUtterance==="function"){
     const b=node("button","message-speak","朗读");b.type="button";b.setAttribute("aria-pressed","false");
     b.addEventListener("click",()=>{if(voiceSession.button===b&&voiceSession.reading)voiceCancel();else voiceSpeak(content,b)});
     actions.append(b);
@@ -1662,7 +1663,7 @@ async function sendMessage(){
   }
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
   if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete))}
-  if(submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
+  if(VOICE_FEATURE_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
    voiceSession.pending=false;$("voiceReply").textContent=result.reply;
    if(!voiceSpeak(result.reply,null,true))sayStatus("本设备无法朗读，请手动点击开始说话");
   }
@@ -2117,24 +2118,6 @@ function drawPrefs(){
   $("drawMore").textContent=expanded?"收起风格":"更多风格";$("drawMore").setAttribute("aria-expanded",String(expanded));
  });
 }
-const VIDEO_FREE_SITES=Object.freeze({
- flow:{name:"Google Flow",url:"https://labs.google/fx/tools/flow",description:"可能提供官方免费使用额度；需到原网站登录操作，额度和地区以官网为准。"},
- pixverse:{name:"PixVerse",url:"https://app.pixverse.ai/",description:"官网可能提供免费积分；需登录查看实际可用次数及分辨率。"},
- dreamina:{name:"Dreamina",url:"https://dreamina.capcut.com/",description:"官网可能提供免费额度，需在官方页面完成视频生成。"},
- vidu:{name:"Vidu",url:"https://www.vidu.com/",description:"官网可能提供免费额度，实际权益需登录确认。"},
- runway:{name:"Runway",url:"https://runway.com/",description:"官方免费套餐有一次性的试用积分，可用于符合条件的视频模型。"},
- pika:{name:"Pika",url:"https://pika.art/",description:"有免费账户，但当前免费积分是否随账号附送须以官网为准。"},
- kling:{name:"可灵 Kling",url:"https://kling.ai/",description:"部分免费创作功能及活动积分，需登录确认账号可用配额。"},
- huggingface:{name:"Hugging Face Spaces",url:"https://huggingface.co/spaces?category=video-generation",description:"社区视频生成 Space，是否在线及限制取决于具体 Space。"}
-});
-function updateVideoProvider(){
- const provider=$("videoProvider").value,site=VIDEO_FREE_SITES[provider],grok=provider==="grok";
- $("videoExternal").hidden=grok;$("videoGrokControls").hidden=!grok;
- $("videoProviderInfo").textContent=grok?"仅此项使用站内 Grok API：需要已连接的个人密钥，并可能计费。":site?.description||"";
- if(site){$("videoExternalLink").href=site.url;$("videoExternalLink").textContent="打开 "+site.name+" 官网"}
- $("createButton").textContent=grok?"提交 Grok 视频任务":"复制视频描述";
- $("refreshVideo").hidden=!grok||!S.videoTask;
-}
 function setCreationMode(mode){
  S.createMode=mode;
  const isImage=mode==="image";
@@ -2144,42 +2127,42 @@ function setCreationMode(mode){
  $("drawResultSection").hidden=!isImage;
  $("drawCancel").hidden=!isImage||!S.drawBatch;
  $("drawElapsed").hidden=!isImage||!S.drawBatch&&$("drawElapsed").textContent==="00:00";
- $("createButton").textContent=isImage?"生成免费图片":"复制视频描述";
- if(!isImage)updateVideoProvider();
- $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
+ $("createButton").textContent=isImage?"生成免费图片":"提交视频任务";
+ $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=isImage||!S.videoTask;
 }
 function openCreate(){
  if(!S.user){show("authDialog");return}
  setCreationMode("image");show("createDialog");closeMenu();
 }
+function rememberVideoTask(id){
+ if(!S.user||typeof id!=="string"||!/^[A-Za-z0-9_-]{4,160}$/.test(id))return;
+ S.videoTask=id;
+ try{sessionStorage.setItem("aigzt:video-task:"+S.user.id,id)}catch{}
+}
+function restoreVideoTask(){
+ S.videoTask=null;
+ if(!S.user)return;
+ try{
+  const id=sessionStorage.getItem("aigzt:video-task:"+S.user.id);
+  if(typeof id==="string"&&/^[A-Za-z0-9_-]{4,160}$/.test(id))S.videoTask=id;
+ }catch{}
+}
 function openVideoCreate(){
  if(!S.user){show("authDialog");return}
- setCreationMode("video");show("createDialog");closeMenu();
+ restoreVideoTask();setCreationMode("video");show("createDialog");closeMenu();
+ if(S.videoTask)$("createStatus").textContent="上一条视频任务可点击「查询视频任务」查看进度和结果。";
 }
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
  if(S.createMode==="image"){await runFreeDraw();return}
  const prompt=$("createPrompt").value.trim();if(!prompt){$("createStatus").textContent="请填写画面描述";return}
- const provider=$("videoProvider").value,site=VIDEO_FREE_SITES[provider];
- if(site){
-  try{
-   if(!navigator.clipboard?.writeText)throw Error("No Clipboard API");
-   await navigator.clipboard.writeText(prompt);
-   $("createStatus").textContent="描述已复制。点击「打开 "+site.name+" 官网」，在官网粘贴并使用账号可用额度生成。";
-  }catch{
-   $("createStatus").textContent="自动复制不可用，请长按描述文本复制后前往 "+site.name+" 官网。";
-   $("createPrompt").focus();$("createPrompt").select();
-  }
-  return;
- }
- if(provider!=="grok"){$("createStatus").textContent="视频服务无效";return}
  const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在创建…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
  try{
    if(!connected("grok"))throw Error("请先连接 Grok 密钥");
    if(!$("confirmVideo").checked)throw Error("视频可能收费，请先勾选费用确认");
-   const d=await api("/api/video",{prompt,model:$("videoModel").value,confirmed:true});
-   S.videoTask=d.requestId;
-   $("createStatus").textContent="视频请求已提交，任务编号 "+d.requestId+"。点击「查询视频任务」获取结果。";
+   const d=await api("/api/video",{prompt,model:"grok-imagine-video-1.5",confirmed:true});
+   rememberVideoTask(d.requestId);
+   $("createStatus").textContent="视频请求已提交，点击「查询视频任务」查看结果。";
    $("refreshVideo").hidden=false;
  }catch(e){$("createStatus").textContent="未完成："+humanError(e)}
  finally{btn.disabled=false}
@@ -2423,8 +2406,7 @@ function wire(){
   $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
  });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
- $("videoProvider").addEventListener("change",updateVideoProvider);
- voiceWire();
+ if(VOICE_FEATURE_ENABLED)voiceWire();
 }
 function hideAttachMenu(){$("attachMenu").hidden=true}
 

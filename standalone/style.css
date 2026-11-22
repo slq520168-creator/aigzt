@@ -259,10 +259,25 @@ html.image-viewing,body.image-viewing{overflow:hidden}
 @media(max-width:600px){.draw-gallery{gap:8px}.draw-photo{min-height:130px}.draw-tile-actions{gap:8px}}
 .media-preview{display:flex;flex-direction:column;gap:10px;margin:10px 0}
 .media-preview img,.media-preview video{width:100%;border-radius:12px}
-.video-external{display:flex;flex-direction:column;gap:9px;padding:12px 14px;border:1px solid #e2e9ec;border-radius:13px;background:#f8fbfc;margin-top:10px}
-.video-external .outline{text-decoration:none;text-align:center;color:#244e6c}
-#videoSettings label{display:block;margin:8px 0}
-#videoProviderInfo{margin:9px 0}
+.video-settings{display:flex;flex-direction:column;gap:12px;width:100%;max-width:900px;min-width:0}
+.video-section-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#234358;font-size:14px}
+.video-section-heading span{color:#71879a;font-size:12px}
+.video-model-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0;width:100%}
+.video-model-card{display:flex;flex-direction:column;gap:7px;min-width:0;padding:13px;border:1px solid #dce6ef;border-radius:14px;background:#fff}
+.video-model-card.selected{border-color:#3184b2;background:#f0f8ff}
+.video-model-card:only-child{grid-column:1 / -1}
+.video-card-title{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.video-card-title strong{font-size:14px;color:#264b69}
+.video-card-title span{font-size:10px;border-radius:7px;padding:3px 6px;background:#ddf1ff;color:#226c96}
+.video-model-card small{font-size:12px;line-height:1.5;color:#557184}
+.video-card-identity{font-size:11px;line-height:1.4;color:#627b8c}
+.video-model-terms{padding:12px;border:1px solid #dde8ee;border-radius:12px;background:#fff;display:flex;flex-direction:column;gap:10px}
+.video-specs{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#647f91}
+.video-specs strong{color:#314c61}
+.video-model-terms .check-row{display:flex;align-items:flex-start;gap:9px;margin:0;line-height:1.5;font-size:13px}
+.video-model-terms .check-row input{flex:none;margin-top:4px}
+.video-availability-note{font-size:12px;color:#778792;line-height:1.5;margin:0}
+@media(max-width:650px){.video-model-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.video-model-card{padding:11px}.video-card-title strong{font-size:13px}.video-card-title span{font-size:10px}}
 .voice-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .voice-settings label{font-size:12px;color:#46637b}
 .voice-settings select{font-size:16px;width:100%;min-height:44px}

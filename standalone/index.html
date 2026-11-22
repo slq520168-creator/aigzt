@@ -158,7 +158,7 @@
       <button type="button" class="plus-tool icon-btn" id="attachButton" aria-label="添加附件或工具"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button>
       <textarea id="prompt" rows="1" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea>
       <button type="button" class="icon-btn" id="voiceInput" aria-label="语音输入" title="单次语音输入" hidden><span class="ui-icon" data-icon="mic" aria-hidden="true"></span></button>
-      <button type="button" class="icon-btn voice-chat-entry" id="voiceChatOpen" aria-label="语音对话" title="语音对话"><span class="ui-icon" data-icon="message-circle" aria-hidden="true"></span><span>语音</span></button>
+      <button type="button" class="icon-btn voice-chat-entry" id="voiceChatOpen" aria-label="语音对话" hidden title="语音对话"><span class="ui-icon" data-icon="message-circle" aria-hidden="true"></span><span>语音</span></button>
       <button type="submit" class="send" id="sendBtn" aria-label="发送消息"><span class="ui-icon" data-icon="arrow-up" aria-hidden="true"></span></button>
      </div>
      <div class="tool-tray" id="toolTray" hidden>
@@ -264,7 +264,7 @@
  </form>
  </dialog>
 
- <dialog id="voiceDialog" class="modal workspace-view" aria-label="语音对话">
+ <dialog id="voiceDialog" class="modal workspace-view" aria-label="语音对话" hidden>
   <div class="modal-head"><div><h2>语音对话</h2><p>语音提问 · AI 回复 · 语音播报</p></div><button type="button" class="close-modal" data-close="voiceDialog" aria-label="关闭语音对话"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="voice-settings">
    <label>播报声音<select id="voiceSelect" aria-label="选择设备朗读声音"><option value="">系统默认声音</option></select></label>
@@ -288,13 +288,22 @@
  <fieldset class="draw-field"><legend>比例</legend><div id="drawShape" class="draw-choices draw-shape-options" data-value="portrait" role="group" aria-label="图片比例"><button type="button" class="draw-choice" data-value="square" aria-pressed="false">1:1</button><button type="button" class="draw-choice active" data-value="portrait" aria-pressed="true">3:4</button><button type="button" class="draw-choice" data-value="portrait916" aria-pressed="false">9:16</button><button type="button" class="draw-choice" data-value="landscape" aria-pressed="false">4:3</button><button type="button" class="draw-choice" data-value="landscape169" aria-pressed="false">16:9</button></div></fieldset>
  <fieldset class="draw-field"><legend>数量</legend><div id="drawCount" class="draw-choices draw-count-options" data-value="1" role="group" aria-label="生成数量"><button type="button" class="draw-choice active" data-value="1" aria-pressed="true">1 张</button><button type="button" class="draw-choice" data-value="2" aria-pressed="false">2 张</button><button type="button" class="draw-choice" data-value="4" aria-pressed="false">4 张</button></div></fieldset>
  </div>
- <div id="videoSettings" hidden>
-  <label>视频生成服务<select id="videoProvider" aria-label="选择视频生成服务"><option value="flow">Google Flow · 免费官网</option><option value="pixverse">PixVerse · 免费官网</option><option value="dreamina">即梦 Dreamina · 免费官网</option><option value="vidu">Vidu · 免费官网</option><option value="runway">Runway · 一次性试用积分</option><option value="pika">Pika · 免费账号</option><option value="kling">可灵 Kling · 有限免费额度</option><option value="huggingface">Hugging Face · 社区演示</option><option value="grok">Grok Imagine · 自有 API（可能收费）</option></select></label>
-  <p id="videoProviderInfo" class="small-note"></p>
-  <div id="videoExternal" class="video-external"><p class="small-note">这些属于服务商的网页额度，无法当作本网站的免费 API。复制描述后前往官网生成。</p><a id="videoExternalLink" class="outline" href="https://labs.google/fx/tools/flow" target="_blank" rel="noopener noreferrer">打开官网</a></div>
-  <div id="videoGrokControls" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">Grok API 可能按秒收费，需要本人密钥并确认额度。</p><label class="check-row"><input id="confirmVideo" type="checkbox">确认使用本人 Grok 额度，可能产生费用。</label></div>
+ <div id="videoSettings" class="video-settings" hidden>
+  <div class="video-section-heading"><strong>站内视频模型</strong><span>1 个已接入</span></div>
+  <div class="video-model-grid" role="group" aria-label="可用的视频生成模型">
+   <div class="video-model-card selected" aria-current="true">
+    <div class="video-card-title"><strong>Grok Imagine 1.5</strong><span>已接入 API</span></div>
+    <small>在 AIGZT 提交视频任务、查询并播放结果</small>
+    <span class="video-card-identity">使用个人 Grok 额度 · 可能收费</span>
+   </div>
+  </div>
+  <div id="videoGrokControls" class="video-model-terms">
+   <div class="video-specs"><span>视频时长 <strong>6 秒</strong></span><span>画质 <strong>720p</strong></span></div>
+   <label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok API 额度，可能产生费用。</label>
+  </div>
+  <p class="video-availability-note">其他厂商的网页版免费额度暂不属于本站可调用的模型，因此不显示外站入口。</p>
  </div>
-  <div class="draw-main-action">
+ <div class="draw-main-action">
    <button class="primary full" id="createButton">生成免费图片</button>
    <time class="draw-stopwatch" id="drawElapsed" aria-label="本批图片生成耗时" hidden>00:00</time>
    <button type="button" class="outline" id="drawCancel" hidden>停止查询</button>
