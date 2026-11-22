@@ -82,13 +82,11 @@
     <details class="work-history"><summary>历史任务</summary><div id="workTaskList" class="work-task-list"></div></details>
    </section>
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
-    <div class="free-tools-header"><div><h2>免费工具</h2><p>Perchance 免费工具与其他公开 AI 产品</p></div><button type="button" class="icon-btn" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
-    <div class="free-tools-controls">
-     <input id="freeToolsSearch" type="search" placeholder="搜索作图、聊天、故事…" aria-label="搜索免费工具">
-     <div id="freeToolFilters" class="free-tool-filters" aria-label="按工具类型筛选"></div>
-    </div>
+    <div class="free-tools-header"><h2>免费工具</h2><button type="button" class="icon-btn" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+    <div class="free-tools-controls"><input id="freeToolsSearch" type="search" placeholder="搜索工具…" aria-label="搜索免费工具"><div id="freeToolFilters" class="free-tool-filters" aria-label="工具分类"></div></div>
+    <section id="freeModesSection" class="free-modes-section" aria-label="创作模式"><h3>创作模式</h3><div id="freeModesList" class="free-modes-list"></div></section>
+    <div class="free-tools-list-heading"><h3>工具目录</h3><span id="freeToolsCount"></span></div>
     <div id="freeToolsList" class="free-tools-list"></div>
-    <p class="free-tools-footnote">点击后跳转官方网页。Perchance 目前不提供可供本站自动生成的授权接口，不会从 AIGZT 代为调用；第三方免费额度及内容以官网为准。</p>
    </section>
    <div class="conversation" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
    <div class="composer-area" id="composerArea">

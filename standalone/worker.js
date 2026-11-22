@@ -331,6 +331,7 @@ async function freeText(env,messages,mode,preferred="free:auto"){
  }
  throw Object.assign(new Error("免费模型暂时不可用（"+failures.slice(0,4).join("；")+"）"),{status:503});
 }
+const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助手。区分事实、推断和未知，提出可验证的方法。不能假装已经联网检索。","imagePrompt":"你是图片提示词设计师。生成可直接使用的中英文画面提示词，包含主体、场景、镜头和风格。","group":"模拟虚构的多角色群聊，逐条标注说话人并维护设定。不得声称参与者是真人或真实群成员。","story":"你是中文小说创作助手，保持人物、时间线和视角一致，按照用户要求创作并支持接续。","character":"你是角色创作者，建立背景、外貌、性格、能力、目标和关系，保持一致。","adventure":"你是互动文字冒险主持人。保持状态，描述场景并等待玩家选择。","mentor":"你是学习导师。由浅入深解释原理，给出实例与练习，根据反馈调整。","debate":"你是辩论助手。公平展示正反两方论点、证据与弱点，不编造证据。","live":"你是直播策划助手，提供节目流程、直播脚本和互动问题，不声称已经真正开启直播。"});
 async function chat(req,env,user){
  requireUser(user);
  const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
@@ -385,6 +386,8 @@ async function chat(req,env,user){
   for(const m of reversed)contextParts.push("其他对话「"+truncate(m.title,50)+"」"+(m.role==="assistant"?"助手":"用户")+"："+truncate(m.body,380));
   if(contextParts.length)messages.unshift({role:"system",body:"以下是同一用户的相关上下文，仅作为参考；用户当前明确要求优先。\n"+contextParts.join("\n").slice(0,4300)});
  }
+ const creativeId=typeof body.creativeMode==="string"?body.creativeMode:"";
+ if(Object.hasOwn(FREE_CREATIVE_PROMPTS,creativeId))messages.unshift({role:"system",body:FREE_CREATIVE_PROMPTS[creativeId]});
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
  if(lines.length&&!context.length&&provider==="free"&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n提示：外部免费文字模型不能直接解析图片或PDF像素，不要虚构文件内容。"};
  const mode=body.mode==="code"?"code":"general";

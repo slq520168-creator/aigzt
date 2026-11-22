@@ -418,42 +418,41 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 .work-agent-product{min-width:0}
 @media(max-width:480px){.work-agent-items{grid-template-columns:repeat(2,minmax(0,1fr))}.work-agent-product{padding:9px 7px}}
 
-/* Third-party free tools: real destinations only, no fake API integration. */
-.free-tools-board{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;width:100%;max-width:930px;padding:18px 30px 34px;margin:0 auto}
-.free-tools-header{display:flex;align-items:start;justify-content:space-between;gap:10px;border-bottom:1px solid #e7eced;padding-bottom:17px}
+/* Verified third-party tools and functional in-app creative modes. */
+.free-tools-board{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;width:100%;max-width:1080px;padding:18px 25px 36px;margin:0 auto;background:#fff}
+.free-tools-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 0 12px;border-bottom:1px solid #e8edef}
 .free-tools-header h2{font-size:21px;font-weight:650;margin:0}
-.free-tools-header p{color:#819198;font-size:12px;margin:5px 0 0}
-.free-tools-controls{display:flex;flex-direction:column;gap:11px;margin-top:18px}
-.free-tools-controls input{width:100%;padding:11px 13px;border:1px solid #e0e8eb;background:#fff;border-radius:12px;font-size:14px;outline:none}
-.free-tool-filters{display:flex;align-items:center;gap:6px;overflow-x:auto;padding-bottom:3px}
-.free-filter{padding:6px 13px;border:1px solid #e7e9ec;color:#677b82;border-radius:10px;white-space:nowrap;font-size:12px}
-.free-filter.active{color:#305d69;border-color:#bbd4da;background:#edf5f6}
-.free-tools-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:17px}
-.free-tool-card{display:flex;flex-direction:column;gap:9px;min-width:0;padding:16px 17px;border:1px solid #e5eaed;background:#fff;border-radius:14px;color:inherit;text-decoration:none}
-.free-tool-card:hover{background:#f7fafb;border-color:#c7dce1}
-.free-tool-card-head{display:flex;align-items:start;justify-content:space-between;gap:8px}
-.free-tool-name{font-size:15px;font-weight:650;overflow-wrap:anywhere}
-.free-tool-provider{font-size:10px;color:#63808b;border:1px solid #dce6e9;padding:2px 6px;border-radius:7px;white-space:nowrap;flex:none}
-.free-tool-description{font-size:12px;color:#849398;line-height:1.5;min-height:34px}
-.free-tool-open{font-size:12px;color:#3f7383;align-self:flex-start}
-.free-tools-empty{color:#8a989f;padding:25px 8px;font-size:13px}
-.free-tools-footnote{color:#89979b;font-size:11px;line-height:1.6;margin-top:24px}
-@media(max-width:700px){.free-tools-board{padding:12px 14px 22px}.free-tools-header h2{font-size:19px}.free-tools-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.free-tool-card{padding:12px 10px;gap:7px}.free-tool-card-head{display:block}.free-tool-provider{display:inline-block;margin-top:6px}.free-tool-name{font-size:13px}.free-tool-description{font-size:11px;min-height:48px}}
-
-/* Free tools is a full-page mode, not a modal and not a hidden model. */
+.free-tools-controls{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+.free-tools-controls input{width:100%;min-height:44px;padding:10px 13px;border:1px solid #dce4e9;background:#fff;border-radius:12px;font-size:14px;outline:none}
+.free-tools-controls input:focus{border-color:#91b5c1}
+.free-tool-filters{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.free-filter{min-height:34px;padding:6px 12px;border:1px solid #e0e7eb;color:#526970;border-radius:10px;white-space:nowrap;font-size:12px}
+.free-filter.active{color:#205768;border-color:#b3cdd5;background:#eaf3f5;font-weight:650}
+.free-modes-section{margin-top:18px}
+.free-modes-section h3,.free-tools-list-heading h3{font-size:15px;line-height:1.3;margin:0;font-weight:680;color:#243940}
+.free-modes-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:11px}
+.free-mode-card{min-width:0;min-height:63px;padding:11px 12px;display:flex;align-items:center;gap:10px;text-align:left;border:1px solid #e0e7eb;border-radius:13px;background:#fff;color:#273940}
+.free-mode-card:hover{border-color:#b9d3dc;background:#f7fafb}
+.free-mode-card:focus-visible,.free-tool-card:focus-visible{outline:2px solid #609cb5;outline-offset:2px}
+.free-mode-icon{width:32px;height:32px;min-width:32px;display:grid;place-items:center;border-radius:10px;background:#ecf3f5;color:#3d6b7b}
+.free-mode-icon svg{width:18px;height:18px}
+.free-mode-card strong{font-size:13px;font-weight:650;overflow-wrap:anywhere}
+.free-tools-list-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:22px}
+.free-tools-list-heading span{font-size:12px;color:#82949c}
+.free-tools-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:11px}
+.free-tool-card{min-width:0;min-height:63px;padding:11px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #e3e9ed;background:#fff;border-radius:12px;color:inherit;text-decoration:none}
+.free-tool-card:hover{background:#f7fafb;border-color:#c5d9df}
+.free-tool-name{font-size:13px;font-weight:630;line-height:1.45;overflow-wrap:anywhere}
+.free-tool-provider{font-size:10px;color:#79919b;white-space:nowrap;flex:none}
+.free-tools-empty{color:#7b8f96;padding:22px 5px;font-size:13px;grid-column:1/-1}
 .shell.free-tools-active #pickModel{display:none!important}
 .shell.free-tools-active #headerMore{visibility:hidden}
-.free-tools-board{background:#fff}
-.free-tool-card:focus-visible{outline:2px solid #609cb5;outline-offset:2px}
 @media(max-width:700px){
- .free-tools-board{padding:12px 15px 24px}
- .free-tools-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
- .free-tool-card{padding:12px 11px;border-radius:12px}
- .free-tool-provider{font-size:9px}
- .free-tool-description{font-size:11px;min-height:auto}
+ .free-tools-board{padding:12px 14px 30px}.free-tools-header h2{font-size:19px}
+ .free-modes-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.free-mode-card{min-height:59px;padding:9px 10px;gap:8px}.free-mode-icon{width:30px;height:30px;min-width:30px}
+ .free-tools-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.free-tool-card{min-height:62px;padding:10px;align-items:flex-start;flex-direction:column;gap:4px}
 }
-@media(max-width:390px){.free-tools-list{grid-template-columns:1fr}.top-work{padding:7px 6px}}
-
+@media(max-width:390px){.top-work{padding:7px 6px}}
 
 /* Named elements unique to the simple header and compact model directory. */
 .top-wordmark{font-size:16px;letter-spacing:-.5px;font-weight:660;color:#30464e}
