@@ -691,12 +691,14 @@ function updateChatActiveModel(){
 function updateComposerModel(){
  const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
  if(!line||!name||!switcher)return;
- line.hidden=S.composerMode!=="text"||S.freeToolsMode;
+ const imageMode=S.composerMode==="image";
+ line.hidden=(!imageMode&&S.composerMode!=="text")||S.freeToolsMode;
  const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
- name.textContent=active;name.title=(work?"当前工作选择：":"当前聊天选择：")+active;
- $("composerModelCaption").textContent=work?"工作模型":"聊天模型";
- switcher.setAttribute("aria-label",work?"切换工作模型":"切换聊天模型");
- switcher.title=work?"切换工作模型":"切换聊天模型";
+ name.textContent=imageMode?"免费作图 · 点击左侧返回聊天":active;
+ name.title=imageMode?"当前在聊天中生成图片，成功后直接显示在对话内":(work?"当前工作选择：":"当前聊天选择：")+active;
+ $("composerModelCaption").textContent=imageMode?"作图模式":work?"工作模型":"聊天模型";
+ switcher.setAttribute("aria-label",imageMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型");
+ switcher.title=imageMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
 }
 function updateModelTitle(){
  $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
@@ -706,7 +708,7 @@ function setModel(row){
  if(row.type!=="text"){
   if(row.type==="audio")return;
   hide("modelDialog");
-  if(row.type==="image")openCreate();else setComposerMode("video");
+  if(row.type==="image"){setComposerMode("image");$("prompt").focus()}else setComposerMode("video");
   return;
  }
  // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.
@@ -1439,43 +1441,41 @@ async function apiChatStream(payload,onDelta){
 }
 async function sendMessage(){
  if(S.workMode){await startWorkTask();return}
- if(S.composerMode==="image"){
-  const prompt=$("prompt").value.trim();
-  openCreate();if($("createDialog").open&&prompt)$("createPrompt").value=prompt;
-  return;
- }
  if(S.busy)return;
+ const submittedMode=S.composerMode;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
- if(S.composerMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
+ if(submittedMode==="image"&&S.attachments.length){flashError("当前免费作图只支持文字描述，附件已保留，切回聊天可继续发送");return}
+ if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
  }
  const freeRoute=isFreeModel(S.provider,S.model);
- if(S.composerMode==="text"&&!freeRoute&&!S.allowPaid){
+ if(submittedMode==="text"&&!freeRoute&&!S.allowPaid){
   flashError(connected(S.provider)?"密钥已保存，请授权使用此服务商额度；无需再次填写密钥。":"此模型需要服务商密钥。");
   openKeyPanel(S.provider);return;
  }
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
- const isFreeMessage=S.composerMode==="text"&&S.provider==="free";
+ const isFreeMessage=submittedMode==="text"&&S.provider==="free";
+ const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
   let receivedStreamingText=false;
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
- const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考");
+ const waitLabel=node("span","",isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
  const dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));
  dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);loadingBubble.replaceChildren(status);
  const startedAt=Date.now();
- const imageTimer=S.composerMode==="image"?window.setInterval(()=>{
+ const imageTimer=isImageMessage?window.setInterval(()=>{
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
   waitLabel.textContent="作图中 "+Math.max(1,Math.floor((Date.now()-startedAt)/1000)+1)+"秒";
  },1000):null;
  try{
   let result;
-  if(S.composerMode==="text"){
+  if(submittedMode==="text"){
     let pending="",scheduled=false,active=true;
     const bubble=loadingBubble,viewport=$("conversation");
     const onDelta=token=>{
@@ -1495,32 +1495,36 @@ async function sendMessage(){
       mode:S.code?"code":"general",creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
     finally{active=false;pending="";}
    }
+  else if(isImageMessage){
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt});
+  }
   else{
-   if(S.composerMode==="video"&&!connected("grok")){openKeyPanel("grok");throw Error("请先连接 Grok 密钥");}
-   const confirmed=S.composerMode==="video"?confirm("视频可能收费。确定使用自己的Grok API额度生成吗？"):false;
-   if(S.composerMode==="video"&&!confirmed)throw Error("已取消视频请求");
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:S.composerMode,prompt,apiKey:undefined,confirmed});
+   if(submittedMode==="video"&&!connected("grok")){openKeyPanel("grok");throw Error("请先连接 Grok 密钥");}
+   const confirmed=confirm("视频可能收费。确定使用自己的Grok API额度生成吗？");
+   if(!confirmed)throw Error("已取消视频请求");
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
-  if(loading.isConnected&&S.composerMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
+  if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
   if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading)}
   await fetchChats();void fetchMe();
  }catch(e){
   loading.remove();
-  if(isFreeMessage){
-   // Never put a submitted question back into the live text area.
+  if(isFreeMessage||isImageMessage){
+   // Keep submitted messages in the conversation; never overwrite the user's new draft.
    // Preserve the unconfirmed message in-place with an explicit manual retry instead.
    const bubble=sentRow.querySelector(".bubble"),status=node("span","message-send-pending");
-   const retry=node("button","message-resend","重新发送");retry.type="button";
+   const retry=node("button","message-resend",isImageMessage?"重新作图":"重新发送");retry.type="button";
    retry.setAttribute("aria-label","手动重试这条未完成的消息");
    retry.addEventListener("click",()=>{
     if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
     const input=$("prompt");
     if((input.value.trim()||S.attachments.length)&&!confirm("重新发送将替换当前尚未发送的草稿和附件，继续吗？"))return;
+    if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
     input.value=prompt;S.attachments=attached.slice();renderAttachments();
     sentRow.remove();settlePromptSize();void sendMessage();
    });
-   status.append(node("span","","尚未收到回复"),retry);bubble.append(status);flashError("");
+   status.append(node("span","",isImageMessage?"本次作图未完成":"尚未收到回复"),retry);bubble.append(status);flashError("");
   }else{
    flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e));
   }
@@ -2069,7 +2073,7 @@ function wire(){
  $("workRuns").addEventListener("click",()=>void wkRuns());
 
  $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq")});
- $("imageQuick").addEventListener("click",()=>{hide("modelDialog");openCreate();$("toolTray").hidden=true});
+ $("imageQuick").addEventListener("click",()=>{hide("modelDialog");setComposerMode("image");$("toolTray").hidden=true;$("prompt").focus()});
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
  $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
@@ -2106,10 +2110,10 @@ function wire(){
  $("filesAction").addEventListener("click",()=>{hideAttachMenu();$("attachmentInput").click()});
  $("toolsAction").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=!$("toolTray").hidden});
  for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
- $("imageMode").addEventListener("click",()=>{openCreate();$("toolTray").hidden=true});
+ $("imageMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="image"?"text":"image");$("toolTray").hidden=true;$("prompt").focus()});
  $("videoMode").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=true;openVideoCreate()});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
- $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.workMode)$("workModelChoose").click();else openModels()});
+ $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="image"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);

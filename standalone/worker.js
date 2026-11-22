@@ -637,9 +637,21 @@ async function mediaChat(req,env,user){
  if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
  const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt,style:b.style,shape:b.shape}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
  if(mode==="image"){
+  // A chat image has its own task and messages. Never route it through the text-chat API.
+  // Persist only task metadata and text; generated image bytes remain session-only.
+  const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
+  if(!exists&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Object.assign(new Error("项目不存在"),{status:404});
   const result=await submitKrea(mediaReq,env,user);
-  // Older clients can still view their transient image without storing chat records.
-  return {ok:true,chatId:exists?.id||null,reply:"[[aigzt:image-job:"+result.jobId+"]]",model:"免费作图",pending:true,jobId:result.jobId};
+  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),messageId=crypto.randomUUID();
+  const reply="[[aigzt:image-job:"+result.jobId+"]]";
+  const writes=[];
+  if(!exists)writes.push(env.DB.prepare("INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)").bind(chatId,user.id,prompt.slice(0,36),"free","free:auto",now,now,projectId));
+  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"user",prompt,"免费作图",now));
+  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(messageId,chatId,user.id,"assistant",reply,"免费作图",now+1));
+  writes.push(env.DB.prepare("UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=?").bind(chatId,messageId,result.jobId,user.id));
+  writes.push(env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id));
+  await env.DB.batch(writes);
+  return {ok:true,chatId,reply,model:"免费作图",pending:true,jobId:result.jobId};
  }
  const result=await createVideo(mediaReq,env,user);
  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply="视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
@@ -899,9 +911,10 @@ async function imageV4Deliver(env,user,job,ref,url){
  return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
 }
 async function imageTransientComplete(env,job,localImageUrl){
- // Return the result once, delete job metadata, and never write image to R2.
+ // Return verified image bytes to the requesting browser once, never save image bytes to R2.
  const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering'",job.id,job.user_id);
  if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付，请重新生成"});
+ if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（本次会话临时展示，图片未保存）",job.message_id,job.user_id).catch(()=>{});
  return response({ok:true,done:true,image:localImageUrl,temporary:true,model:"免费作图"});
 }
 async function imageV4Complete(env,job,mediaId){
