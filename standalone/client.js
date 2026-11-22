@@ -755,7 +755,7 @@ function setModel(row){
  if(row.type!=="text"){
   if(row.type==="audio")return;
   hide("modelDialog");
-  if(row.type==="image"){setComposerMode("image");$("prompt").focus()}else setComposerMode("video");
+  if(row.type==="image"){setComposerMode("image");$("prompt").focus()}else openVideoCreate();
   return;
  }
  // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.

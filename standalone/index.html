@@ -157,7 +157,8 @@
      <div class="composer-inner">
       <button type="button" class="plus-tool icon-btn" id="attachButton" aria-label="添加附件或工具"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button>
       <textarea id="prompt" rows="1" maxlength="8000" placeholder="向 AI 提问…" aria-label="输入消息"></textarea>
-      <button type="button" class="icon-btn" id="voiceInput" aria-label="语音输入" hidden><span class="ui-icon" data-icon="mic" aria-hidden="true"></span></button>
+      <button type="button" class="icon-btn" id="voiceInput" aria-label="语音输入" title="单次语音输入" hidden><span class="ui-icon" data-icon="mic" aria-hidden="true"></span></button>
+      <button type="button" class="icon-btn voice-chat-entry" id="voiceChatOpen" aria-label="语音对话" title="语音对话"><span class="ui-icon" data-icon="message-circle" aria-hidden="true"></span></button>
       <button type="submit" class="send" id="sendBtn" aria-label="发送消息"><span class="ui-icon" data-icon="arrow-up" aria-hidden="true"></span></button>
      </div>
      <div class="tool-tray" id="toolTray" hidden>
@@ -263,6 +264,22 @@
  </form>
  </dialog>
 
+ <dialog id="voiceDialog" class="modal workspace-view" aria-label="语音对话">
+  <div class="modal-head"><div><h2>语音对话</h2><p>语音提问 · AI 回复 · 语音播报</p></div><button type="button" class="close-modal" data-close="voiceDialog" aria-label="关闭语音对话"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="voice-settings">
+   <label>播报声音<select id="voiceSelect" aria-label="选择设备朗读声音"><option value="">系统默认声音</option></select></label>
+   <label>识别语言<select id="voiceLang"><option value="zh-CN">普通话</option><option value="zh-TW">繁体中文</option><option value="en-US">英语</option><option value="ja-JP">日语</option></select></label>
+   <label>播报速度<select id="voiceRate"><option value="0.85">较慢</option><option value="1">正常</option><option value="1.15">稍快</option><option value="1.3">快速</option></select></label>
+  </div>
+  <p class="small-note">朗读使用系统声音，不消耗额外 AI 额度。语音识别使用浏览器支持的服务；不支持连续收听的设备需每轮点击开始说话。</p>
+  <section class="voice-conversation-panel">
+   <div class="voice-orb" aria-hidden="true"><span class="ui-icon" data-icon="mic"></span></div>
+   <p id="voiceStatus" class="voice-state" role="status" aria-live="polite">点击开始说话</p>
+   <div class="voice-turn"><strong>你说</strong><p id="voiceHeard">尚未说话</p></div>
+   <div class="voice-turn"><strong>AI 回答</strong><p id="voiceReply">回复将在这里显示并朗读。</p></div>
+   <div class="voice-actions"><button id="voiceStart" type="button" class="primary">开始说话</button><button id="voiceStop" type="button" class="outline">停止对话</button></div>
+  </section>
+ </dialog>
  <dialog id="createDialog" class="modal workspace-view">
   <div class="modal-head"><div><h2 id="createDialogTitle">免费作图</h2></div><button class="close-modal" data-close="createDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <label class="draw-description">画面描述<textarea id="createPrompt" rows="4" maxlength="1400" placeholder="描述你要生成的图片…"></textarea></label>
@@ -271,7 +288,12 @@
  <fieldset class="draw-field"><legend>比例</legend><div id="drawShape" class="draw-choices draw-shape-options" data-value="portrait" role="group" aria-label="图片比例"><button type="button" class="draw-choice" data-value="square" aria-pressed="false">1:1</button><button type="button" class="draw-choice active" data-value="portrait" aria-pressed="true">3:4</button><button type="button" class="draw-choice" data-value="portrait916" aria-pressed="false">9:16</button><button type="button" class="draw-choice" data-value="landscape" aria-pressed="false">4:3</button><button type="button" class="draw-choice" data-value="landscape169" aria-pressed="false">16:9</button></div></fieldset>
  <fieldset class="draw-field"><legend>数量</legend><div id="drawCount" class="draw-choices draw-count-options" data-value="1" role="group" aria-label="生成数量"><button type="button" class="draw-choice active" data-value="1" aria-pressed="true">1 张</button><button type="button" class="draw-choice" data-value="2" aria-pressed="false">2 张</button><button type="button" class="draw-choice" data-value="4" aria-pressed="false">4 张</button></div></fieldset>
  </div>
- <div id="videoSettings" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">视频可能按秒收费，必须使用自己的 Grok API Key，并明确确认费用。</p><label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok 额度，可能产生费用。</label></div>
+ <div id="videoSettings" hidden>
+  <label>视频生成服务<select id="videoProvider" aria-label="选择视频生成服务"><option value="flow">Google Flow · 免费官网</option><option value="pixverse">PixVerse · 免费官网</option><option value="dreamina">即梦 Dreamina · 免费官网</option><option value="vidu">Vidu · 免费官网</option><option value="huggingface">Hugging Face · 社区演示</option><option value="grok">Grok Imagine · 自有 API（可能收费）</option></select></label>
+  <p id="videoProviderInfo" class="small-note"></p>
+  <div id="videoExternal" class="video-external"><p class="small-note">这些属于服务商的网页额度，无法当作本网站的免费 API。复制描述后前往官网生成。</p><a id="videoExternalLink" class="outline" href="https://labs.google/fx/tools/flow" target="_blank" rel="noopener noreferrer">打开官网</a></div>
+  <div id="videoGrokControls" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">Grok API 可能按秒收费，需要本人密钥并确认额度。</p><label class="check-row"><input id="confirmVideo" type="checkbox">确认使用本人 Grok 额度，可能产生费用。</label></div>
+ </div>
   <div class="draw-main-action">
    <button class="primary full" id="createButton">生成免费图片</button>
    <time class="draw-stopwatch" id="drawElapsed" aria-label="本批图片生成耗时" hidden>00:00</time>
