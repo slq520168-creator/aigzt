@@ -726,12 +726,12 @@ async function imageV4Status(env,user,job,ref){
    const step=await imageRioRead(env,ref.phase==="rio-result"?"get_task_status":"run",ref.id);
    if(step.status==="pending")return imageV4Pending(env,job,ref);
    if(step.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
-   const url=findImageUrl(step.data);
-   if(url)return imageV4Complete(env,job,await saveKreaImage(env,user.id,url));
    const task=imageRioFindTask(step.data);
-   if(!task)return imageV4Move(env,job,ref,ref.stage+1);
-   const status=String(task.status||"").toLowerCase();
+   const status=String(task?.status||"").toLowerCase();
    if(["failed","error","cancelled","canceled"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
+   const url=findImageUrl(task?.result??task)||findImageUrl(step.data);
+   if(url)return imageV4Complete(env,job,await saveKreaImage(env,user.id,url));
+   if(!task||["complete","completed","success","succeeded","done"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    return imageV4Pending(env,job,{...ref,phase:"rio-poll",id:"",taskId:task.task_id});
   }
   // Official Krea and GLM both use their confirmed Gradio generation endpoints.
