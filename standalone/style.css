@@ -133,7 +133,7 @@ a{color:inherit}
 .composer-model-switch:hover,.composer-model-switch:focus-visible{border-color:#7aa9c7;background:#eaf4f9}
 .composer-model-caption{color:#899ba4;white-space:nowrap;font-size:10px;font-weight:500}
 .composer-model-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b4232e;font-size:9px;font-weight:700}
-.voice-chat-entry{width:32px;height:32px;min-width:32px;color:#2b7199;border-radius:50%}
+.voice-chat-entry{display:inline-flex;align-items:center;justify-content:center;gap:2px;width:46px;height:32px;min-width:46px;padding:2px;color:#2b7199;border-radius:12px;font-size:11px;font-weight:650}.voice-chat-entry .ui-icon,.voice-chat-entry .ui-icon svg{width:14px;height:14px}
 .voice-chat-entry:hover,.voice-chat-entry:focus-visible{background:#eaf5fa}
 .composer-inner{display:flex;align-items:flex-end;gap:6px;min-height:32px;min-width:0;max-width:100%}
 .composer textarea{background:transparent;outline:0;border:0;resize:none;flex:1 1 0%;min-width:0;width:1px;max-width:100%;height:32px;min-height:32px;max-height:132px;padding:5px 3px;line-height:22px;font-size:16px;overflow-y:hidden;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}

@@ -623,7 +623,7 @@ async function revealCompletedReply(row,reply){
 }
 
 
-const voiceSession={active:false,pending:false,listening:false,reading:false,recognition:null,token:0,button:null,voice:"",lang:"zh-CN",rate:1};
+const voiceSession={active:false,pending:false,listening:false,reading:false,resumePending:false,recognition:null,token:0,button:null,voice:"",lang:"zh-CN",rate:1};
 function sayStatus(t){$("voiceStatus").textContent=t}
 function voiceSave(){try{localStorage.setItem("aigzt:voice:v1",JSON.stringify({voice:voiceSession.voice,lang:voiceSession.lang,rate:voiceSession.rate}))}catch{}}
 function voiceChoices(){
@@ -662,7 +662,7 @@ function voiceSpeak(value,button=null,continueAfter=false){
  next();return true;
 }
 function voiceStop(){
- voiceSession.active=false;voiceSession.pending=false;voiceSession.listening=false;
+ voiceSession.active=false;voiceSession.pending=false;voiceSession.listening=false;voiceSession.resumePending=false;
  const rec=voiceSession.recognition;voiceSession.recognition=null;
  if(rec)try{rec.abort()}catch{}
  voiceCancel();sayStatus("已停止对话");
@@ -671,9 +671,12 @@ function voiceListen(auto=false){
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!Speech){sayStatus("浏览器不支持语音识别，可使用键盘听写");return}
  if(!S.user){sayStatus("请先登录");return}
- if(S.workMode||S.freeToolsMode||S.busy||voiceSession.pending){sayStatus("请返回聊天或等待回复结束");return}
+ if(S.workMode||S.freeToolsMode){sayStatus("请返回聊天模式");return}
+ if(S.busy||voiceSession.pending){if(auto&&voiceSession.active)voiceSession.resumePending=true;sayStatus("等待上一轮回复完成");return}
  if(voiceSession.listening)return;
- voiceCancel();voiceSession.active=true;voiceSession.listening=true;
+ if(S.provider!=="free"&&!connected(S.provider)){sayStatus("模型未连接，请先选择可用模型");return}
+ if(S.provider!=="free"&&!isFreeModel(S.provider,S.model)&&!S.allowPaid){sayStatus("当前模型未授权使用额度，请先在连接设置确认");return}
+ voiceSession.resumePending=false;voiceCancel();voiceSession.active=true;voiceSession.listening=true;
  const rec=new Speech();voiceSession.recognition=rec;rec.lang=voiceSession.lang;rec.interimResults=true;rec.continuous=false;
  let text="",failed=false;
  rec.onresult=e=>{
@@ -696,7 +699,7 @@ function voiceListen(auto=false){
 function voiceOpen(){
  try{const x=JSON.parse(localStorage.getItem("aigzt:voice:v1")||"null");if(x){if(typeof x.voice==="string")voiceSession.voice=x.voice;if(["zh-CN","zh-TW","en-US","ja-JP"].includes(x.lang))voiceSession.lang=x.lang;if([0.85,1,1.15,1.3].includes(Number(x.rate)))voiceSession.rate=Number(x.rate)}}catch{}
  $("voiceLang").value=voiceSession.lang;$("voiceRate").value=String(voiceSession.rate);
- voiceChoices();show("voiceDialog");sayStatus(window.SpeechRecognition||window.webkitSpeechRecognition?"点击开始说话":"此浏览器只能朗读回复，不能识别语音");
+ if(S.composerMode!=="text")setComposerMode("text");voiceChoices();show("voiceDialog");sayStatus(window.SpeechRecognition||window.webkitSpeechRecognition?"点击开始说话":"此浏览器只能朗读回复，不能识别语音");
 }
 function voiceWire(){
  $("voiceChatOpen").addEventListener("click",voiceOpen);
@@ -1686,7 +1689,7 @@ async function sendMessage(){
    flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e));
   }
  }
- finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false}
+ finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
 async function loadCatalog(){
  if(S.loadedCatalog)return;
