@@ -139,31 +139,29 @@ async function api(path,body){
  return data;
 }
 let avatarOwner=null,avatarEpoch=0;
-let avatarObjectUrl=null;
+/* Same-origin avatar URLs comply with the site's img-src CSP. Never use blob: here. */
 async function refreshAvatar(){
  const uid=S.user?.id||null,letter=S.user?.email?.slice(0,1).toUpperCase()||"A",epoch=++avatarEpoch;
  const targets=[$("accountAvatar"),$("settingsAvatarThumb")].filter(Boolean);
- for(const target of targets)target.textContent=letter;
- if(!uid){if(avatarObjectUrl){URL.revokeObjectURL(avatarObjectUrl);avatarObjectUrl=null}return false}
- try{
-  const response=await fetch("/api/avatar?refresh="+Date.now(),{credentials:"same-origin",cache:"no-store"});
-  if(!response.ok)return false;
-  const type=(response.headers.get("content-type")||"").split(";")[0];
-  if(!["image/jpeg","image/png","image/webp"].includes(type))return false;
-  const blob=await response.blob();if(!blob.size)return false;
-  const url=URL.createObjectURL(blob),img=new Image();
-  try{await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error("头像无法解码"));img.src=url})}
-  catch(error){URL.revokeObjectURL(url);throw error}
-  if(epoch!==avatarEpoch||S.user?.id!==uid){URL.revokeObjectURL(url);return false}
-  const old=avatarObjectUrl;avatarObjectUrl=url;
-  for(const target of targets){const copy=img.cloneNode(false);copy.alt="";target.replaceChildren(copy)}
-  if(old)URL.revokeObjectURL(old);
-  return true;
- }catch{return false}
+ if(!uid){for(const target of targets)target.textContent=letter;return false}
+ return new Promise(resolve=>{
+  const img=new Image();img.alt="";img.decoding="async";
+  img.onload=()=>{
+   if(epoch!==avatarEpoch||S.user?.id!==uid){resolve(false);return}
+   for(const target of targets){const copy=img.cloneNode(false);copy.alt="";target.replaceChildren(copy)}
+   resolve(true);
+  };
+  img.onerror=()=>{
+   if(epoch===avatarEpoch){for(const target of targets)if(!target.querySelector("img"))target.textContent=letter}
+   resolve(false);
+  };
+  img.src="/api/avatar?v="+Date.now();
+ });
 }
 function setAuthUI(){
  const logged=!!S.user,uid=S.user?.id||null;
  $("accountName").textContent=logged?S.user.email:"登录 / 注册";
+ $("avatarQuickInput").disabled=!logged;
  if(uid!==avatarOwner){avatarOwner=uid;refreshAvatar()}
  const q=S.quota;
  $("quotaLabel").textContent=q&&logged?"免费请求保护配额："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"外部免费 · 登录后使用";
@@ -175,11 +173,16 @@ async function uploadAvatar(file){
  if(file.size>12000000||!/^image\//.test(file.type)){status.textContent="请选择12MB以内的图片";return}
  if(label.getAttribute("aria-busy")==="true")return;
  label.setAttribute("aria-busy","true");status.textContent="正在处理头像…";
- let url;
  try{
-  url=URL.createObjectURL(file);
+  // CSP allows data: images; blob: URLs were blocked on iOS PWA.
+  const preview=await new Promise((resolve,reject)=>{
+   const reader=new FileReader();
+   reader.onerror=()=>reject(Error("无法读取照片"));
+   reader.onload=()=>typeof reader.result==="string"?resolve(reader.result):reject(Error("无法读取照片"));
+   reader.readAsDataURL(file);
+  });
   const photo=new Image();
-  await new Promise((resolve,reject)=>{photo.onload=resolve;photo.onerror=()=>reject(Error("图片无法读取"));photo.src=url});
+  await new Promise((resolve,reject)=>{photo.onload=resolve;photo.onerror=()=>reject(Error("照片格式无法解码"));photo.src=preview});
   const canvas=document.createElement("canvas");canvas.width=256;canvas.height=256;
   const ctx=canvas.getContext("2d");if(!ctx)throw Error("设备不支持处理图片");
   const side=Math.min(photo.naturalWidth,photo.naturalHeight),sx=(photo.naturalWidth-side)/2,sy=(photo.naturalHeight-side)/2;
@@ -193,7 +196,7 @@ async function uploadAvatar(file){
   const verified=await refreshAvatar();if(!verified)throw Error("头像已保存，但图片读取失败");
   status.textContent="头像已更换";
  }catch(error){status.textContent="更换失败："+humanError(error)}
- finally{if(url)URL.revokeObjectURL(url);label.removeAttribute("aria-busy")}
+ finally{label.removeAttribute("aria-busy")}
 }
 
 const KEY_SITES={
@@ -734,101 +737,76 @@ const WORK_PROVIDER_NAMES={
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
  minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
 };
-/* Display every supported API channel and the original work-product names.
-   Product names do not imply that the external proprietary agent is connected. */
-const WORK_PRODUCT_DIRECTORY=[
- {name:"QwenWork",region:"中国",provider:"qwen"},
- {name:"WorkBuddy",region:"中国",provider:"hunyuan"},
- {name:"Kimi Work",region:"中国",provider:"kimi"},
- {name:"Manus",region:"中国"},
- {name:"Qwen Code",region:"中国",provider:"qwen"},
- {name:"Kimi Code",region:"中国",provider:"kimi"},
- {name:"Claude Cowork",region:"国际",provider:"claude"},
- {name:"Claude Code",region:"国际",provider:"claude"},
- {name:"ChatGPT Work",region:"国际",provider:"openai"},
- {name:"OpenAI Codex",region:"国际",provider:"openai"},
- {name:"Google Antigravity",region:"国际",provider:"gemini"},
- {name:"Nova AI Agent",region:"国际",provider:"novai"},
- {name:"Nova Workspace",region:"国际",provider:"novai"},
- {name:"GigaAgent",region:"俄罗斯"},
- {name:"GigaCowork",region:"俄罗斯"},
- {name:"GigaCode",region:"俄罗斯"},
- {name:"Alice AI Agents",region:"俄罗斯"},
- {name:"Yandex AI Studio",region:"俄罗斯"},
- {name:"GigaChat",region:"俄罗斯"},
- {name:"YandexGPT / Alice",region:"俄罗斯"}
-];
-/* Work model selection stays usable even when reviewing an old task.
-   Paused tasks persist their new route before "Continue"; finished tasks create a fresh draft. */
-function renderWorkAgentCatalog(){
- const target=$("workAgentCatalog");target.replaceChildren();
- const active=S.workDetail?.task,status=active?.status,locked=S.workBusy||status==="running";
- const selectable=[["free","AIGZT · 免费自动"],...Object.entries(WORK_PROVIDER_NAMES).filter(([id])=>id!=="free").map(([id,name])=>[id,name])];
- target.append(node("div","work-directory-title","在本站执行 · 选择模型线路"));
- const grid=node("div","work-agent-items work-agent-live-items");
- for(const [id,name] of selectable){
-  const record=S.savedProviders[id],authorized=id==="free"||!!record&&(!!record.consent||isFreeModel(id,record.model));
-  const selected=S.workStages.length>0&&S.workStages.slice(Math.min(active?.nextStep||0,S.workStages.length-1)).every(step=>id==="free"?(step.provider==="auto"||step.provider==="free"):step.provider===id);
-  const button=node("button","work-agent-product work-agent-local work-provider-"+(id==="free"?"free":authorized?"ready":"connect")+(selected?" selected":""));
-  button.type="button";button.disabled=locked;button.dataset.workProvider=id;
-  const detail=node("span","work-agent-description");
-  detail.append(node("strong","",name),node("small","",id==="free"?"免费自动 · 本站执行":authorized?"已授权 · 本站执行":record?"需要授权额度 · 点击配置":"点击连接 API · 之后本站执行"));
-  button.append(detail,node("span","work-agent-meta",selected?"已选":authorized?"使用":"连接"));
-  button.addEventListener("click",()=>{
-   if(pendingWorkModelSave){$("workConfigMessage").textContent="正在保存上次选择的模型";return}
-   if(!authorized){openKeyPanel(id);return}
-   if(["completed","cancelled"].includes(S.workDetail?.task?.status))newWorkDraft();
-   if(!S.workStages.length)resetWorkPlan();
-   const next=S.workDetail?.task?.nextStep||0;
-   for(let i=next;i<S.workStages.length;i++){
-    const stage=S.workStages[i];
-    stage.provider=id==="free"?"auto":id;
-    stage.model=id==="free"?"":record?.model||"";
-   }
-   renderWorkEditor();renderWorkAgentCatalog();
-   if(id!=="free"&&!record?.model){
-    $("workConfig").open=true;
-    $("workConfigMessage").textContent="请选择该渠道的具体模型，保存后才能执行";
-    return;
-   }
-   if(S.workTaskId&&["pending","paused"].includes(S.workDetail?.task?.status)){
-    $("workConfigMessage").textContent="正在保存模型选择…";
-    const taskSave=saveWorkConfiguration();
-    pendingWorkModelSave=taskSave;
-    void taskSave.finally(()=>{if(pendingWorkModelSave===taskSave)pendingWorkModelSave=null});
-   }else{
-    $("workConfigMessage").textContent="已选择 "+name+" · 输入任务后直接执行";
-   }
-  });
-  grid.append(button);
- }
- target.append(grid);
- const catalog=node("details","work-agent-directory");
- catalog.open=true;
- catalog.append(node("summary","work-directory-title","中国 · 国际 · 俄罗斯工作代理产品目录"));
- const wrap=node("div","work-agent-directory-inner");
- for(const region of ["中国","国际","俄罗斯"]){
-  const group=node("section","work-agent-region-group");
-  group.append(node("h4","",region));
-  const products=node("div","work-agent-products");
-  for(const item of WORK_PRODUCT_DIRECTORY.filter(x=>x.region===region)){
-   const canConnect=!!item.provider&&Object.hasOwn(WORK_PROVIDER_NAMES,item.provider);
-   const tile=node(canConnect?"button":"div","work-agent-reference"+(canConnect?" can-connect":" info-only"));
-   if(canConnect){
-    tile.type="button";tile.disabled=locked;
-    tile.addEventListener("click",()=>{
-     const record=S.savedProviders[item.provider];
-     const ready=!!record&&(!!record.consent||isFreeModel(item.provider,record.model));
-     const match=grid.querySelector('[data-work-provider="'+item.provider+'"]');
-     if(ready&&match)match.click();else openKeyPanel(item.provider);
-    });
-   }
-   tile.append(node("strong","",item.name),node("small","",canConnect?"点击连接相关模型 API":"暂无原生代理接口"));
-   products.append(tile);
+/* Work-task models are independent from the chat model and its selector. */
+function updateWorkSelectedModel(){
+ const label=$("workSelectedModel");if(!label)return;
+ const next=Math.min(S.workDetail?.task?.nextStep||0,Math.max(0,S.workStages.length-1));
+ const plan=S.workStages.slice(next);
+ if(!plan.length){label.textContent="免费自动";return}
+ const first=plan[0],same=plan.every(s=>s.provider===first.provider&&s.model===first.model);
+ label.textContent=!same?"多模型分阶段执行":first.provider==="auto"||first.provider==="free"?"免费自动":(WORK_PROVIDER_NAMES[first.provider]||first.provider)+(first.model?" · "+first.model:"");
+}
+async function chooseDedicatedWorkModel(provider,model){
+ if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="执行中不能更改模型";return}
+ if(provider!=="free"){
+  const record=S.savedProviders[provider];
+  if(!record?.verified||!(record.consent||isFreeModel(provider,model))){
+   hide("workModelDialog");openKeyPanel(provider);return;
   }
-  group.append(products);wrap.append(group);
+  if(!model||!/^[a-zA-Z0-9][a-zA-Z0-9._:/@+\[\]-]{0,159}$/.test(model)){
+   $("workModelMessage").textContent="请选择有效的官方模型 ID";return;
+  }
  }
- catalog.append(wrap);target.append(catalog);
+ if(["completed","cancelled"].includes(S.workDetail?.task?.status))newWorkDraft();
+ if(!S.workStages.length)resetWorkPlan();
+ const before=S.workStages.map(s=>({...s})),start=S.workDetail?.task?.nextStep||0;
+ for(let i=start;i<S.workStages.length;i++){
+  S.workStages[i].provider=provider==="free"?"auto":provider;
+  S.workStages[i].model=provider==="free"?"":model;
+ }
+ renderWorkEditor();updateWorkSelectedModel();
+ if(S.workTaskId&&["pending","paused"].includes(S.workDetail?.task?.status)){
+  $("workModelMessage").textContent="正在保存到工作任务…";
+  const promise=saveWorkConfiguration();pendingWorkModelSave=promise;
+  let ok=false;try{ok=await promise}finally{if(pendingWorkModelSave===promise)pendingWorkModelSave=null}
+  if(!ok){
+   S.workStages=before;renderWorkEditor();updateWorkSelectedModel();
+   $("workModelMessage").textContent="未保存，已恢复先前选择";return;
+  }
+ }
+ $("workModelMessage").textContent="";hide("workModelDialog");updateWorkSelectedModel();
+}
+function renderWorkProviderModels(provider){
+ const panel=$("workSpecificChooser");panel.hidden=false;panel.replaceChildren();
+ const record=S.savedProviders[provider],models=workModelsFor(provider);
+ let chosen=record?.model||models[0]?.id||"";
+ const title=node("div","work-choose-head");
+ title.append(node("strong","",WORK_PROVIDER_NAMES[provider]||provider),node("small","","只对工作任务生效"));
+ const control=workModelPicker(provider,chosen,value=>{chosen=value},false);
+ const apply=node("button","work-model-apply","使用此模型");
+ apply.type="button";apply.addEventListener("click",()=>void chooseDedicatedWorkModel(provider,chosen));
+ panel.append(title,control,apply);panel.scrollIntoView({block:"nearest"});
+}
+function renderWorkAgentCatalog(){
+ updateWorkSelectedModel();
+ const target=$("workAgentCatalog");target.replaceChildren();
+ const options=[["free","免费自动"],...Object.entries(WORK_PROVIDER_NAMES).filter(([id])=>id!=="free")];
+ options.sort((a,b)=>{
+  const rank=id=>id==="free"?0:S.savedProviders[id]?.verified?1:S.savedProviders[id]?2:3;
+  return rank(a[0])-rank(b[0]);
+ });
+ for(const [provider,name] of options){
+  const record=S.savedProviders[provider],ready=provider==="free"||!!record?.verified&&(!!record.consent||isFreeModel(provider,record.model));
+  const button=node("button","work-model-option "+(ready?"ready":"connect"));button.type="button";
+  button.append(node("strong","",name),node("small","",provider==="free"?"自动使用已配置免费线路":ready?"已验证 · 可选模型":record?"需要验证连接或授权":"连接 API 后使用"),node("span","work-model-option-action",ready?"选择":"连接"));
+  button.addEventListener("click",()=>{
+   if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前正在执行，不能更改";return}
+   if(!ready){hide("workModelDialog");openKeyPanel(provider);return}
+   if(provider==="free"){void chooseDedicatedWorkModel("free","");return}
+   renderWorkProviderModels(provider);
+  });
+  target.append(button);
+ }
 }
 function resetWorkPlan(){
  S.workStages=[
@@ -957,6 +935,7 @@ function renderWorkEditor(){
  $("workFallback").disabled=locked;
  $("workFallback").checked=S.workFallback;
  $("workConfigSummary").textContent=S.workStages.length+" 个步骤 · "+S.workRoutes.length+" 条自选候补线路";
+ updateWorkSelectedModel();
 }
 function newWorkDraft(){
  if(S.workBusy)return;
@@ -1042,12 +1021,12 @@ function setWorkMode(on){
  setFreeToolsMode(false);S.workMode=!!on;
  if(on){
   if(!S.workStages.length)resetWorkPlan();
-  $("workAgents").open=true;$("workConfig").open=false;renderWorkAgentCatalog();renderWorkEditor();void loadCatalog();
+  $("workConfig").open=false;renderWorkEditor();void loadCatalog();
   setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;
   $("prompt").placeholder="描述要完成的工作任务…";
   hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
  }else{
-  $("workBoard").hidden=true;$("conversation").hidden=false;
+  $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");
   $("prompt").placeholder="向 AI 提问…";syncWorkspaceRoute("");
  }
  closeMenu();syncHomeAmbient();
@@ -1119,7 +1098,7 @@ async function startWorkTask(){
  S.workBusy=true;const epoch=++S.workEpoch;
  $("sendBtn").disabled=true;$("workState").textContent="正在创建工作任务…";
  try{
-  const data=await api("/api/work/tasks",{prompt,provider:S.provider,model:S.model,projectId:S.activeProjectId,
+  const data=await api("/api/work/tasks",{prompt,projectId:S.activeProjectId,
    attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback});
   if(epoch!==S.workEpoch)return;
   $("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
@@ -1772,6 +1751,12 @@ function wire(){
  $("domesticProviderList");initDomesticProviderLinks();
  $("workClose").addEventListener("click",()=>setWorkMode(false));
  $("workNewTask").addEventListener("click",newWorkDraft);
+ $("workModelChoose").addEventListener("click",()=>{
+  $("workModelMessage").textContent="";
+  $("workSpecificChooser").hidden=true;
+  $("workSpecificChooser").replaceChildren();
+  renderWorkAgentCatalog();show("workModelDialog");
+ });
  $("workAddStage").addEventListener("click",()=>{if(S.workStages.length<12){S.workStages.push({name:"新步骤",instruction:"",provider:"auto",model:""});renderWorkEditor()}});
  $("workAddRoute").addEventListener("click",()=>{if(S.workRoutes.length<20){S.workRoutes.push({provider:"free",model:"free:auto"});renderWorkEditor()}});
  $("workFallback").addEventListener("change",e=>{S.workFallback=e.target.checked});
@@ -1790,13 +1775,9 @@ function wire(){
  $("searchBtn").addEventListener("click",()=>{closeMenu();show("searchDialog");$("chatSearchInput").focus()});
  $("newProject").addEventListener("click",()=>openProject());
  $("accountBtn").addEventListener("click",()=>{if(!S.user)show("authDialog");else void openSettings()});
- $("accountAvatar").addEventListener("click",event=>{
-  event.stopPropagation();
-  if(!S.user){show("authDialog");return}
-  $("avatarQuickInput").click();
- });
+ $("accountAvatar").addEventListener("click",()=>{if(!S.user)show("authDialog")});
  $("settingsBtn").addEventListener("click",()=>void openSettings());
- $("changeAvatar").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("avatarInput").click()}});
+ /* Photo input is physically over the labeled control; native click opens the iOS picker. */
  for(const id of ["avatarInput","avatarQuickInput"]){$(id).addEventListener("change",e=>{
   const file=e.target.files?.[0];e.target.value="";
   if(!file)return;

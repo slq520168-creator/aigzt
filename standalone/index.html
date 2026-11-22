@@ -41,12 +41,11 @@
     </div>
    </div>
    <div class="side-bottom">
-    <button id="accountBtn" class="nav-row account-btn"><span id="accountAvatar" class="account-avatar avatar-pick" title="点击更换头像" aria-label="更换头像">A</span><span id="accountName">登录 / 注册</span></button>
+    <label class="avatar-native-picker avatar-sidebar-picker" title="更换头像" aria-label="更换个人头像"><span id="accountAvatar" class="account-avatar avatar-pick">A</span><input id="avatarQuickInput" class="avatar-overlay-input" type="file" accept="image/*,.heic,.heif" aria-label="上传个人头像"></label><button id="accountBtn" class="nav-row account-btn"><span id="accountName">登录 / 注册</span></button>
     <button class="icon-btn small-btn" id="settingsBtn" aria-label="设置"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></button>
    </div>
    <span id="quotaLabel" hidden></span>
   </aside>
-  <input id="avatarQuickInput" class="avatar-native-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" aria-label="快速更换个人头像">
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
@@ -55,11 +54,10 @@
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>任务与阶段自动保存 · 模型不可用时继续接力</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
-    <details class="work-agents" id="workAgents" open><summary>站内工作模型 <small>模型在 AIGZT 内执行，不跳转官网</small></summary>
-     <div class="work-agent-status"><strong>在本站执行任务</strong><span>先选可用模型，直接发送任务；高级步骤按需展开</span></div>
-     <div id="workAgentCatalog" class="work-agent-catalog"></div>
-     <p class="work-agent-disclaimer">中国、国际及俄罗斯工作产品均保留展示；只有完成 API 接入的模型能在本站参与执行，未接入产品明确标注。</p>
-    </details>
+    <div class="work-model-toolbar" aria-label="工作专用模型设置">
+     <div class="work-model-ident"><span>工作专用模型</span><strong id="workSelectedModel">免费自动</strong><small>独立于聊天模型 · 仅用于工作任务</small></div>
+     <button type="button" class="work-model-choose" id="workModelChoose"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span>选择工作模型</button>
+    </div>
     <details class="work-config" id="workConfig">
      <summary>高级任务配置 <span id="workConfigSummary">默认自动 · 点击自定义步骤与接力</span></summary>
      <div class="work-config-body">
@@ -146,7 +144,7 @@
  </dialog>
  <dialog id="settingsDialog" class="modal settings-dialog workspace-view" aria-label="设置">
   <div class="modal-head"><h2>设置</h2><button class="close-modal" data-close="settingsDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
-  <div class="settings-group"><h3>账号</h3><div class="profile-editor"><span id="settingsAvatarThumb" class="settings-avatar-thumb" aria-hidden="true">A</span><div class="profile-editor-info"><strong>个人头像</strong><small id="avatarStatus">支持照片上传，自动裁剪为正方形</small><label for="avatarInput" class="outline avatar-picker-label" id="changeAvatar" role="button" tabindex="0">更换头像</label></div></div><input id="avatarInput" class="avatar-native-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" aria-label="从相册选择头像"><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
+  <div class="settings-group"><h3>账号</h3><div class="profile-editor"><span id="settingsAvatarThumb" class="settings-avatar-thumb" aria-hidden="true">A</span><div class="profile-editor-info"><strong>个人头像</strong><small id="avatarStatus">支持照片上传，自动裁剪为正方形</small><label class="outline avatar-picker-label avatar-native-picker" id="changeAvatar">更换头像<input id="avatarInput" class="avatar-overlay-input" type="file" accept="image/*,.heic,.heif" aria-label="从相册选择头像"></label></div></div><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
   <div class="settings-group"><h3>外观</h3><label class="setting-switch">七彩呼吸效果<input type="checkbox" id="settingRainbow"></label></div>
   <div class="settings-group"><h3>跨会话记忆</h3><label class="setting-switch">在新对话中引用历史上下文<input type="checkbox" id="settingMemory"></label>
    <form id="memoryForm" class="memory-form"><input id="memoryInput" maxlength="450" placeholder="保存需要长期记住的内容" required><button class="primary" type="submit">保存</button></form>
@@ -165,6 +163,15 @@
   </form>
  </dialog>
 
+ <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">
+  <div class="modal-head"><div><h2>选择工作模型</h2><p>只影响工作任务，不修改聊天模型</p></div><button type="button" class="close-modal" data-close="workModelDialog" aria-label="关闭工作模型"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="work-model-dialog-content">
+   <p class="work-model-explain">免费自动可直接选择；其他模型连接 API 后由本站工作执行器调用。未接入的外部产品不会作为假按钮展示。</p>
+   <div id="workAgentCatalog" class="work-agent-catalog" aria-label="工作模型服务商"></div>
+   <div id="workSpecificChooser" class="work-specific-chooser" hidden></div>
+   <div id="workModelMessage" class="work-model-message" role="status"></div>
+  </div>
+ </dialog>
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
   <div class="modal-head"><div><h2>选择 AI 模型</h2><p id="modelSummary">默认免费自动 · 连接后可使用更多模型</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
