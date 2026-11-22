@@ -588,6 +588,7 @@ async function revealCompletedReply(row,reply){
 
 function appendMessage(role,content,model,existingRow=null){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
+ if(role==="user")row.dataset.sourceText=String(content||"");
  bubble.textContent=String(content||"");
  if(role==="assistant"){
   const icon=node("span","avatar-ai");icon.innerHTML="<svg viewBox=\"0 0 36 36\" width=\"34\" height=\"34\" aria-hidden=\"true\"><rect x=\"4\" y=\"6\" width=\"28\" height=\"27\" rx=\"12\" fill=\"#d6eef1\" stroke=\"#92c4ce\" stroke-width=\"1.2\"/><path d=\"M4 15C0 12 3 7 8 10M32 15c4-3 1-8-4-5\" fill=\"#b0d9e6\"/><circle cx=\"13\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><circle cx=\"23\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><path d=\"M14 26q4 3 8 0\" fill=\"none\" stroke=\"#496f77\" stroke-width=\"1.7\" stroke-linecap=\"round\"/><circle cx=\"8.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><circle cx=\"27.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><path d=\"M18 6V2\" stroke=\"#74aab6\" stroke-width=\"1.8\"/><circle cx=\"18\" cy=\"3\" r=\"2\" fill=\"#f7c975\"/></svg>";if(!existingRow)row.append(icon,bubble);
@@ -595,7 +596,23 @@ function appendMessage(role,content,model,existingRow=null){
   if(pending){bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
-  if(!pending&&!picture&&String(content||"").trim())renderAssistantText(bubble,content);
+  if(!pending&&!picture&&String(content||"").trim()){
+   renderAssistantText(bubble,content);
+   // Draft the same question in this chat; the separate model picker selects the next model.
+   const previous=row.previousElementSibling;
+   const question=previous?.classList.contains("user")?previous.dataset.sourceText:"";
+   if(question&&question.trim()&&!question.includes("[文件：")&&!/^(请求未完成|作图失败)：/.test(String(content))){
+    const actions=node("div","message-retry-actions"),retry=node("button","message-retry-model","换模型再问");
+    retry.type="button";retry.title="保留当前会话，填回原问题；选好模型后手动发送，会新增一条回答";
+    retry.addEventListener("click",()=>{
+     if(S.busy||S.workMode||S.freeToolsMode||!row.isConnected)return;
+     const input=$("prompt");
+     if(input.value.trim()&&input.value.trim()!==question.trim()&&!confirm("替换尚未发送的草稿，重新提问？"))return;
+     input.value=question;setComposerMode("text");settlePromptSize();openModels();
+    });
+    actions.append(retry);bubble.append(actions);
+   }
+  }
 
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
@@ -1543,7 +1560,18 @@ function drawResult(tile,url){
  const img=node("img");img.src=url;img.alt="生成图片";img.loading="lazy";tile.picture.replaceChildren(img);
  tile.tile.querySelector(".draw-tile-actions")?.remove();
  const actions=node("div","draw-tile-actions"),download=node("a","","下载图片");
- download.href=url;download.download="aigzt-image.png";actions.append(download);tile.tile.append(actions);
+ download.href=url;download.download="aigzt-image.png";actions.append(download);
+ const revise=node("button","draw-revise","调整描述再生成");revise.type="button";
+ revise.title="保留原图供对比；修改描述重新出图，不直接修改原图像素";
+ revise.addEventListener("click",()=>{
+  if(S.drawBatch)return;
+  const input=$("createPrompt");input.value=tile.sourcePrompt||input.value;
+  $("createStatus").textContent="修改描述再生成新图；原图保留供对比。";input.focus();
+ });
+ const duck=node("a","draw-duck-edit","Duck.ai 编辑原图");
+ duck.href="https://duck.ai/";duck.target="_blank";duck.rel="noopener noreferrer";
+ duck.title="先下载这张图片，再到 Duck.ai 上传原图继续编辑";
+ actions.append(revise,duck);tile.tile.append(actions);
  tile.caption.textContent="仅当前页面显示 · 网站不保存";
 }
 function drawSleep(ms,signal){
@@ -1589,7 +1617,11 @@ async function runFreeDraw(){
  const count=Number(drawChoice("drawCount")),shape=drawChoice("drawShape"),style=drawChoice("drawStyle");
  if(![1,2,4].includes(count)){$("createStatus").textContent="图片数量不正确";return}
  const batch={cancelled:false,controller:new AbortController(),startedAt:Date.now(),clockTimer:null};
- S.drawBatch=batch;$("drawResults").replaceChildren();
+ S.drawBatch=batch;
+ // Retain at most one prior batch as DOM nodes, not duplicated base64 data.
+ const ready=Array.from($("drawResults").children).filter(el=>el.querySelector(".draw-photo img"));
+ if(ready.length){$("drawPrevious").replaceChildren(...ready);$("drawPreviousSection").hidden=false}
+ $("drawResults").replaceChildren();
  $("drawResultTitle").textContent="本次图片";
  const tiles=Array.from({length:count},(_,i)=>drawTile(i+1,"准备生成",shape));
  $("createButton").disabled=true;$("drawCancel").hidden=false;$("drawElapsed").hidden=false;
@@ -1601,7 +1633,7 @@ async function runFreeDraw(){
  let success=0,failed=0,finished=0;
  const task=async tile=>{
   if(batch.cancelled)return;
-  tile.startedAt=Date.now();tile.clock.hidden=false;tile.picture.textContent="正在提交";
+  tile.startedAt=Date.now();tile.sourcePrompt=prompt;tile.clock.hidden=false;tile.picture.textContent="正在提交";
   try{
    const result=await api("/api/image",{prompt,style,shape});
    if(batch.cancelled)return;
@@ -1903,6 +1935,7 @@ function wire(){
  drawPrefs();wireImageViewer();
  $("createDialog").addEventListener("close",()=>{
   stopDrawBatch();$("drawResults").replaceChildren();
+  $("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;
   $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
  });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
