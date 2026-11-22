@@ -1145,39 +1145,95 @@ function openKeyPanel(provider){
  refreshKeyPanel();show("keyDialog");
 }
 
+
+const iv={items:[],i:0,scale:1,x:0,y:0,touch:null,lastTap:null,origin:null};
+function ivTransform(){$("ivImage").style.transform="translate("+iv.x+"px,"+iv.y+"px) scale("+iv.scale+")"}
+function ivReset(){iv.scale=1;iv.x=0;iv.y=0;ivTransform()}
+function ivClose(){
+ if($("imageViewer").hidden)return;
+ $("imageViewer").hidden=true;document.documentElement.classList.remove("image-viewing");document.body.classList.remove("image-viewing");
+ $("ivImage").removeAttribute("src");$("ivThumbs").replaceChildren();iv.items=[];iv.touch=null;iv.lastTap=null;
+ iv.origin?.focus?.({preventScroll:true});iv.origin=null;
+}
+function ivShow(i){
+ if(!iv.items.length)return;
+ iv.i=(i+iv.items.length)%iv.items.length;
+ const it=iv.items[iv.i];$("ivImage").src=it.src;$("ivImage").alt=it.alt||"图片预览";
+ $("ivCounter").textContent=(iv.i+1)+" / "+iv.items.length;ivReset();$("ivThumbs").replaceChildren();
+ for(const [k,item] of iv.items.entries()){
+  const b=node("button","iv-thumb"+(k===iv.i?" active":""));b.type="button";b.setAttribute("aria-label","第 "+(k+1)+" 张图片");
+  const t=node("img");t.src=item.src;t.alt="";t.loading="lazy";b.append(t);
+  b.addEventListener("click",()=>ivShow(k));$("ivThumbs").append(b);
+  if(k===iv.i)requestAnimationFrame(()=>{if(b.isConnected)b.scrollIntoView({block:"nearest",inline:"nearest"})});
+ }
+}
+function ivOpen(img){
+ const scope=img.closest(".draw-gallery,.messages,.media-preview,.result-list,#savedFiles,.work-board")||img.closest("dialog,.main")||document.body;
+ const found=Array.from(scope.querySelectorAll("img")).filter(x=>x.getClientRects().length&&x.src&&!x.closest("#imageViewer,.sidebar,.brand-lockup"));
+ if(!found.includes(img))found.push(img);
+ iv.items=found.map(x=>({src:x.currentSrc||x.src,alt:x.alt||""}));iv.origin=img;iv.lastTap=null;
+ $("imageViewer").hidden=false;document.documentElement.classList.add("image-viewing");document.body.classList.add("image-viewing");
+ ivShow(found.indexOf(img));$("imageViewer").focus({preventScroll:true});
+}
+function ivZoom(){if(iv.scale>1)ivReset();else{iv.scale=2.7;iv.x=0;iv.y=0;ivTransform()}}
+function ivDistance(a,b){return Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)}
+function wireImageViewer(){
+ document.addEventListener("click",e=>{
+  if(!(e.target instanceof Element))return;
+  const img=e.target.closest("img");
+  if(!img||img.closest("#imageViewer,.sidebar,.brand-lockup")||!img.src||!img.getClientRects().length)return;
+  e.preventDefault();e.stopPropagation();ivOpen(img);
+ },true);
+ $("ivClose").addEventListener("click",ivClose);
+ $("ivPrev").addEventListener("click",()=>ivShow(iv.i-1));$("ivNext").addEventListener("click",()=>ivShow(iv.i+1));
+ document.addEventListener("keydown",e=>{
+  if($("imageViewer").hidden)return;
+  if(e.key==="Escape"){e.preventDefault();ivClose()}
+  if(e.key==="ArrowLeft"&&iv.scale===1){e.preventDefault();ivShow(iv.i-1)}
+  if(e.key==="ArrowRight"&&iv.scale===1){e.preventDefault();ivShow(iv.i+1)}
+ });
+ const stage=$("ivStage");
+ stage.addEventListener("dblclick",e=>{e.preventDefault();ivZoom()});
+ stage.addEventListener("touchstart",e=>{
+  if(e.touches.length===2){iv.touch={pinch:true,d:ivDistance(e.touches[0],e.touches[1]),s:iv.scale};iv.lastTap=null}
+  else if(e.touches.length===1){const t=e.touches[0];iv.touch={x:t.clientX,y:t.clientY,lx:t.clientX,ly:t.clientY,moved:false,pinch:false}}
+ },{passive:false});
+ stage.addEventListener("touchmove",e=>{
+  const s=iv.touch;if(!s)return;
+  if(s.pinch&&e.touches.length===2){e.preventDefault();iv.scale=Math.max(1,Math.min(4,s.s*ivDistance(e.touches[0],e.touches[1])/Math.max(1,s.d)));ivTransform();return}
+  if(!s.pinch&&e.touches.length===1){const t=e.touches[0],x=t.clientX,y=t.clientY;
+   if(Math.abs(x-s.x)>8||Math.abs(y-s.y)>8)s.moved=true;
+   if(iv.scale>1){e.preventDefault();iv.x+=x-s.lx;iv.y+=y-s.ly;ivTransform()}s.lx=x;s.ly=y}
+ },{passive:false});
+ stage.addEventListener("touchend",e=>{
+  const s=iv.touch;if(!s)return;
+  if(s.pinch){if(!e.touches.length){iv.touch=null;if(iv.scale<1.05)ivReset()}return}
+  if(e.touches.length)return;iv.touch=null;const t=e.changedTouches[0];if(!t)return;
+  const dx=t.clientX-s.x,dy=t.clientY-s.y;
+  if(iv.scale===1){
+   if(dy>90&&Math.abs(dy)>Math.abs(dx)*1.3){ivClose();return}
+   if(Math.abs(dx)>65&&Math.abs(dx)>Math.abs(dy)*1.3){ivShow(iv.i+(dx<0?1:-1));return}
+  }
+  if(!s.moved){
+   const now=Date.now();
+   if(iv.lastTap&&now-iv.lastTap.at<310&&ivDistance(t,iv.lastTap)<45){ivZoom();iv.lastTap=null}
+   else iv.lastTap={at:now,clientX:t.clientX,clientY:t.clientY};
+  }
+ },{passive:true});
+ stage.addEventListener("touchcancel",()=>{iv.touch=null;iv.lastTap=null},{passive:true});
+}
+
 function drawTile(index,status="准备生成",shape="portrait"){
  const tile=node("article","draw-tile"),picture=node("div","draw-photo",status),caption=node("small","draw-caption","第 "+index+" 张 · "+status);
  picture.dataset.shape=shape;tile.append(picture,caption);
  $("drawResults").append(tile);return {tile,picture,caption};
 }
 function drawResult(tile,url){
- const img=node("img");img.src=url;img.alt="AI 生成图片";img.loading="lazy";
- tile.picture.replaceChildren(img);
+ const img=node("img");img.src=url;img.alt="生成图片";img.loading="lazy";tile.picture.replaceChildren(img);
  tile.tile.querySelector(".draw-tile-actions")?.remove();
- const actions=node("div","draw-tile-actions"),view=node("a","","查看"),save=node("a","","保存");
- view.href=url;view.target="_blank";view.rel="noopener";
- save.href=url;save.download="aigzt-image.png";
- actions.append(view,save);
- if(typeof navigator.share==="function"){
-  const share=node("button","","分享图片");share.type="button";
-  share.addEventListener("click",async()=>{
-   share.disabled=true;
-   try{
-    const resp=await fetch(url,{credentials:"same-origin",cache:"no-store"});
-    if(!resp.ok)throw Error("无法读取图片");
-    const blob=await resp.blob();
-    if(!blob.type.startsWith("image/"))throw Error("图片格式不受支持");
-    const suffix=blob.type==="image/jpeg"?"jpg":blob.type==="image/webp"?"webp":"png";
-    const file=new File([blob],"aigzt-image."+suffix,{type:blob.type});
-    if(typeof navigator.canShare==="function"&&!navigator.canShare({files:[file]}))throw Error("当前浏览器不支持分享图片文件");
-    await navigator.share({files:[file],title:"AIGZT 图片"});
-   }catch(e){if(e?.name!=="AbortError")flashError("分享未完成，请使用保存图片："+humanError(e))}
-   finally{share.disabled=false}
-  });
-  actions.append(share);
- }
- tile.tile.append(actions);
- tile.caption.textContent="生成完成 · 已保存到账号";
+ const actions=node("div","draw-tile-actions"),save=node("a","","保存图片");
+ save.href=url;save.download="aigzt-image.png";actions.append(save);tile.tile.append(actions);
+ tile.caption.textContent="已保存到我的作品";
 }
 function drawSleep(ms,signal){
  return new Promise(resolve=>{
@@ -1219,7 +1275,7 @@ async function runFreeDraw(){
  if(!prompt){$("createStatus").textContent="请输入画面描述";return}
  if(!S.user){show("authDialog");return}
  if(S.drawBatch){$("createStatus").textContent="上一批作图尚未完成";return}
- const count=Number($("drawCount").value),shape=$("drawShape").value,style=$("drawStyle").value;
+ const count=Number(drawChoice("drawCount")),shape=drawChoice("drawShape"),style=drawChoice("drawStyle");
  if(![1,2,4].includes(count)){ $("createStatus").textContent="图片数量不正确";return }
  const batch={cancelled:false,controller:new AbortController()};
  S.drawBatch=batch;$("drawResults").replaceChildren();
@@ -1277,18 +1333,27 @@ async function restoreDrawJobs(){
  finally{$("drawRefresh").disabled=Boolean(S.drawBatch)}
 }
 
-function drawPrefs(){
- const ids=["drawStyle","drawShape","drawCount"];
- try{
-  const state=JSON.parse(localStorage.getItem("aigzt:draw-prefs")||"{}");
-  for(const id of ids)if(typeof state[id]==="string"&&Array.from($(id).options).some(x=>x.value===state[id]))$(id).value=state[id];
- }catch{}
- const save=()=>{
-  try{localStorage.setItem("aigzt:draw-prefs",JSON.stringify(Object.fromEntries(ids.map(id=>[id,$(id).value]))))}catch{}
- };
- for(const id of ids)$(id).addEventListener("change",save);
+function drawChoice(id){return $(id).dataset.value||""}
+function setDrawChoice(id,value){
+ const group=$(id),btn=Array.from(group.querySelectorAll("button[data-value]")).find(x=>x.dataset.value===value);
+ if(!btn)return false;
+ group.dataset.value=value;
+ for(const b of group.querySelectorAll("button[data-value]")){const active=b===btn;b.classList.toggle("active",active);b.setAttribute("aria-pressed",String(active))}
+ if(id==="drawStyle"&&Array.from(group.querySelectorAll("button[data-value]")).indexOf(btn)>=8){group.classList.add("expanded");$("drawMore").textContent="收起风格";$("drawMore").setAttribute("aria-expanded","true")}
+ return true;
 }
-
+function drawPrefs(){
+ const ids=["drawStyle","drawShape","drawCount"];let state={};
+ try{state=JSON.parse(localStorage.getItem("aigzt:draw-prefs")||"{}")}catch{}
+ const save=()=>{try{localStorage.setItem("aigzt:draw-prefs",JSON.stringify(Object.fromEntries(ids.map(id=>[id,drawChoice(id)]))))}catch{}};
+ for(const id of ids){if(typeof state[id]==="string")setDrawChoice(id,state[id]);
+  $(id).addEventListener("click",e=>{const btn=e.target.closest("button[data-value]");if(btn&&setDrawChoice(id,btn.dataset.value))save()})
+ }
+ $("drawMore").addEventListener("click",()=>{
+  const expanded=$("drawStyle").classList.toggle("expanded");
+  $("drawMore").textContent=expanded?"收起风格":"更多风格";$("drawMore").setAttribute("aria-expanded",String(expanded));
+ });
+}
 function setCreationMode(mode){
  S.createMode=mode;
  const isImage=mode==="image";
@@ -1514,7 +1579,7 @@ function wire(){
  $("createButton").addEventListener("click",()=>void generateMedia());
  $("drawCancel").addEventListener("click",stopDrawBatch);
  $("drawRefresh").addEventListener("click",()=>void restoreDrawJobs());
- drawPrefs();
+ drawPrefs();wireImageViewer();
  $("createDialog").addEventListener("close",stopDrawBatch);
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;

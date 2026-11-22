@@ -517,6 +517,22 @@ async function saveKreaImage(env,uid,rawUrl){
  await env.MEDIA.put(uid+"/"+id,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
  return id;
 }
+async function saveVexaFallback(env,uid,task){
+ const shape=Object.hasOwn(KREA_SHAPES,task.s)?KREA_SHAPES[task.s]:KREA_SHAPES.portrait;
+ const style=Object.hasOwn(KREA_STYLES,task.t)?KREA_STYLES[task.t]:KREA_STYLES["portrait-master"];
+ const prompt=String(task.p||"").slice(0,1200);
+ if(!prompt)throw Error("missing_prompt");
+ const reply=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({prompt:prompt+(style?", "+style:"")+", compose for "+shape[0]+":"+shape[1]+" aspect ratio",model:"hd",preference:"quality"}),redirect:"manual",signal:AbortSignal.timeout(14500)});
+ if(!reply.ok)throw Error("fallback_http_"+reply.status);
+ const data=await reply.json().catch(()=>null);
+ if(data?.success!==true||data.model!=="hd"||data.source!=="deepai.org")throw Error("fallback_not_available");
+ const u=new URL(String(data.proxy_url||""));
+ if(u.protocol!=="https:"||u.hostname!=="vexa-ai.pages.dev"||!u.pathname.startsWith("/image/proxy/")||u.username||u.password)throw Error("untrusted_fallback");
+ const response=await fetch(u.href,{headers:{accept:"image/*"},redirect:"manual",signal:AbortSignal.timeout(12000)});
+ const {a,mime}=await downloadImage(response),mid=crypto.randomUUID();
+ await env.MEDIA.put(uid+"/"+mid,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
+ return mid;
+}
 async function submitKrea(req,env,user){
  requireUser(user);const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(!prompt)throw Error("请输入图片描述");
@@ -534,12 +550,13 @@ async function submitKrea(req,env,user){
   const data=await res.json(),eid=String(data?.event_id||"");
   if(!/^[A-Za-z0-9_-]{8,128}$/.test(eid))throw Error("作图提交失败");
   const id=crypto.randomUUID(),day="image-unmetered";
-  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,eid,Date.now(),day);
+  const external=JSON.stringify({v:2,id:eid,p:prompt,s:input.shape||"portrait",t:input.style||"portrait-master"});
+  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,external,Date.now(),day);
   return {ok:true,pending:true,jobId:id,model:"免费作图"};
  }catch(e){throw Object.assign(new Error("作图暂不可用："+(e?.name==="TimeoutError"?"提交超时":e.message||"网络失败")),{status:e?.status===429?429:503})}
 }
 async function failKreaJob(env,job,message){
- const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",message,Date.now(),job.id,job.user_id);
+ const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
  if(r.meta?.changes){
   if(job.charged_day!=="image-unmetered")await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",job.charged_day,job.user_id),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",job.charged_day)]).catch(()=>{});
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","作图失败："+message,job.message_id,job.user_id).catch(()=>{});
@@ -577,13 +594,28 @@ async function imageJobStatus(env,user,id){
  if(!job)return fail("作图任务不存在",404);
  if(job.status==="complete")return response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"免费作图"});
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
+ if(job.status==="recovering"){if(Date.now()-job.checked_at>45000)await failKreaJob(env,job,"备用生成超时");return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
  if(Date.now()-job.created_at>30*60000){await failKreaJob(env,job,"作图超时");return response({ok:true,done:true,failed:true,error:"作图超时"})}
  const now=Date.now();
  if(now-(job.checked_at||0)<6800)return response({ok:true,done:false,pending:true,waitSeconds:9,startedAt:job.created_at});
  const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,id,user.id,now-6700);
  if(!claimed.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:9,startedAt:job.created_at});
- const state=await queryKreaEvent(env,job.external_id);
- if(state.status==="failed"){await failKreaJob(env,job,state.error);return response({ok:true,done:true,failed:true,error:state.error})}
+ let upstreamId=job.external_id,backup=null;
+ if(typeof upstreamId==="string"&&upstreamId.startsWith("{")){try{const v=JSON.parse(upstreamId);if(v.v===2&&v.id){upstreamId=v.id;backup=v}}catch{}}
+ const state=await queryKreaEvent(env,upstreamId);
+ if(state.status==="failed"){
+  if(backup?.p){
+   const lock=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
+   if(!lock.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
+   try{
+    const mid=await saveVexaFallback(env,user.id,backup);
+    await dbRun(env.DB,"UPDATE image_jobs SET status='complete',media_id=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",mid,Date.now(),id,user.id);
+    if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mid+")",job.message_id,user.id);
+    return response({ok:true,done:true,image:"/api/files/"+mid,model:"免费作图"});
+   }catch(e){await failKreaJob(env,job,"免费作图来源暂不可用");return response({ok:true,done:true,failed:true,error:"生成未完成，免费服务暂时繁忙"})}
+  }
+  await failKreaJob(env,job,state.error);return response({ok:true,done:true,failed:true,error:state.error});
+ }
  if(state.status==="pending")return response({ok:true,done:false,pending:true,waitSeconds:10,startedAt:job.created_at});
  try{
   const mid=await saveKreaImage(env,user.id,state.url);

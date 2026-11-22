@@ -204,15 +204,11 @@
   <div class="creation-tabs"><button id="imageTab" class="active">免费作图</button><button id="videoTab">Grok 视频</button></div>
   <label class="draw-description">画面描述<textarea id="createPrompt" rows="4" maxlength="1400" placeholder="描述你要生成的图片…"></textarea></label>
   <div id="drawSettings" class="draw-settings">
-   <label>风格<select id="drawStyle">
-    <option value="portrait-master">人像写真</option><option value="natural-portrait">自然写真</option><option value="studio-portrait">棚拍人像</option><option value="fashion-editorial">时尚人像</option><option value="cinematic-portrait">电影人像</option>
-    <option value="casual-photo">随手拍</option><option value="pro-photo">专业摄影</option><option value="cinematic">电影感</option><option value="none">通用</option>
-    <option value="anime">动漫</option><option value="cute-anime">萌系</option><option value="digital-painting">数字绘画</option><option value="oil">油画</option><option value="watercolor">水彩</option><option value="pencil">素描</option><option value="cartoon">卡通</option><option value="fantasy">奇幻风景</option>
-   </select></label>
-   <label>比例<select id="drawShape"><option value="square">1:1 方图</option><option value="portrait" selected>3:4 竖图</option><option value="portrait916">9:16 全屏竖图</option><option value="landscape">4:3 横图</option><option value="landscape169">16:9 全屏横图</option></select></label>
-   <label>数量<select id="drawCount"><option value="1">1 张</option><option value="2">2 张</option><option value="4">4 张</option></select></label>
-  </div>
-  <div id="videoSettings" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">视频可能按秒收费，必须使用自己的 Grok API Key，并明确确认费用。</p><label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok 额度，可能产生费用。</label></div>
+ <fieldset class="draw-field"><legend>风格</legend><div id="drawStyle" class="draw-choices draw-style-options" data-value="portrait-master" role="group" aria-label="绘画风格"><button type="button" class="draw-choice active" data-value="portrait-master" aria-pressed="true">人像写真</button><button type="button" class="draw-choice" data-value="natural-portrait" aria-pressed="false">自然写真</button><button type="button" class="draw-choice" data-value="studio-portrait" aria-pressed="false">棚拍</button><button type="button" class="draw-choice" data-value="fashion-editorial" aria-pressed="false">时尚</button><button type="button" class="draw-choice" data-value="cinematic-portrait" aria-pressed="false">电影人像</button><button type="button" class="draw-choice" data-value="casual-photo" aria-pressed="false">随手拍</button><button type="button" class="draw-choice" data-value="pro-photo" aria-pressed="false">专业摄影</button><button type="button" class="draw-choice" data-value="cinematic" aria-pressed="false">电影感</button><button type="button" class="draw-choice" data-value="none" aria-pressed="false">通用</button><button type="button" class="draw-choice" data-value="anime" aria-pressed="false">动漫</button><button type="button" class="draw-choice" data-value="cute-anime" aria-pressed="false">萌系</button><button type="button" class="draw-choice" data-value="digital-painting" aria-pressed="false">数字绘画</button><button type="button" class="draw-choice" data-value="oil" aria-pressed="false">油画</button><button type="button" class="draw-choice" data-value="watercolor" aria-pressed="false">水彩</button><button type="button" class="draw-choice" data-value="pencil" aria-pressed="false">素描</button><button type="button" class="draw-choice" data-value="cartoon" aria-pressed="false">卡通</button><button type="button" class="draw-choice" data-value="fantasy" aria-pressed="false">奇幻</button></div><button type="button" id="drawMore" class="draw-more" aria-expanded="false">更多风格</button></fieldset>
+ <fieldset class="draw-field"><legend>比例</legend><div id="drawShape" class="draw-choices draw-shape-options" data-value="portrait" role="group" aria-label="图片比例"><button type="button" class="draw-choice" data-value="square" aria-pressed="false">1:1</button><button type="button" class="draw-choice active" data-value="portrait" aria-pressed="true">3:4</button><button type="button" class="draw-choice" data-value="portrait916" aria-pressed="false">9:16</button><button type="button" class="draw-choice" data-value="landscape" aria-pressed="false">4:3</button><button type="button" class="draw-choice" data-value="landscape169" aria-pressed="false">16:9</button></div></fieldset>
+ <fieldset class="draw-field"><legend>数量</legend><div id="drawCount" class="draw-choices draw-count-options" data-value="1" role="group" aria-label="生成数量"><button type="button" class="draw-choice active" data-value="1" aria-pressed="true">1 张</button><button type="button" class="draw-choice" data-value="2" aria-pressed="false">2 张</button><button type="button" class="draw-choice" data-value="4" aria-pressed="false">4 张</button></div></fieldset>
+ </div>
+ <div id="videoSettings" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">视频可能按秒收费，必须使用自己的 Grok API Key，并明确确认费用。</p><label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok 额度，可能产生费用。</label></div>
   <div class="draw-main-action">
    <button class="primary full" id="createButton">生成免费图片</button>
    <button type="button" class="outline" id="drawCancel" hidden>停止查询</button>
@@ -225,5 +221,9 @@
   <div class="media-preview" id="mediaPreview"></div>
   <button id="refreshVideo" class="outline full" hidden>查询视频任务</button>
  </dialog>
-</body>
+<div id="imageViewer" class="image-viewer" hidden role="dialog" aria-modal="true" aria-label="图片查看" tabindex="-1">
+ <div class="iv-header"><span id="ivCounter"></span><button type="button" id="ivClose" aria-label="关闭图片">×</button></div>
+ <div id="ivStage" class="iv-stage" tabindex="0" aria-label="双击放大、左右切换、下滑关闭"><img id="ivImage" alt="图片预览" draggable="false"></div>
+ <div class="iv-footer"><button id="ivPrev" type="button" aria-label="上一张">‹</button><div id="ivThumbs" class="iv-thumbs" aria-label="缩略图"></div><button id="ivNext" type="button" aria-label="下一张">›</button></div>
+ </div></body>
 </html>
