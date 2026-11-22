@@ -614,7 +614,7 @@ async function revealCompletedReply(row,reply){
  });
 }
 
-function appendMessage(role,content,model,existingRow=null){
+function appendMessage(role,content,model,existingRow=null,incomplete=false){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
  if(role==="user")row.dataset.sourceText=String(content||"");
  bubble.textContent=String(content||"");
@@ -646,6 +646,19 @@ function appendMessage(role,content,model,existingRow=null){
     const full=model.trim(),short=full.length>64?full.slice(0,62)+"…":full;
     const used=node("small","message-used-model","本次模型 · "+short);
     used.title="本次回复模型："+full;actions.append(used);
+   }
+   if(incomplete){
+    const notice=node("span","message-used-model","回复尚未结束");
+    const more=node("button","message-resend","继续回答");
+    more.type="button";more.setAttribute("aria-label","继续上一条未完成的回答");
+    more.addEventListener("click",()=>{
+     if(S.busy||S.workMode||S.freeToolsMode||!row.isConnected||!S.chatId)return;
+     const input=$("prompt");
+     if(input.value.trim()&&!confirm("替换未发送的草稿以继续回答？"))return;
+     input.value="请从上一条未完成的回答中断处继续写完，不要重复已经写出的内容。";
+     setComposerMode("text");settlePromptSize();void sendMessage();
+    });
+    actions.append(notice,more);
    }
    if(actions.childNodes.length)bubble.append(actions);
   }
@@ -1533,7 +1546,7 @@ async function sendMessage(){
    if(result.requestId)S.videoTask=result.requestId;
   }
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
-  if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading)}
+  if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete))}
   await fetchChats();void fetchMe();
  }catch(e){
   loading.remove();

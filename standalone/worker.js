@@ -308,6 +308,9 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   const system=history.filter(m=>m.role==="system").map(m=>m.content).join("\n\n");
   const turns=history.filter(m=>m.role==="user"||m.role==="assistant");
   body={model,max_tokens:maxTokens,messages:turns.length?turns:[{role:"user",content:"你好"}],...(system?{system}:{})};
+ }else if(provider==="groq"){
+  // Groq uses max_completion_tokens, not the deprecated max_tokens alias.
+  body={model,messages:history,max_completion_tokens:maxTokens,stream:false};
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
@@ -320,7 +323,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  if(streaming){
   if(!res.body)throw Error("上游没有返回流式数据");
   const reader=res.body.getReader(),decoder=new TextDecoder();
-  let buffer="",content="",upstreamModel=model,complete=false;
+  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null;
   while(!complete){
    const {done,value}=await reader.read();
    if(done)break;
@@ -335,6 +338,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
     let event;try{event=JSON.parse(data)}catch{continue}
     if(event.error)throw Error("模型流式回复中断");
     if(typeof event.model==="string")upstreamModel=event.model;
+    if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
     const delta=event.choices?.[0]?.delta?.content;
     const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
     if(token&&content.length<40000){
@@ -344,7 +348,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
    }
   }
   if(!content.trim())throw Error("服务商没有返回有效文字");
-  return {content:content.trim(),actualModel:upstreamModel};
+  return {content:content.trim(),actualModel:upstreamModel,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
  }
  const out=await res.json();
  const text=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("\n"):
@@ -352,7 +356,8 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  provider==="claude"?(out.content||[]).filter(x=>x.type==="text").map(x=>x.text||"").join("\n"):
  out.choices?.[0]?.message?.content;
  if(typeof text!=="string"||!text.trim())throw Error("服务商没有返回有效文字");
- return {content:truncate(text,40000),actualModel:out.model||model};
+ const reason=out?.choices?.[0]?.finish_reason||out?.stop_reason||out?.candidates?.[0]?.finishReason||"";
+ return {content:truncate(text,40000),actualModel:out.model||model,incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
 }
 // Storage uploads retain bounded protection; ordinary free text and work do not use daily quotas.
 async function uploadQuota(env,userId){
@@ -467,7 +472,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // When the upstream confirms almost no remaining budget, protect it until a later request.
   if(source.id==="vireonix"&&Number.isFinite(percent)&&percent<=1)
    await freeRouteFailure(env,source.id,429,{failures:0},null);
-  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),source:source.id};
+  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),source:source.id,incomplete:out?.choices?.[0]?.finish_reason==="length"||answer.length>40000};
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
  throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
@@ -543,7 +548,8 @@ async function chat(req,env,user,onDelta=null){
    result=await freeText(env,messages,mode,model);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
-   result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,750,onDelta);
+   const outputLimit=provider==="groq"&&model==="openai/gpt-oss-120b"?4096:750;
+    result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,outputLimit,onDelta);
   }
 
  }catch(e){
@@ -554,7 +560,7 @@ async function chat(req,env,user,onDelta=null){
  const stamp=Date.now();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",crypto.randomUUID(),chatId,user.id,"assistant",result.content,result.actualModel,stamp);
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,provider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider};
+ return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -565,7 +571,7 @@ function chatStream(req,env,user){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
-    send({type:"done",chatId:result.chatId,reply:result.reply,model:result.model,usedModel:result.usedModel,provider:result.provider});
+    send({type:"done",chatId:result.chatId,reply:result.reply,model:result.model,usedModel:result.usedModel,provider:result.provider,incomplete:result.incomplete});
    }catch(e){send({type:"error",error:e?.message||"回复未完成"})}
    finally{controller.close()}
   }
