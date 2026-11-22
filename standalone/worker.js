@@ -251,7 +251,7 @@ async function exchangeOpenRouter(body){
  if(typeof payload?.key!=="string"||!payload.key)throw Error("OpenRouter 没有返回授权密钥");
  return {ok:true,key:payload.key,provider:"openrouter"};
 }
-async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750){
+async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))throw Error("请先输入自己的 API Key");
@@ -276,10 +276,41 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
+ const streaming=typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
+ if(streaming){body.stream=true;headers.accept="text/event-stream"}
  let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.min(15000,Math.max(2000,timeoutMs)))})}
  catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
  if(res.status>=300&&res.status<400)throw Error("上游跳转已拦截");
  if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503});
+ if(streaming){
+  if(!res.body)throw Error("上游没有返回流式数据");
+  const reader=res.body.getReader(),decoder=new TextDecoder();
+  let buffer="",content="",upstreamModel=model,complete=false;
+  while(!complete){
+   const {done,value}=await reader.read();
+   if(done)break;
+   buffer+=decoder.decode(value,{stream:true});
+   if(buffer.length>350000)throw Error("上游回复超过流式安全上限");
+   let end;
+   while((end=buffer.indexOf("\n"))>=0){
+    const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);
+    if(!line.startsWith("data:"))continue;
+    const data=line.slice(5).trim();
+    if(data==="[DONE]"){complete=true;break}
+    let event;try{event=JSON.parse(data)}catch{continue}
+    if(event.error)throw Error("模型流式回复中断");
+    if(typeof event.model==="string")upstreamModel=event.model;
+    const delta=event.choices?.[0]?.delta?.content;
+    const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
+    if(token&&content.length<40000){
+     const piece=token.slice(0,40000-content.length);
+     content+=piece;onDelta(piece);
+    }
+   }
+  }
+  if(!content.trim())throw Error("服务商没有返回有效文字");
+  return {content:content.trim(),actualModel:upstreamModel};
+ }
  const out=await res.json();
  const text=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("\n"):
  provider==="openai"?(out.output_text||(out.output||[]).flatMap(o=>o.content||[]).map(x=>x.text||"").join("\n")):
@@ -401,7 +432,7 @@ async function freeText(env,messages,mode,preferred="free:auto"){
  throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
 }
 const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助手。区分事实、推断和未知，提出可验证的方法。不能假装已经联网检索。","imagePrompt":"你是图片提示词设计师。生成可直接使用的中英文画面提示词，包含主体、场景、镜头和风格。","group":"模拟虚构的多角色群聊，逐条标注说话人并维护设定。不得声称参与者是真人或真实群成员。","story":"你是中文小说创作助手，保持人物、时间线和视角一致，按照用户要求创作并支持接续。","character":"你是角色创作者，建立背景、外貌、性格、能力、目标和关系，保持一致。","adventure":"你是互动文字冒险主持人。保持状态，描述场景并等待玩家选择。","mentor":"你是学习导师。由浅入深解释原理，给出实例与练习，根据反馈调整。","debate":"你是辩论助手。公平展示正反两方论点、证据与弱点，不编造证据。","live":"你是直播策划助手，提供节目流程、直播脚本和互动问题，不声称已经真正开启直播。"});
-async function chat(req,env,user){
+async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
  const typed=truncate(body.message,8000).trim(),attachments=Array.isArray(body.attachments)?body.attachments:[];
@@ -470,7 +501,7 @@ async function chat(req,env,user){
    result=await freeText(env,messages,mode,model);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
-   result=await callExternal(provider,model,connected.key,messages,connected.consent===true);
+   result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,750,onDelta);
   }
 
  }catch(e){
@@ -485,6 +516,21 @@ async function chat(req,env,user){
  return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,provider};
 }
 
+/* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
+function chatStream(req,env,user){
+ const encoder=new TextEncoder();
+ const stream=new ReadableStream({
+  async start(controller){
+   const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
+   try{
+    const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
+    send({type:"done",chatId:result.chatId,reply:result.reply,model:result.model,provider:result.provider});
+   }catch(e){send({type:"error",error:e?.message||"回复未完成"})}
+   finally{controller.close()}
+  }
+ });
+ return new Response(stream,{headers:{"content-type":"text/event-stream; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff","x-accel-buffering":"no"}});
+}
 async function uploadFile(req,env,user){
  requireUser(user);
  if(!env.MEDIA)throw Object.assign(new Error("文件存储未配置"),{status:503});
@@ -523,12 +569,12 @@ async function avatarUpload(req,env,user){
  const file=(await upload.formData()).get("file");
  if(!(file instanceof File)||!file.size||file.size>1400000)return fail("请选择小于1.4MB的图片",400);
  if(!["image/jpeg","image/png","image/webp"].includes(file.type.toLowerCase()))return fail("只支持 JPEG、PNG、WebP 图片",400);
- await env.MEDIA.put(user.id+"/profile/avatar",file.stream(),{httpMetadata:{contentType:file.type},customMetadata:{name:"用户头像"}});
+ await env.MEDIA.put("profile-avatars/"+user.id,file.stream(),{httpMetadata:{contentType:file.type},customMetadata:{name:"用户头像"}});
  return response({ok:true});
 }
 async function avatarRead(env,user){
  requireUser(user);
- const obj=await env.MEDIA?.get(user.id+"/profile/avatar");
+ const obj=await env.MEDIA?.get("profile-avatars/"+user.id)||await env.MEDIA?.get(user.id+"/profile/avatar");
  if(!obj)return fail("尚未设置头像",404);
  const type=obj.httpMetadata?.contentType||"image/jpeg";
  if(!["image/jpeg","image/png","image/webp"].includes(type))return fail("头像格式无效",415);
@@ -1296,7 +1342,8 @@ async function main(req,env){
  if(fm&&req.method==="GET")return readFile(env,user,fm[1]);
  if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,env,user));
  if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,env,user));
- if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));
+ if(path==="/api/chat/stream"&&req.method==="POST")return chatStream(req,env,user);
+  if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));
 
  if(path==="/api/work/tasks"&&req.method==="GET"){
   const rows=(await env.DB.prepare("SELECT id,user_id,project_id,title,prompt,status,next_step,last_provider,last_model,last_error,attempts_json,created_at,updated_at,steps_json,routes_json,fallback_enabled FROM work_tasks WHERE user_id=? ORDER BY updated_at DESC LIMIT 25").bind(user.id).all()).results||[];

@@ -1024,6 +1024,27 @@ function exportWorkTask(){
  document.body.append(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 
+/* Streaming transport; only upstream emitted tokens are shown incrementally. */
+async function apiChatStream(payload,onDelta){
+ const resp=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream"},credentials:"same-origin",cache:"no-store",body:JSON.stringify(payload)});
+ if(!resp.ok){const data=await resp.json().catch(()=>null);throw Error(data?.error||"请求失败 HTTP "+resp.status)}
+ if(!resp.body)throw Error("浏览器不支持流式传输");
+ const reader=resp.body.getReader(),decoder=new TextDecoder();let buffer="",final=null;
+ for(;;){
+  const {done,value}=await reader.read();if(done)break;
+  buffer+=decoder.decode(value,{stream:true});if(buffer.length>200000)throw Error("回复流格式异常");
+  let end;while((end=buffer.indexOf("\n\n"))>=0){
+   const packet=buffer.slice(0,end);buffer=buffer.slice(end+2);
+   const data=packet.split("\n").find(line=>line.startsWith("data:"));if(!data)continue;
+   let event;try{event=JSON.parse(data.slice(5).trim())}catch{continue}
+   if(event.type==="delta"&&typeof event.text==="string")onDelta(event.text);
+   else if(event.type==="error")throw Error(event.error||"回复中断");
+   else if(event.type==="done")final=event;
+  }
+ }
+ if(!final?.chatId||typeof final.reply!=="string")throw Error("回复中断，未收到完整结果");
+ return final;
+}
 async function sendMessage(){
  if(S.workMode){await startWorkTask();return}
  if(S.composerMode==="image"){
@@ -1061,8 +1082,25 @@ async function sendMessage(){
  },1000):null;
  try{
   let result;
-  if(S.composerMode==="text")result=await api("/api/chat",{chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),
-   mode:S.code?"code":"general",creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined});
+  if(S.composerMode==="text"){
+    let pending="",scheduled=false,active=true;
+    const bubble=loadingBubble,viewport=$("conversation");
+    const onDelta=token=>{
+     if(!active||!loading.isConnected)return;
+     pending+=token;if(scheduled)return;scheduled=true;
+     requestAnimationFrame(()=>{
+      scheduled=false;if(!active||!loading.isConnected)return;
+      if(!pending)return;
+      if(bubble.querySelector(".thinking-status"))bubble.replaceChildren();
+      const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
+      bubble.textContent+=pending;pending="";
+      if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
+     });
+    };
+    try{result=await apiChatStream({chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),
+      mode:S.code?"code":"general",creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
+    finally{active=false;pending="";}
+   }
   else{
    if(S.composerMode==="video"&&!connected("grok")){openKeyPanel("grok");throw Error("请先连接 Grok 密钥");}
    const confirmed=S.composerMode==="video"?confirm("视频可能收费。确定使用自己的Grok API额度生成吗？"):false;
