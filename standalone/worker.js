@@ -749,7 +749,11 @@ async function submitKrea(req,env,user){
  const seed=Math.floor(Math.random()*2147483647);
  let primary=null;
  try{primary=await submitGradioImage(env,"krea",prompt,shape,style)}
- catch{/* As in IM auto mode, the next fixed source is RioShiina, not GLM. */}
+ catch(error){
+  // Unknown submission outcomes must never trigger a second provider request.
+  if(error?.uncertain)throw Object.assign(new Error("图片提交状态不确定，已停止重复提交，请稍后再试"),{status:503});
+  // Only an explicit upstream rejection permits advancing to the next source.
+ }
  const ref={v:5,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
  const id=crypto.randomUUID();
  // Bounded per-user cleanup of abandoned tasks (no global scan / scheduled job).
@@ -880,6 +884,17 @@ async function imageV4Pending(env,job,ref){
  await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(ref),Date.now(),job.id,job.user_id);
  return imagePending(job);
 }
+// A generated image is not a failed generation if its download is temporarily unavailable.
+async function imageV4Deliver(env,user,job,ref,url){
+ let result;
+ try{result=await saveKreaImage(env,user.id,url,ref.v===5)}
+ catch(error){
+  if(error?.message==="非可信图片来源"||(ref.deliveryFailures||0)>=2)
+   return imageV4Move(env,job,ref,ref.stage+1);
+  return imageV4Pending(env,job,{...ref,phase:"deliver",url,deliveryFailures:(ref.deliveryFailures||0)+1});
+ }
+ return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+}
 async function imageTransientComplete(env,job,localImageUrl){
  // Return the result once, delete job metadata, and never write image to R2.
  const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering'",job.id,job.user_id);
@@ -914,6 +929,8 @@ async function imageV4Status(env,user,job,ref){
     return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
    }catch{return imageV4Move(env,job,ref,ref.stage+1)}
   }
+  if(ref.phase==="deliver"&&typeof ref.url==="string")
+   return imageV4Deliver(env,user,job,ref,ref.url);
   if(ref.phase==="new"){
    if(stage==="rio"){
     // Match IM's RioShiina/ImageGen parameters, including async_execution and the Krea-2-Turbo model.
@@ -939,10 +956,7 @@ async function imageV4Status(env,user,job,ref){
    const status=String(task?.status||"").toLowerCase();
    if(["failed","error","cancelled","canceled"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    const url=findImageUrl(task?.result??task)||findImageUrl(step.data);
-   if(url){
-    const result=await saveKreaImage(env,user.id,url,ref.v===5);
-    return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
-   }
+   if(url)return imageV4Deliver(env,user,job,ref,url);
    if(!task||["complete","completed","success","succeeded","done"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    return imageV4Pending(env,job,{...ref,phase:"rio-poll",id:"",taskId:task.task_id});
   }
@@ -950,8 +964,7 @@ async function imageV4Status(env,user,job,ref){
   const state=await queryGradioImageEvent(env,stage,ref.id);
   if(state.status==="pending")return imageV4Pending(env,job,ref);
   if(state.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
-  const result=await saveKreaImage(env,user.id,state.url,ref.v===5);
-  return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+  return imageV4Deliver(env,user,job,ref,state.url);
  }catch(error){
   // No hidden loop, no parallel submits. A finished/failed stage advances once in IM order.
   return imageV4Move(env,job,ref,ref.stage+1);
