@@ -2329,14 +2329,16 @@ async function verifyKey(event){
   const rec=data.connection;
   if(!rec)throw Error("密钥保存失败");
   S.savedProviders[p]={model:rec.model||"",consent:!!rec.consent,verified:!!rec.verified,updatedAt:rec.updatedAt};
-  S.connected[p]=Array.isArray(data.models)?data.models:[];delete S.keys[p];
+  if(VIDEO_ONLY_PROVIDERS.has(p))delete S.connected[p];else S.connected[p]=Array.isArray(data.models)?data.models:[];
+  delete S.keys[p];
   if(rec.model&&!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn){
    S.provider=p;S.model=rec.model;
    S.modelTitle=p+" · "+(S.connected[p].find(m=>m.id===rec.model)?.name||rec.model);
    S.selectedFree=isFreeModel(p,rec.model);
    rememberChatModelSelection();
   }
-  S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
+  if(!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn)S.allowPaid=!!rec.consent;
+  updateModelTitle();refreshSourceChips();
   refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已保存，下次打开直接使用":(data.warning||"密钥已保存，请选择官方模型 ID");
   if(VIDEO_ONLY_PROVIDERS.has(p)||S.videoPendingKeyReturn){
    $("keyStatus").textContent=rec.consent?"视频密钥已加密保存并授权，可以返回视频页面。":"视频密钥已保存，但尚未授权收费调用。";
@@ -2494,6 +2496,7 @@ function wire(){
   });
  }
  $("videoConnectKey").addEventListener("click",()=>{S.videoPendingKeyReturn=true;hide("createDialog");openKeyPanel(S.videoProvider)});
+ $("keyDialog").addEventListener("close",()=>{S.videoPendingKeyReturn=false});
  if(VOICE_FEATURE_ENABLED)voiceWire();
 }
 function hideAttachMenu(){$("attachMenu").hidden=true}
