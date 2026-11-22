@@ -63,7 +63,53 @@
      <div class="work-model-ident"><span>工作专用模型</span><strong id="workSelectedModel">免费自动</strong><small>独立于聊天模型 · 仅用于工作任务</small></div>
      <button type="button" class="work-model-choose" id="workModelChoose"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span>选择工作模型</button>
     </div>
-    <details class="work-config" id="workConfig">
+    
+    <details id="workToolPanel" class="work-tool-panel">
+     <summary><strong>项目连接与实际操作</strong><small>GitHub · 数据库 · 提交 · 部署</small></summary>
+     <div class="work-tool-inner">
+      <div class="work-tool-grid">
+       <form id="workGithubForm" class="work-tool-card">
+        <h3>GitHub 仓库</h3><p id="workGithubInfo">未连接</p>
+        <label>仓库 owner/repo<input id="workGithubRepo" placeholder="owner/repo" required></label>
+        <label>工作分支<input id="workGithubBranch" value="main" required></label>
+        <label>GitHub 细粒度 Token<input id="workGithubToken" type="password" autocomplete="off" required></label>
+        <div class="work-tool-actions"><button class="outline" type="submit">验证并连接</button><button class="outline" type="button" id="workGithubDisconnect">断开</button></div>
+       </form>
+       <form id="workDbForm" class="work-tool-card">
+        <h3>Supabase 只读连接</h3><p id="workDbInfo">未连接</p>
+        <label>Project Ref<input id="workDbRef" placeholder="项目引用名" required></label>
+        <label>Publishable / anon key<input id="workDbToken" type="password" placeholder="禁止 service_role 密钥" autocomplete="off" required></label>
+        <div class="work-tool-actions"><button class="outline" type="submit">加密保存</button><button class="outline" type="button" id="workDbDisconnect">断开</button></div>
+       </form>
+      </div>
+      <section class="work-tool-card">
+       <h3>GitHub 文件 · 真实读取和修改</h3>
+       <div class="work-tool-actions"><input id="workRepoPath" placeholder="文件路径，例如 src/app.js" aria-label="仓库文件路径"><button class="outline" type="button" id="workRepoRead">读取文件</button><button class="outline" type="button" id="workRepoContext">加入任务上下文</button></div>
+       <div id="workRepoEntries" class="work-tool-actions"></div><pre id="workRepoPreview" class="work-code-preview" hidden></pre>
+       <label>修改定位（可选）<input id="workPatchAnchor" placeholder="函数名或原文片段"></label>
+       <label>补充修改要求<input id="workPatchInstruction" placeholder="只修复目标代码，不改变无关功能"></label>
+       <button type="button" class="outline" id="workPropose">让 AI 生成可审核的修改草稿</button>
+       <div id="workDraftArea" hidden>
+        <h3>修改审核</h3><p id="workDraftMeta"></p>
+        <div class="work-diff"><div><strong>原文</strong><pre id="workDiffOld" class="work-code-preview"></pre></div><div><strong>替换建议</strong><pre id="workDiffNew" class="work-code-preview"></pre></div></div>
+        <button id="workCommit" type="button" class="primary">确认后提交到 GitHub</button>
+       </div>
+      </section>
+      <section class="work-tool-card">
+       <h3>数据库表 · 只读查询</h3>
+       <div class="work-tool-actions"><input id="workDbTable" placeholder="输入表名" aria-label="数据库表名"><button type="button" class="outline" id="workDbPreview">查询前 5 行</button><button type="button" class="outline" id="workDbContext">加入任务上下文</button></div>
+       <pre id="workDbRows" class="work-code-preview" hidden></pre>
+      </section>
+      <section class="work-tool-card">
+       <h3>GitHub Actions · 部署核验</h3>
+       <p>仅触发已经存在的工作流，不会自动判定部署成功。</p>
+       <div class="work-tool-actions"><input id="workWorkflow" placeholder="已有工作流，例如 deploy.yml"><button class="outline" type="button" id="workDeploy">确认触发</button><button class="outline" type="button" id="workRuns">核对运行状态</button></div>
+       <div id="workRunResults"></div>
+      </section>
+      <p id="workToolStatus" role="status"></p>
+     </div>
+    </details>
+<details class="work-config" id="workConfig">
      <summary>高级任务配置 <span id="workConfigSummary">默认自动 · 点击自定义步骤与接力</span></summary>
      <div class="work-config-body">
       <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>

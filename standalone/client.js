@@ -1098,6 +1098,126 @@ function restoreWorkspaceRoute(){
  if(location.hash==="#tools")setFreeToolsMode(true);
  else if(location.hash==="#work")setWorkMode(true);
 }
+
+/* Real engineering work actions: no background writes, no simulated results. */
+const WK={connections:[],file:null,rows:null,proposal:null,busy:false};
+function wkStatus(v){$("workToolStatus").textContent=String(v||"")}
+function wkTask(){if(!S.workTaskId){wkStatus("请先新建或选择一个工作任务");return null}return S.workTaskId}
+async function wkConnections(){
+ if(!S.user)return;
+ try{
+  const d=await api("/api/work/integrations");WK.connections=d.integrations||[];
+  for(const [type,status,button,field] of [["github","workGithubInfo","workGithubDisconnect","workGithubRepo"],["supabase","workDbInfo","workDbDisconnect","workDbRef"]]){
+   const x=WK.connections.find(c=>c.kind===type);
+   $(status).textContent=x?"已连接 "+x.label+(x.branch?" · "+x.branch:" · 仅只读"):"未连接";
+   $(button).disabled=!x;
+   if(x&&!$(field).value)$(field).value=x.ref;
+  }
+ }catch(e){wkStatus(humanError(e))}
+}
+async function wkConnect(kind){
+ if(WK.busy)return;if(!S.user){show("authDialog");return}
+ WK.busy=true;wkStatus("正在验证并保存连接…");
+ const form=$(kind==="github"?"workGithubForm":"workDbForm"),b=form.querySelector('[type="submit"]');b.disabled=true;
+ try{
+  const payload=kind==="github"?{repo:$("workGithubRepo").value.trim(),branch:$("workGithubBranch").value.trim(),token:$("workGithubToken").value.trim()}:{ref:$("workDbRef").value.trim(),token:$("workDbToken").value.trim()};
+  const d=await api("/api/work/integrations/"+kind,payload);
+  form.querySelector('input[type="password"]').value="";WK.file=null;WK.proposal=null;wkShowProposal();
+  await wkConnections();wkStatus("已连接 "+d.label+"，凭据已加密保存");
+ }catch(e){wkStatus("连接失败："+humanError(e))}
+ finally{WK.busy=false;b.disabled=false}
+}
+async function wkDisconnect(kind){
+ if(WK.busy||!S.user)return;
+ if(!confirm("确认断开 "+kind+" 连接？已创建的任务记录会保留。"))return;
+ WK.busy=true;
+ try{
+  await api("/api/work/integrations/"+kind+"/disconnect",{});
+  WK.connections=WK.connections.filter(c=>c.kind!==kind);
+  if(kind==="github"){WK.file=null;WK.proposal=null;wkShowProposal()}
+  await wkConnections();wkStatus("连接已断开");
+ }catch(e){wkStatus(humanError(e))}finally{WK.busy=false}
+}
+async function wkReadRepo(){
+ if(WK.busy||!S.user)return;WK.busy=true;wkStatus("读取真实 GitHub 文件…");
+ try{
+  const d=await api("/api/work/repository?path="+encodeURIComponent($("workRepoPath").value.trim()));
+  WK.file=d.type==="file"?d:null;WK.proposal=null;wkShowProposal();
+  const list=$("workRepoEntries");list.replaceChildren();
+  if(d.type==="directory"){
+   for(const x of d.items||[]){const b=node("button","outline",(x.type==="dir"?"目录 · ":"文件 · ")+x.name);b.type="button";b.addEventListener("click",()=>{$("workRepoPath").value=x.path;void wkReadRepo()});list.append(b)}
+  }
+  $("workRepoPreview").hidden=d.type!=="file";$("workRepoPreview").textContent=d.type==="file"?d.text:"";
+  wkStatus(d.type==="file"?"已读取 "+d.repo+"/"+d.path+" · SHA "+d.sha.slice(0,9):"已列出 "+(d.items||[]).length+" 项");
+ }catch(e){WK.file=null;wkStatus("读取失败："+humanError(e))}finally{WK.busy=false}
+}
+async function wkReadDb(){
+ if(WK.busy||!S.user)return;WK.busy=true;wkStatus("正在执行 Supabase 匿名只读查询…");
+ try{
+  const d=await api("/api/work/database?table="+encodeURIComponent($("workDbTable").value.trim()));
+  WK.rows=d;$("workDbRows").hidden=false;$("workDbRows").textContent=JSON.stringify(d.rows,null,2);
+  wkStatus("已读取 "+d.table+" "+d.rows.length+" 行，未修改数据库");
+ }catch(e){WK.rows=null;$("workDbRows").hidden=true;wkStatus("查询失败："+humanError(e))}finally{WK.busy=false}
+}
+async function wkContext(kind){
+ const id=wkTask();if(!id||WK.busy)return;
+ const path=kind==="github"?WK.file?.path:WK.rows?.table;
+ if(!path){wkStatus("先读取真实文件或表，再加入任务上下文");return}
+ if(!confirm(kind==="github"?"把真实仓库文件加入任务上下文，供各 AI 共享？":"确认把查询返回的数据发送给后续 AI？请先检查是否包含敏感信息。"))return;
+ WK.busy=true;
+ try{const d=await api("/api/work/tasks/"+id+"/"+(kind==="github"?"repo-context":"db-context"),kind==="github"?{path}:{table:path});wkStatus("已加入任务上下文："+d.summary)}
+ catch(e){wkStatus(humanError(e))}finally{WK.busy=false}
+}
+function wkShowProposal(){
+ const p=WK.proposal;$("workDraftArea").hidden=!p;if(!p)return;
+ $("workDraftMeta").textContent=p.repo+" / "+p.path+" @ "+p.branch+" · "+p.baseSha.slice(0,9)+" · "+(p.status==="committed"?"已提交":"待审核");
+ $("workDiffOld").textContent=p.search;$("workDiffNew").textContent=p.replace;
+ $("workCommit").hidden=p.status!=="pending";
+}
+async function wkLoadProposal(){
+ if(!S.user||!S.workTaskId)return;
+ const id=S.workTaskId;
+ try{const d=await api("/api/work/tasks/"+id+"/proposal");if(id!==S.workTaskId)return;WK.proposal=d.proposal;wkShowProposal()}
+ catch{WK.proposal=null;wkShowProposal()}
+}
+async function wkPropose(){
+ const id=wkTask();if(!id||WK.busy)return;if(!WK.file){wkStatus("先选择要修改的 GitHub 文本文件");return}
+ WK.busy=true;$("workPropose").disabled=true;wkStatus("AI 正在分析真实文件并生成局部修改草稿…");
+ try{
+  const d=await api("/api/work/tasks/"+id+"/propose",{path:WK.file.path,anchor:$("workPatchAnchor").value.trim(),instruction:$("workPatchInstruction").value.trim()});
+  WK.proposal=d.proposal;wkShowProposal();wkStatus("生成了真实文件修改草稿；尚未写入仓库，请审核原文与替换内容");
+ }catch(e){wkStatus("AI 修改未完成："+humanError(e))}finally{WK.busy=false;$("workPropose").disabled=false}
+}
+async function wkCommit(){
+ const id=wkTask(),p=WK.proposal;if(!id||!p||p.status!=="pending"||WK.busy)return;
+ if(!confirm("确认把这处修改提交到 "+p.repo+" 的 "+p.branch+" 分支？\n文件："+p.path+"\n仅提交审核的内容。"))return;
+ WK.busy=true;$("workCommit").disabled=true;wkStatus("检查远程 SHA 并提交单个文件…");
+ try{
+  const r=await api("/api/work/tasks/"+id+"/commit",{confirm:true,baseSha:p.baseSha});
+  p.status="committed";p.commitSha=r.sha;wkShowProposal();wkStatus("GitHub 已确认提交 "+r.sha+"；还没有运行测试或部署");
+  const a=node("a","","查看实际提交 "+r.sha.slice(0,9));a.href=r.url;a.target="_blank";a.rel="noopener noreferrer";$("workRunResults").replaceChildren(a);
+  await selectWorkTask(id);
+ }catch(e){wkStatus("提交未确认："+humanError(e))}
+ finally{WK.busy=false;$("workCommit").disabled=WK.proposal?.status!=="pending"}
+}
+async function wkDeploy(){
+ const id=wkTask();if(!id||WK.busy)return;
+ const workflow=$("workWorkflow").value.trim();if(!workflow){wkStatus("请输入仓库已有的 workflow_dispatch 工作流文件名");return}
+ if(!confirm("确认触发 "+workflow+"？这可能执行正式部署或产生费用。触发不代表部署成功。"))return;
+ WK.busy=true;wkStatus("正在触发 GitHub Actions…");
+ try{const d=await api("/api/work/tasks/"+id+"/deploy",{confirm:true,workflow});wkStatus("仅已触发工作流，请检查实际运行状态");const a=node("a","","查看 GitHub Actions");a.href=d.url;a.target="_blank";a.rel="noopener noreferrer";$("workRunResults").replaceChildren(a)}
+ catch(e){wkStatus("未确认触发："+humanError(e))}finally{WK.busy=false}
+}
+async function wkRuns(){
+ const id=wkTask();if(!id||WK.busy)return;WK.busy=true;wkStatus("核对实际 GitHub Actions 运行结果…");
+ try{
+  const d=await api("/api/work/tasks/"+id+"/runs"),target=$("workRunResults");target.replaceChildren();
+  for(const r of d.runs||[]){const a=node("a","",(r.name||"workflow")+" · "+r.status+(r.conclusion?" · "+r.conclusion:""));a.href=r.url;a.target="_blank";a.rel="noopener noreferrer";target.append(a)}
+  if(!(d.runs||[]).length)target.append(node("span","","暂无运行记录"));
+  wkStatus("以上是 GitHub 返回的真实执行状态");
+ }catch(e){wkStatus(humanError(e))}finally{WK.busy=false}
+}
+
 const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
  setFreeToolsMode(false);S.workMode=!!on;
@@ -1105,6 +1225,7 @@ function setWorkMode(on){
   if(!S.workStages.length)resetWorkPlan();
   $("workConfig").open=false;renderWorkEditor();void loadCatalog();
   setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;
+  void wkConnections();
   $("prompt").placeholder="描述要完成的工作任务…";
   hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
  }else{
@@ -1171,6 +1292,7 @@ async function selectWorkTask(id){
  try{
   const d=await api("/api/work/tasks/"+id);S.workTaskId=id;S.workDetail=d;
   loadWorkEditor(d.task);$("workConfig").open=false;renderWorkDetail();renderWorkTasks();
+  void wkLoadProposal();
  }catch(e){$("workState").textContent=humanError(e)}
 }
 async function startWorkTask(){
@@ -1863,6 +1985,20 @@ function wire(){
  $("workStop").addEventListener("click",()=>void stopWorkTask());
  $("workDelete").addEventListener("click",()=>void deleteWorkTask());
  $("workExport").addEventListener("click",exportWorkTask);
+
+ $("workGithubForm").addEventListener("submit",e=>{e.preventDefault();void wkConnect("github")});
+ $("workDbForm").addEventListener("submit",e=>{e.preventDefault();void wkConnect("supabase")});
+ $("workGithubDisconnect").addEventListener("click",()=>void wkDisconnect("github"));
+ $("workDbDisconnect").addEventListener("click",()=>void wkDisconnect("supabase"));
+ $("workRepoRead").addEventListener("click",()=>void wkReadRepo());
+ $("workDbPreview").addEventListener("click",()=>void wkReadDb());
+ $("workRepoContext").addEventListener("click",()=>void wkContext("github"));
+ $("workDbContext").addEventListener("click",()=>void wkContext("supabase"));
+ $("workPropose").addEventListener("click",()=>void wkPropose());
+ $("workCommit").addEventListener("click",()=>void wkCommit());
+ $("workDeploy").addEventListener("click",()=>void wkDeploy());
+ $("workRuns").addEventListener("click",()=>void wkRuns());
+
  $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq")});
  $("imageQuick").addEventListener("click",()=>{hide("modelDialog");openCreate();$("toolTray").hidden=true});
  $("navFiles").addEventListener("click",()=>void openFiles());
