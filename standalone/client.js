@@ -218,6 +218,10 @@ const KEY_SITES={
  doubao:{url:"https://console.volcengine.com/ark/region:cn-beijing/apikey",name:"获取豆包 / 方舟密钥"},
  qianfan:{url:"https://console.bce.baidu.com/qianfan/overview",name:"获取百度千帆密钥"},
  hunyuan:{url:"https://console.cloud.tencent.com/hunyuan",name:"获取腾讯混元密钥"},
+ stepfun:{url:"https://platform.stepfun.com/",name:"获取阶跃星辰 API Key"},
+ xiaomi:{url:"https://platform.xiaomimimo.com/",name:"获取小米 MiMo API Key"},
+ longcat:{url:"https://longcat.chat/platform/",name:"获取美团 LongCat API Key"},
+ baichuan:{url:"https://platform.baichuan-ai.com/",name:"获取百川智能 API Key"},
  yandex:{url:"https://console.yandex.cloud/",name:"打开 Yandex Cloud API 密钥设置"},
  gigachat:{url:"https://developers.sber.ru/",name:"获取 GigaChat 授权密钥"}
 };
@@ -833,10 +837,10 @@ async function uploadSelected(files){
 const WORK_PROVIDER_NAMES={
  free:"平台免费接口",openrouter:"OpenRouter API",groq:"Groq API",cerebras:"Cerebras API",openai:"OpenAI API",claude:"Anthropic Claude API",novai:"Nova AI · 多模型",novai_pro:"NovAI · 中国模型",
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
- minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API",yandex:"Yandex AI Studio · 俄罗斯",gigachat:"GigaChat · 俄罗斯"
+ minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API",stepfun:"阶跃星辰 API",xiaomi:"小米 MiMo API",longcat:"美团 LongCat API",baichuan:"百川智能 API",yandex:"Yandex AI Studio · 俄罗斯",gigachat:"GigaChat · 俄罗斯"
 };
 /* Work-task models are independent from the chat model and its selector. */
-const WORK_PROVIDER_SHORT={free:"免费自动",auto:"免费自动",groq:"Groq",openrouter:"OpenRouter",deepseek:"DeepSeek",yandex:"YandexGPT",gigachat:"GigaChat",qwen:"千问",zhipu:"智谱",kimi:"Kimi",minimax:"MiniMax",siliconflow:"硅基流动",doubao:"豆包",qianfan:"千帆",hunyuan:"混元",novai:"NovaAI",novai_pro:"NovaAI 中国",openai:"OpenAI",claude:"Claude",grok:"Grok",gemini:"Gemini",cerebras:"Cerebras"};
+const WORK_PROVIDER_SHORT={free:"免费自动",auto:"免费自动",groq:"Groq",openrouter:"OpenRouter",deepseek:"DeepSeek",yandex:"YandexGPT",gigachat:"GigaChat",qwen:"千问",zhipu:"智谱",kimi:"Kimi",minimax:"MiniMax",siliconflow:"硅基流动",doubao:"豆包",qianfan:"千帆",hunyuan:"混元",stepfun:"阶跃",xiaomi:"MiMo",longcat:"LongCat",baichuan:"百川",novai:"NovaAI",novai_pro:"NovaAI 中国",openai:"OpenAI",claude:"Claude",grok:"Grok",gemini:"Gemini",cerebras:"Cerebras"};
 function currentWorkStage(){
  const index=Math.min(S.workDetail?.task?.nextStep||0,Math.max(0,S.workStages.length-1));
  return {index,step:S.workStages[index]||{provider:"auto",model:""}};
@@ -908,7 +912,7 @@ function renderWorkAgentCatalog(){
  const regions=["推荐","中国","国际","俄罗斯"];
  const regionMap={
   推荐:["free","groq","openrouter","deepseek","yandex","gigachat"],
-  中国:["free","qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","novai_pro"],
+  中国:["free","qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","stepfun","xiaomi","longcat","baichuan","novai_pro"],
   国际:["free","groq","openrouter","cerebras","openai","claude","novai","grok","gemini"],
   俄罗斯:["yandex","gigachat"]
  };
@@ -1126,7 +1130,7 @@ async function saveWorkConfiguration(){
 }
 function initDomesticProviderLinks(){
  const el=$("domesticProviderList");el.replaceChildren();
- for(const id of ["deepseek","zhipu","kimi","qwen","minimax","siliconflow","doubao","qianfan","hunyuan","novai","novai_pro"]){
+ for(const id of ["qwen","deepseek","zhipu","kimi","minimax","doubao","qianfan","hunyuan","stepfun","xiaomi","longcat","baichuan","siliconflow","novai","novai_pro"]){
   const b=node("button","domestic-provider",WORK_PROVIDER_NAMES[id]+(connected(id)?" · 已连接":""));
   b.type="button";b.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(id)});
   el.append(b);
@@ -1580,12 +1584,53 @@ async function loadCatalog(){
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
   if(S.workMode)workModelHints();
-  $("modelSummary").textContent="免费自动已就绪 · 可选连接个人模型";
+  const chinaCount=S.remoteModels.filter(m=>domesticGroupFor(m)).length;
+   $("modelSummary").textContent="公开目录 "+S.remoteModels.length+" 个 · 国内 "+chinaCount+" 个 · 需对应 API 授权";
  }catch(e){
   $("modelSummary").textContent="免费自动";
   S.freeModels=[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}];
  }
  renderModels();
+}
+// Public catalog ownership is independent of the API gateway used to invoke the model.
+const CHINA_MODEL_GROUPS=[
+ {id:"qwen",name:"阿里千问",api:"qwen",authors:["qwen","alibaba"]},
+ {id:"deepseek",name:"DeepSeek",api:"deepseek",authors:["deepseek"]},
+ {id:"zhipu",name:"智谱 GLM",api:"zhipu",authors:["z-ai","zhipu","zhipuai"]},
+ {id:"kimi",name:"Kimi 月之暗面",api:"kimi",authors:["moonshotai","moonshot"]},
+ {id:"minimax",name:"MiniMax",api:"minimax",authors:["minimax"]},
+ {id:"doubao",name:"字节豆包",api:"doubao",authors:["bytedance-seed","bytedance"]},
+ {id:"qianfan",name:"百度文心",api:"qianfan",authors:["baidu"]},
+ {id:"hunyuan",name:"腾讯混元",api:"hunyuan",authors:["tencent"]},
+ {id:"stepfun",name:"阶跃星辰",api:"stepfun",authors:["stepfun"]},
+ {id:"xiaomi",name:"小米 MiMo",api:"xiaomi",authors:["xiaomi"]},
+ {id:"longcat",name:"美团 LongCat",api:"longcat",authors:["meituan"]},
+ {id:"baichuan",name:"百川智能",api:"baichuan",authors:["baichuan"]},
+ {id:"kwaipilot",name:"快手 KAT",authors:["kwaipilot","kuaishou"]},
+ {id:"opengvlab",name:"上海 AI Lab",authors:["opengvlab"]},
+ {id:"yi",name:"零一万物 Yi",authors:["01-ai","01ai"]},
+ {id:"iflytek",name:"讯飞星火",authors:["iflytek"]},
+ {id:"siliconflow",name:"硅基流动",api:"siliconflow",authors:[]}
+];
+function domesticGroupFor(m){
+ const author=String(m.id||"").toLowerCase().split("/")[0];
+ const provider=String(m.provider||"").toLowerCase();
+ return CHINA_MODEL_GROUPS.find(group=>group.authors.includes(author)||group.api===provider)||null;
+}
+function renderChinaBrands(models){
+ const target=$("modelRegionLinks"),chinese=S.source==="family:china"||S.source.startsWith("family:cn:");
+ target.hidden=!chinese;target.replaceChildren();if(!chinese)return;
+ for(const group of CHINA_MODEL_GROUPS){
+  const count=models.filter(m=>domesticGroupFor(m)?.id===group.id).length;
+  const selected=S.source==="family:cn:"+group.id;
+  const button=node("button","model-provider-card"+(selected?" selected":""));
+  button.type="button";button.setAttribute("aria-pressed",String(selected));
+  button.append(node("strong","",group.name),node("small","",count?count+" 个真实目录模型":group.api?"连接官方 API":"暂无公开模型"));
+  if(count)button.addEventListener("click",()=>activateSource("family:cn:"+group.id));
+  else if(group.api)button.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(group.api)});
+  else button.disabled=true;
+  target.append(button);
+ }
 }
 function allModels(){
  const result=[...S.freeModels,...S.remoteModels],seen=new Set(result.map(m=>m.provider+"\0"+m.id));
@@ -1600,7 +1645,7 @@ function allModels(){
 }
 function modelMatches(m){
  const query=S.query.trim().toLowerCase();
- const t=(m.name+" "+m.id+" "+m.provider+" "+(m.description||"")).toLowerCase();
+ const owner=domesticGroupFor(m);const t=(m.name+" "+m.id+" "+m.provider+" "+(m.description||"")+" "+(owner?.name||"")).toLowerCase();
  if(query&&!t.includes(query))return false;
  if(S.source.startsWith("family:")){
   const family=S.source.slice(7),id=(m.id+" "+m.name).toLowerCase();
@@ -1608,7 +1653,9 @@ function modelMatches(m){
    grok:/grok|x-ai\/|xai\//,gemini:/gemini|google\//,qwen:/qwen|alibaba|tongyi/,
    novai:/novai|nova-ai|novaiapi/,deepseek:/deepseek/,
    russian:/yandex|gigachat|giga-chat|sber|alice-ai|\.su\//};
-  const groupMatch=family==="russian"&&m.provider==="novai"
+  const groupMatch=family==="china"&&Boolean(owner)
+   ||family.startsWith("cn:")&&owner?.id===family.slice(3)
+   ||family==="russian"&&m.provider==="novai"
    ||family==="international"&&["openrouter","openai","claude","grok","gemini","groq","cerebras","novai","novai_pro"].includes(m.provider)
    ||re[family]?.test(id);
   if(!groupMatch)return false;
@@ -1627,14 +1674,15 @@ function modelIsSelected(m){
 }
 function renderModels(){
  $("modelRegionLinks").hidden=true;updateChatActiveModel();
- const visible=allModels().filter(modelMatches);
+ const models=allModels();renderChinaBrands(models);
+ const visible=models.filter(modelMatches);
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
   const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model)};
   if(modelMatches(active))visible.unshift(active);
  }
  visible.sort((a,b)=>Number(modelIsSelected(b))-Number(modelIsSelected(a)));
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*30);
- $("modelCount").textContent=count+" 个模型 · 当前："+(S.provider==="free"?"免费自动":WORK_PROVIDER_SHORT[S.provider]||S.provider);
+ $("modelCount").textContent=(S.source==="family:china"||S.source.startsWith("family:cn:")?"国内真实目录 · ":"")+count+" 个模型 · 当前："+(S.provider==="free"?"免费自动":WORK_PROVIDER_SHORT[S.provider]||S.provider);
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList");list.replaceChildren();
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));return}
@@ -1645,7 +1693,8 @@ function renderModels(){
   const saved=S.savedProviders[via],verified=!!saved?.verified;
   const tag=node("span","price-tag"+(item.free?" free":""),selected?"✓ 当前使用":via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
   title.append(tag);
-  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":"服务商："+(WORK_PROVIDER_SHORT[via]||via)+" · 模型 ID："+item.id));
+  const owner=domesticGroupFor(item);
+  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+(WORK_PROVIDER_SHORT[via]||via)+" · ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
   const button=node("button","model-action",!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!actionable||selected;

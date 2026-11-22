@@ -32,6 +32,10 @@ const HOSTS={
  doubao:{host:"ark.cn-beijing.volces.com",path:"/api/v3/chat/completions",models:"/api/v3/models"},
  qianfan:{host:"qianfan.baidubce.com",path:"/v2/chat/completions",models:"/v2/models"},
  hunyuan:{host:"api.hunyuan.cloud.tencent.com",path:"/v1/chat/completions",models:"/v1/models"},
+ stepfun:{host:"api.stepfun.com",path:"/v1/chat/completions",models:"/v1/models"},
+ xiaomi:{host:"api.xiaomimimo.com",path:"/v1/chat/completions",models:"/v1/models"},
+ longcat:{host:"api.longcat.chat",path:"/openai/v1/chat/completions",models:"/openai/v1/models"},
+ baichuan:{host:"api.baichuan-ai.com",path:"/v1/chat/completions",models:"/v1/models"},
  yandex:{host:"ai.api.cloud.yandex.net",path:"/v1/chat/completions",models:"/v1/models"},
  gigachat:{host:"api.giga.chat",path:"/v1/chat/completions",models:"/v1/models"}
 };
