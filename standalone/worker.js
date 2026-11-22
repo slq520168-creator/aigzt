@@ -13,11 +13,7 @@ const VERSION="aigzt-cf-5.6-premium-pwa";
 const USER_DAILY=30;
 const SITE_DAILY=180;
 const FREE_MODELS=[
- {id:"free:auto",name:"免费自动 · 额度接力",provider:"free",type:"text",free:true,isRoute:true},
- {id:"free:vireonix",name:"Vireonix · 无密钥免费",provider:"free",type:"text",free:true,isRoute:true},
- {id:"free:vexa",name:"Vexa · 免费备用（可能繁忙）",provider:"free",type:"text",free:true,isRoute:true},
- {id:"free:openrouter",name:"OpenRouter · 免费模型自动路由",provider:"free",type:"text",free:true,isRoute:true},
- {id:"free:groq",name:"Groq · GPT-OSS 20B 免费额度",provider:"free",type:"text",free:true,isRoute:true}
+ {id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true,isRoute:true}
 ];
 const HOSTS={
  openrouter:{host:"openrouter.ai",path:"/api/v1/chat/completions",models:"/api/v1/models"},
@@ -121,7 +117,7 @@ function validModelIdentifier(id){
 function requireModelId(model){if(!validModelIdentifier(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
 async function listModels(env){
- const availableFree=FREE_MODELS.filter(m=>(m.id!=="free:groq"||Boolean(env.GROQ_FREE_KEY))&&(m.id!=="free:openrouter"||Boolean(env.OPENROUTER_FREE_KEY)));
+ const availableFree=FREE_MODELS;
  try{
  const url="https://openrouter.ai/api/v1/models";
  const req=new Request(url,{headers:{"Accept":"application/json"}});
@@ -347,22 +343,18 @@ async function freeRouteRecover(env,source,old){
  try{await dbRun(env.DB,"UPDATE free_provider_state SET cool_until=0,failures=0,last_status=200,updated_at=? WHERE provider=?",Date.now(),source)}catch{}
 }
 async function freeRouteCatalog(env){
- const state=await freeRouteStates(env),now=Date.now(),available=new Set(freeSources(env).map(x=>x.id));
- return FREE_MODELS.filter(m=>m.id==="free:auto"||available.has(m.id.slice(5))).map(m=>{
-  const p=m.id.slice(5),cool=state.get(p);
-  return {...m,available:p==="auto"||!cool||cool.cool_until<=now,coolUntil:cool?.cool_until>now?cool.cool_until:null,
-   status:p==="auto"?"自动接力":cool?.cool_until>now?"冷却中":"可尝试"};
- });
+ // Do not expose provider names, failures or cooldowns to the public UI.
+ return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
 async function freeText(env,messages,mode,preferred="free:auto"){
  const system=mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。";
  const history=messages.slice(-14).map(m=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:truncate(m.body,3000)}));
- const all=freeSources(env),preferredId=String(preferred||"free:auto").split(":")[1];
+ const all=freeSources(env);
  const states=await freeRouteStates(env),now=Date.now();
- const ordered=preferredId==="auto"||!FREE_ROUTER_SOURCE_IDS.includes(preferredId)?all:[...all.filter(s=>s.id===preferredId),...all.filter(s=>s.id!==preferredId)];
- const available=ordered.filter(s=>(states.get(s.id)?.cool_until||0)<=now);
+ // Free route choice never reaches the UI; failover order belongs exclusively to the server.
+ const available=all.filter(s=>(states.get(s.id)?.cool_until||0)<=now);
  if(!available.length)throw Object.assign(new Error("当前免费来源全部在限额冷却中，请稍后重试"),{status:429});
- const errors=[],attempts=Math.min(3,available.length);
+ const errors=[],attempts=available.length;
  for(const source of available.slice(0,attempts)){
   const sourceState=states.get(source.id),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
   const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n").slice(-2800);
@@ -405,7 +397,8 @@ async function freeText(env,messages,mode,preferred="free:auto"){
    await freeRouteFailure(env,source.id,429,{failures:0},null);
   return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),source:source.id};
  }
- throw Object.assign(new Error(errors.length?"免费来源暂不可用（"+errors.slice(0,3).join("；")+"）":"免费额度暂时不可用"),{status:503});
+ // Keep individual error details in the server-side cooldown table, not in UI responses.
+ throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
 }
 const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助手。区分事实、推断和未知，提出可验证的方法。不能假装已经联网检索。","imagePrompt":"你是图片提示词设计师。生成可直接使用的中英文画面提示词，包含主体、场景、镜头和风格。","group":"模拟虚构的多角色群聊，逐条标注说话人并维护设定。不得声称参与者是真人或真实群成员。","story":"你是中文小说创作助手，保持人物、时间线和视角一致，按照用户要求创作并支持接续。","character":"你是角色创作者，建立背景、外貌、性格、能力、目标和关系，保持一致。","adventure":"你是互动文字冒险主持人。保持状态，描述场景并等待玩家选择。","mentor":"你是学习导师。由浅入深解释原理，给出实例与练习，根据反馈调整。","debate":"你是辩论助手。公平展示正反两方论点、证据与弱点，不编造证据。","live":"你是直播策划助手，提供节目流程、直播脚本和互动问题，不声称已经真正开启直播。"});
 async function chat(req,env,user){
@@ -429,9 +422,9 @@ async function chat(req,env,user){
  if(!message.trim())throw Error("请输入消息或添加附件");
  const requestedModel=String(body.model||FREE_MODELS[0].id);
  // Existing chat selections from the old dev-only Cehpoint source use the new free auto router.
- const model=provider==="free"&&requestedModel==="free:cehpoint"?"free:auto":requestedModel;
+ const model=provider==="free"&&/^free:(?:vireonix|vexa|openrouter|groq|cehpoint)$/.test(requestedModel)?"free:auto":requestedModel;
  requireModelId(model);
- if(provider==="free"&&(!FREE_MODELS.some(m=>m.id===model)||(model==="free:groq"&&!env.GROQ_FREE_KEY)))throw Error("此免费线路尚未连接");
+ if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("免费模型选择无效");
  if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
  let chatId=typeof body.chatId==="string"?body.chatId:null;
  const projectId=typeof body.projectId==="string"&&/^[0-9a-f-]{36}$/.test(body.projectId)?body.projectId:null;
@@ -487,8 +480,8 @@ async function chat(req,env,user){
  }
  const stamp=Date.now();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",crypto.randomUUID(),chatId,user.id,"assistant",result.content,result.actualModel,stamp);
- await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,reply:result.content,model:result.actualModel,provider};
+ await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,provider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
+ return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,provider};
 }
 
 async function uploadFile(req,env,user){

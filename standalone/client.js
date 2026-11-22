@@ -456,7 +456,7 @@ function appendMessage(role,content,model){
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
 
-  if(model)bubble.append(node("div","message-model",model));
+  if(model&&!/^free:(?:auto|vireonix|vexa|openrouter|groq|cehpoint)$|^(?:vireonix|vexa|groq)\//i.test(model))bubble.append(node("div","message-model",model));
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   if(lines.length>1){
@@ -501,14 +501,12 @@ async function loadChat(id){
   for(const m of v.messages)appendMessage(m.role,m.body,m.model);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
-  if(c&&c.model&&c.provider){S.model=c.provider==="cloudflare"?"free:auto":c.model;S.provider=c.provider==="cloudflare"?"free":c.provider;S.modelTitle=c.provider==="cloudflare"?"免费自动":c.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);S.selectedFree=isFreeModel(S.provider,S.model);updateModelTitle()}
+  if(c&&c.model&&c.provider){S.provider=["free","cloudflare"].includes(c.provider)?"free":c.provider;S.model=S.provider==="free"?"free:auto":c.model;S.modelTitle=S.provider==="free"?"免费自动":c.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);S.selectedFree=isFreeModel(S.provider,S.model);updateModelTitle()}
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
 function updateModelTitle(){
- let label=S.modelTitle;
- if(S.provider==="free"&&!label.includes("免费"))label="免费 · "+label;
- $("modelTitle").textContent=label;
+ $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
 }
 function setModel(row){
  if(row.type!=="text"){
@@ -523,8 +521,8 @@ function setModel(row){
   $("keyStatus").textContent="获取并保存 "+via+" 的 API Key 后选择模型";
   return;
  }
- S.provider=via;S.model=row.id;S.modelTitle=row.name||row.id;
- S.allowPaid=Boolean(S.savedProviders[via]?.consent);S.selectedFree=isFreeModel(via,row.id);
+ S.provider=via;S.model=via==="free"?"free:auto":row.id;S.modelTitle=via==="free"?"免费自动":row.name||row.id;
+ S.allowPaid=Boolean(S.savedProviders[via]?.consent);S.selectedFree=isFreeModel(via,S.model);
  if(S.savedProviders[via])void api("/api/connections/"+via+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
  updateModelTitle();hide("modelDialog");flashError("");
 }
@@ -797,7 +795,7 @@ function initDomesticProviderLinks(){
 
 
 const FREE_CREATIVE_MODES=[{"id":"research","name":"研究","icon":"brain-circuit","placeholder":"输入研究主题","action":"chat"},{"id":"imagePrompt","name":"图片提示","icon":"image","placeholder":"描述想画的内容","action":"chat"},{"id":"group","name":"群聊模拟","icon":"message-circle","placeholder":"输入虚构角色聊天主题","action":"chat"},{"id":"story","name":"故事","icon":"square-pen","placeholder":"输入故事主题","action":"chat"},{"id":"character","name":"角色创作者","icon":"circle-user","placeholder":"描述角色设定","action":"chat"},{"id":"code","name":"编程助手","icon":"code-2","placeholder":"输入编程需求","action":"code"},{"id":"adventure","name":"文字冒险","icon":"compass","placeholder":"输入冒险设定","action":"chat"},{"id":"mentor","name":"导师","icon":"brain-circuit","placeholder":"输入学习主题","action":"chat"},{"id":"debate","name":"辩论","icon":"message-circle","placeholder":"输入辩论主题","action":"chat"},{"id":"image","name":"免费作图","icon":"image","placeholder":"","action":"image"},{"id":"live","name":"直播策划","icon":"mic","placeholder":"输入直播脚本需求","action":"chat"}];
-const FREE_TOOL_CATEGORIES=["全部","模式","免费线路"];
+const FREE_TOOL_CATEGORIES=["全部","模式"];
 function freeToolsFilters(){
  const selected=S.freeToolsCategory||"全部",container=$("freeToolFilters");container.replaceChildren();
  for(const label of FREE_TOOL_CATEGORIES){
@@ -818,7 +816,7 @@ function startFreeCreativeMode(mode){
 function selectFreeSource(route){
  if(!S.user){show("authDialog");return}
  if(!route.available&&route.id!=="free:auto")return;
- newChat();S.provider="free";S.model=route.id;S.modelTitle=route.name;S.allowPaid=false;S.selectedFree=true;
+ newChat();S.provider="free";S.model="free:auto";S.modelTitle="免费自动";S.allowPaid=false;S.selectedFree=true;
  updateModelTitle();$("prompt").focus();
 }
 function renderFreeTools(){
@@ -833,15 +831,15 @@ function renderFreeTools(){
   button.append(marker,node("strong","",item.name));
   button.addEventListener("click",()=>startFreeCreativeMode(item));modeList.append(button);renderIcons(button);
  }
- const routes=(S.freePoolRoutes||[]).filter(m=>(filter==="全部"||filter==="免费线路")&&includes([m.name,m.id,m.status]));
- $("freeToolsCount").textContent=routes.length?routes.length+" 条已配置线路":"额度查询中";
+ const routes=[{id:"free:auto",name:"免费自动",available:true,status:""}].filter(m=>filter==="全部"&&includes([m.name]));
+ $("freeToolsCount").textContent=routes.length?"自动接力":"";
  const list=$("freeToolsList");list.replaceChildren();
  for(const route of routes){
-  const button=node("button","free-tool-card");button.type="button";button.disabled=route.available===false;
-  button.append(node("strong","free-tool-name",route.name),node("span","free-tool-provider",route.status||"可尝试"));
+  const button=node("button","free-tool-card");button.type="button";
+  button.append(node("strong","free-tool-name",route.name));
   button.addEventListener("click",()=>selectFreeSource(route));list.append(button);
  }
- if(!modes.length&&!routes.length)list.append(node("p","free-tools-empty",S.freePoolRoutes?.length?"没有匹配项目":"尚未获取免费来源状态"));
+ if(!modes.length&&!routes.length)list.append(node("p","free-tools-empty","没有匹配的内容"));
 }
 async function loadFreePool(){
  try{
@@ -858,7 +856,7 @@ function setFreeToolsMode(enabled){
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
   
   
-  $("navFreeTools").classList.add("active");renderFreeTools();void loadFreePool();
+  $("navFreeTools").classList.add("active");renderFreeTools();
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   if(!S.workMode)$("conversation").hidden=false;
@@ -1013,9 +1011,10 @@ async function sendMessage(){
  }
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
+ const isFreeMessage=S.composerMode==="text"&&S.provider==="free";
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
- appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
+ const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
  const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考");
@@ -1041,27 +1040,42 @@ async function sendMessage(){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:S.composerMode,prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
-  S.chatId=result.chatId;loading.remove();appendMessage("assistant",result.reply,result.model);
-  if(isNew)await fetchChats();else await fetchChats();
-  void fetchMe();
- }catch(e){loading.remove();flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e))}
+  S.chatId=result.chatId;loading.remove();appendMessage("assistant",result.reply,isFreeMessage?null:result.model);
+  await fetchChats();void fetchMe();
+ }catch(e){
+  loading.remove();
+  if(isFreeMessage){
+   // All free-provider diagnostics remain on the server. No red alert,
+   // no synthetic assistant error and no lost user input or attachment.
+   sentRow.remove();flashError("");
+   const input=$("prompt"),newDraft=input.value.trim();
+   input.value=newDraft?(prompt&&newDraft!==prompt?prompt+"\n"+newDraft:prompt||newDraft):prompt;
+   if(attached.length){
+    const ids=new Set(S.attachments.map(a=>a.id));
+    for(const a of attached)if(!ids.has(a.id)){S.attachments.push(a);ids.add(a.id)}
+    renderAttachments();
+   }
+   settlePromptSize();
+   if(isNew&&!$("messageList").children.length)showWelcome();
+  }else{
+   flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e));
+  }
+ }
  finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;$("prompt").focus()}
 }
 async function loadCatalog(){
  if(S.loadedCatalog)return;
- $("modelCount").textContent="加载中…";
+ $("modelCount").textContent="模型目录";
  try{
   const d=await api("/api/models");
   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
   if(S.workMode)workModelHints();
-  $("modelSummary").textContent=d.catalogError?"模型目录暂不可用，仍可尝试免费线路。":"已读取 "+S.remoteModels.length+" 个模型；实际调用以连接状态为准。";
+  $("modelSummary").textContent="免费自动已就绪 · 可选连接个人模型";
  }catch(e){
-  $("modelSummary").textContent="模型目录连接失败："+humanError(e);
-  // Never invent a catalog. The Worker free-model catalog remains available
-  // through /api/models once upstream recovers.
-  flashError(humanError(e));
+  $("modelSummary").textContent="免费自动";
+  S.freeModels=[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}];
  }
  renderModels();
 }
