@@ -875,8 +875,8 @@ function renderWorkAgentCatalog(){
   const button=node("button","work-model-option "+(ready?"ready":"connect")+(selected?" selected":""));
   button.type="button";button.setAttribute("aria-pressed",String(selected));
   const top=node("span","work-model-option-head");
-  top.append(node("strong","",WORK_PROVIDER_SHORT[provider]||name),node("span","work-model-option-action",selected?"当前":ready?"选择":"连接"));
-  button.append(top,node("small","",provider==="free"?"自动调用真实免费线路":ready?selected?"当前工作阶段所选 · 可更换模型":"已验证连接 · 点击选择模型":record?"需要验证连接或授权":"连接官方 API 后使用"));
+  top.append(node("strong","",WORK_PROVIDER_SHORT[provider]||name),node("span","work-model-option-action",selected?"✓ 当前使用":ready?"选择":"连接"));
+  button.append(top,node("small","",selected?(provider==="free"?"免费自动线路 · 每次实际模型由上游决定":"已选模型："+(active.model||record?.model||"未指定")):provider==="free"?"自动调用真实免费线路":ready?"已验证连接 · 点击选择模型":record?"需要验证连接或授权":"连接官方 API 后使用"));button.title=selected?(provider==="free"?"当前使用：免费自动线路":"当前使用："+name+" / "+(active.model||record?.model||"未指定")):name;
   button.addEventListener("click",()=>{
    if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前任务正在执行，不能更换模型";return}
    if(!ready){hide("workModelDialog");openKeyPanel(provider);return}
@@ -1579,11 +1579,11 @@ function renderModels(){
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
   const saved=S.savedProviders[via],verified=!!saved?.verified;
-  const tag=node("span","price-tag"+(item.free?" free":""),selected?"当前选择":via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
+  const tag=node("span","price-tag"+(item.free?" free":""),selected?"✓ 当前使用":via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
   title.append(tag);
   info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":"服务商："+(WORK_PROVIDER_SHORT[via]||via)+" · 模型 ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
-  const button=node("button","model-action",!actionable?"暂不支持":selected?"当前使用":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
+  const button=node("button","model-action",!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!actionable||selected;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
