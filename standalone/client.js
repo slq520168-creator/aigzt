@@ -511,7 +511,11 @@ function updateModelTitle(){
  $("modelTitle").textContent=label;
 }
 function setModel(row){
- if(row.type!=="text"){setComposerMode(row.type==="video"?"video":"image");hide("modelDialog");return}
+ if(row.type!=="text"){
+  hide("modelDialog");
+  if(row.type==="image")openCreate();else setComposerMode("video");
+  return;
+ }
  // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.
  const via=row.availableWith==="openrouter-key"?"openrouter":row.provider;
  if(via!=="free"&&!connected(via)){
@@ -991,6 +995,11 @@ function exportWorkTask(){
 
 async function sendMessage(){
  if(S.workMode){await startWorkTask();return}
+ if(S.composerMode==="image"){
+  const prompt=$("prompt").value.trim();
+  openCreate();if($("createDialog").open&&prompt)$("createPrompt").value=prompt;
+  return;
+ }
  if(S.busy)return;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
@@ -1248,9 +1257,9 @@ function paintDrawStopwatch(batch,tiles){
 function drawResult(tile,url){
  const img=node("img");img.src=url;img.alt="生成图片";img.loading="lazy";tile.picture.replaceChildren(img);
  tile.tile.querySelector(".draw-tile-actions")?.remove();
- const actions=node("div","draw-tile-actions"),save=node("a","","保存图片");
- save.href=url;save.download="aigzt-image.png";actions.append(save);tile.tile.append(actions);
- tile.caption.textContent="已保存到我的作品";
+ const actions=node("div","draw-tile-actions"),download=node("a","","下载图片");
+ download.href=url;download.download="aigzt-image.png";actions.append(download);tile.tile.append(actions);
+ tile.caption.textContent="仅当前页面显示 · 网站不保存";
 }
 function drawSleep(ms,signal){
  return new Promise(resolve=>{
@@ -1273,19 +1282,19 @@ async function drawTrackJob(id,tile,batch){
    }
    tile.caption.textContent="正在生成";
   }catch(e){
-   tile.caption.textContent="暂时无法查询，可重新打开本页面恢复";
+   tile.caption.textContent="本次查询暂时中断";
   }
   if(!await drawSleep(12000,batch.controller.signal))return false;
  }
- if(!batch.cancelled){tile.caption.textContent="任务仍未完成，请稍后重新打开查询"}
+ if(!batch.cancelled){tile.caption.textContent="任务未完成，请在当前页面继续尝试"}
  return false;
 }
 function stopDrawBatch(){
  const b=S.drawBatch;
  if(!b)return;
  b.cancelled=true;b.controller.abort();clearInterval(b.clockTimer);S.drawBatch=null;
- $("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
- $("createStatus").textContent="已停止查询；提交过的任务可以稍后重新打开查看";
+ $("drawCancel").hidden=true;$("createButton").disabled=false;
+ $("createStatus").textContent="已停止查询；离开后无法恢复生成图片";
 }
 async function runFreeDraw(){
  const prompt=$("createPrompt").value.trim();
@@ -1296,7 +1305,7 @@ async function runFreeDraw(){
  if(![1,2,4].includes(count)){$("createStatus").textContent="图片数量不正确";return}
  const batch={cancelled:false,controller:new AbortController(),startedAt:Date.now(),clockTimer:null};
  S.drawBatch=batch;$("drawResults").replaceChildren();
- $("drawResultTitle").textContent="本次生成";$("drawRefresh").disabled=true;
+ $("drawResultTitle").textContent="本次图片";
  const tiles=Array.from({length:count},(_,i)=>drawTile(i+1,"准备生成",shape));
  $("createButton").disabled=true;$("drawCancel").hidden=false;$("drawElapsed").hidden=false;
  const renderClock=()=>{if(S.drawBatch===batch)paintDrawStopwatch(batch,tiles)};
@@ -1334,38 +1343,11 @@ async function runFreeDraw(){
   clearInterval(batch.clockTimer);
   if(S.drawBatch===batch){
    paintDrawStopwatch(batch,tiles);
-   S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
+   S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;
    $("createStatus").textContent="生成结束：成功 "+success+"/"+count+" 张"+(failed?" · 失败 "+failed+" 张":"");
   }
  }
 }
-async function restoreDrawJobs(){
- if(S.drawBatch||!S.user)return;
- $("drawRefresh").disabled=true;
- try{
-  const data=await api("/api/image/jobs");
-  if(!$("createDialog").open||S.createMode!=="image"||S.drawBatch)return;
-  $("drawResults").replaceChildren();
-  $("drawResultTitle").textContent="我的作品";
-  for(const [i,job] of (data.jobs||[]).slice(0,16).entries()){
-   const tile=drawTile(i+1,job.status==="complete"?"生成完成":job.status==="pending"?"等待生成":"未完成");
-   if(job.status==="complete"&&job.image){drawResult(tile,job.image)}
-   else if(job.status==="pending"){
-    const button=node("button","","查询结果");button.type="button";
-    button.addEventListener("click",async()=>{
-     if(S.drawBatch)return;
-     const batch={cancelled:false,controller:new AbortController()};
-     S.drawBatch=batch;button.disabled=true;$("drawCancel").hidden=false;
-     try{await drawTrackJob(job.id,tile,batch)}
-     finally{if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true}button.disabled=false}
-    });
-    const actions=node("div","draw-tile-actions");actions.append(button);tile.tile.append(actions);
-   }
-  }
- }catch(e){$("createStatus").textContent="历史图片暂时读取失败："+humanError(e)}
- finally{$("drawRefresh").disabled=Boolean(S.drawBatch)}
-}
-
 function drawChoice(id){return $(id).dataset.value||""}
 function setDrawChoice(id,value){
  const group=$(id),btn=Array.from(group.querySelectorAll("button[data-value]")).find(x=>x.dataset.value===value);
@@ -1396,14 +1378,12 @@ function setCreationMode(mode){
  $("drawResultSection").hidden=!isImage;
  $("drawCancel").hidden=!isImage||!S.drawBatch;
  $("drawElapsed").hidden=!isImage||!S.drawBatch&&$("drawElapsed").textContent==="00:00";
- $("drawRefresh").disabled=Boolean(S.drawBatch);
  $("createButton").textContent=isImage?"生成免费图片":"使用我的 Grok 生成视频";
  $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
 }
 function openCreate(){
  if(!S.user){show("authDialog");return}
  setCreationMode("image");show("createDialog");closeMenu();
- void restoreDrawJobs();
 }
 function openVideoCreate(){
  if(!S.user){show("authDialog");return}
@@ -1616,9 +1596,11 @@ function wire(){
  $("moreModels").addEventListener("click",()=>{S.modelPage++;renderModels()});
  $("createButton").addEventListener("click",()=>void generateMedia());
  $("drawCancel").addEventListener("click",stopDrawBatch);
- $("drawRefresh").addEventListener("click",()=>void restoreDrawJobs());
  drawPrefs();wireImageViewer();
- $("createDialog").addEventListener("close",stopDrawBatch);
+ $("createDialog").addEventListener("close",()=>{
+  stopDrawBatch();$("drawResults").replaceChildren();
+  $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
+ });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(Speech){$("voiceInput").hidden=false;$("voiceInput").addEventListener("click",()=>{const sr=new Speech();sr.lang="zh-CN";sr.interimResults=false;sr.onresult=e=>{$("prompt").value+=(e.results[0]?.[0]?.transcript||"");$("prompt").focus()};sr.onerror=e=>flashError("语音识别不可用："+e.error);sr.start()})}

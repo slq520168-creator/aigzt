@@ -455,8 +455,13 @@ async function mediaChat(req,env,user){
  const exists=b.chatId?await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",b.chatId,user.id):null;
  if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
  const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt,style:b.style,shape:b.shape}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
- const result=mode==="image"?await submitKrea(mediaReq,env,user):await createVideo(mediaReq,env,user);
- const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply=mode==="image"?(result.pending?"[[aigzt:image-job:"+result.jobId+"]]":"![生成图片]("+result.image+")"):"视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
+ if(mode==="image"){
+  const result=await submitKrea(mediaReq,env,user);
+  // Older clients can still view their transient image without storing chat records.
+  return {ok:true,chatId:exists?.id||null,reply:"[[aigzt:image-job:"+result.jobId+"]]",model:"免费作图",pending:true,jobId:result.jobId};
+ }
+ const result=await createVideo(mediaReq,env,user);
+ const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply="视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
  if(!exists){const pid=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/.test(b.projectId)?b.projectId:null;
   if(pid&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",pid,user.id))throw Error("项目不存在");
   await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now,pid);}
@@ -512,11 +517,19 @@ function findImageUrl(v){
  }
  return "";
 }
-async function saveKreaImage(env,uid,rawUrl){
+function transientImageUrl(a,mime){
+ // Display verified image bytes only in the current browser session.
+ const parts=[];
+ for(let i=0;i<a.length;i+=32768)parts.push(String.fromCharCode(...a.subarray(i,i+32768)));
+ return "data:"+mime+";base64,"+btoa(parts.join(""));
+}
+async function saveKreaImage(env,uid,rawUrl,temporary=false){
  const url=new URL(rawUrl),h=url.hostname.toLowerCase();
  if(url.protocol!=="https:"||url.username||url.password||!(h==="krea-krea-2.hf.space"||h.endsWith(".hf.space")||h==="huggingface.co"||h.endsWith(".huggingface.co")||h==="hf.co"||h.endsWith(".hf.co")||h.endsWith(".gradio.live")))throw Error("非可信图片来源");
  const resp=await fetch(url.href,{headers:{accept:"image/*",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(11000)});
- const {a,mime}=await downloadImage(resp),id=crypto.randomUUID();
+ const {a,mime}=await downloadImage(resp);
+ if(temporary)return transientImageUrl(a,mime);
+ const id=crypto.randomUUID();
  await env.MEDIA.put(uid+"/"+id,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
  return id;
 }
@@ -553,20 +566,25 @@ async function submitKrea(req,env,user){
  requireUser(user);
  const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(!prompt)throw Error("请输入图片描述");
- if(!env.MEDIA)throw Object.assign(new Error("图片存储不可用"),{status:503});
+ /* R2 is not required for newly generated images. */
  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?input.shape:"portrait",style=Object.hasOwn(KREA_STYLES,input.style)?input.style:"portrait-master";
  const seed=Math.floor(Math.random()*2147483647);
  let primary=null;
  try{primary=await submitGradioImage(env,"krea",prompt,shape,style)}
  catch{/* As in IM auto mode, the next fixed source is RioShiina, not GLM. */}
- const ref={v:4,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
+ const ref={v:5,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
  const id=crypto.randomUUID();
+ // Bounded per-user cleanup of abandoned tasks (no global scan / scheduled job).
+ await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND external_id LIKE ? ORDER BY created_at ASC LIMIT 24)",user.id,Date.now()-3600000,'{"v":5,%').catch(()=>{});
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,JSON.stringify(ref),Date.now(),"image-unmetered");
  return {ok:true,pending:true,jobId:id,model:"免费作图"};
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
  if(r.meta?.changes){
+  if(typeof job.external_id==="string"&&job.external_id.startsWith('{"v":5,')){
+   await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='failed'",job.id,job.user_id);
+  }
   if(job.charged_day!=="image-unmetered")await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",job.charged_day,job.user_id),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",job.charged_day)]).catch(()=>{});
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","作图失败："+message,job.message_id,job.user_id).catch(()=>{});
  }
@@ -653,7 +671,7 @@ async function imageRioRead(env,endpoint,eventId){
  finally{try{await reader.cancel()}catch{}}
  return fail?{status:"failed",error:"Rio 生成失败"}:result!==null?{status:"complete",data:result}:{status:"pending"};
 }
-async function imageVexaRender(env,uid,ref){
+async function imageVexaRender(env,uid,ref,temporary=false){
  const shape=imageShape(ref.s),prompt=imageStyledPrompt(ref.p,ref.t);
  const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",
   headers:{"content-type":"application/json",accept:"application/json"},
@@ -665,7 +683,9 @@ async function imageVexaRender(env,uid,ref){
  const url=new URL(String(data.proxy_url||""));
  if(url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/")||url.username||url.password)throw Error("Vexa 图片地址未通过校验");
  const file=await fetch(url.href,{headers:{accept:"image/*"},redirect:"manual",signal:AbortSignal.timeout(11000)});
- const {a,mime}=await downloadImage(file),mid=crypto.randomUUID();
+ const {a,mime}=await downloadImage(file);
+ if(temporary)return transientImageUrl(a,mime);
+ const mid=crypto.randomUUID();
  await env.MEDIA.put(uid+"/"+mid,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
  return mid;
 }
@@ -681,6 +701,12 @@ async function imageV4Move(env,job,ref,nextStage){
 async function imageV4Pending(env,job,ref){
  await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(ref),Date.now(),job.id,job.user_id);
  return imagePending(job);
+}
+async function imageTransientComplete(env,job,localImageUrl){
+ // Return the result once, delete job metadata, and never write image to R2.
+ const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering'",job.id,job.user_id);
+ if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付，请重新生成"});
+ return response({ok:true,done:true,image:localImageUrl,temporary:true,model:"免费作图"});
 }
 async function imageV4Complete(env,job,mediaId){
  const changed=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='recovering'",mediaId,Date.now(),job.id,job.user_id);
@@ -705,8 +731,10 @@ async function imageV4Status(env,user,job,ref){
  try{
   if(now-(ref.stageAt||now)>(stage==="rio"?155000:stage==="glm"?160000:stage==="krea"?140000:35000))return imageV4Move(env,job,ref,ref.stage+1);
   if(stage==="vexa"){
-   try{return await imageV4Complete(env,job,await imageVexaRender(env,user.id,ref))}
-   catch{return imageV4Move(env,job,ref,ref.stage+1)}
+   try{
+    const result=await imageVexaRender(env,user.id,ref,ref.v===5);
+    return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+   }catch{return imageV4Move(env,job,ref,ref.stage+1)}
   }
   if(ref.phase==="new"){
    if(stage==="rio"){
@@ -733,7 +761,10 @@ async function imageV4Status(env,user,job,ref){
    const status=String(task?.status||"").toLowerCase();
    if(["failed","error","cancelled","canceled"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    const url=findImageUrl(task?.result??task)||findImageUrl(step.data);
-   if(url)return imageV4Complete(env,job,await saveKreaImage(env,user.id,url));
+   if(url){
+    const result=await saveKreaImage(env,user.id,url,ref.v===5);
+    return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+   }
    if(!task||["complete","completed","success","succeeded","done"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    return imageV4Pending(env,job,{...ref,phase:"rio-poll",id:"",taskId:task.task_id});
   }
@@ -741,7 +772,8 @@ async function imageV4Status(env,user,job,ref){
   const state=await queryGradioImageEvent(env,stage,ref.id);
   if(state.status==="pending")return imageV4Pending(env,job,ref);
   if(state.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
-  return imageV4Complete(env,job,await saveKreaImage(env,user.id,state.url));
+  const result=await saveKreaImage(env,user.id,state.url,ref.v===5);
+  return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
  }catch(error){
   // No hidden loop, no parallel submits. A finished/failed stage advances once in IM order.
   return imageV4Move(env,job,ref,ref.stage+1);
@@ -756,7 +788,7 @@ async function imageJobStatus(env,user,id){
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
  if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
   try{const ref=JSON.parse(job.external_id);
-   if(ref.v===4&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
+   if([4,5].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
   }catch(e){if(e?.status)throw e}
  }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
@@ -1157,8 +1189,7 @@ async function main(req,env){
  if(path==="/api/image"&&req.method==="POST")return response(await submitKrea(req,env,user));
  if(path==="/api/image/jobs"&&req.method==="GET"){
   requireUser(user);
-  const rows=(await env.DB.prepare("SELECT id,status,media_id,created_at FROM image_jobs WHERE user_id=? ORDER BY created_at DESC LIMIT 24").bind(user.id).all()).results||[];
-  return response({ok:true,jobs:rows.map(x=>({id:x.id,status:x.status,image:x.status==="complete"&&x.media_id?"/api/files/"+x.media_id:null,createdAt:x.created_at}))});
+  return response({ok:true,jobs:[]});
  }
  const imageJob=path.match(/^\/api\/image\/task\/([0-9a-f-]{36})$/i);
  if(imageJob&&req.method==="GET")return imageJobStatus(env,user,imageJob[1]);
