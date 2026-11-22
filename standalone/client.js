@@ -437,8 +437,7 @@ async function pollImageJob(bubble,id,manual){
    delete bubble.dataset.imageTask;
    if(r.failed){bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
    const img=node("img","chat-generated-image");img.src=r.image;img.alt="生成图片";img.loading="lazy";
-   const link=node("a","chat-download","打开图片");link.href=r.image;link.target="_blank";link.rel="noopener";
-   bubble.replaceChildren(img,link);return;
+   bubble.replaceChildren(img);return;
   }
   delay=Math.max(9000,Math.min(18000,Number(r.waitSeconds||10)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -455,7 +454,7 @@ function appendMessage(role,content,model){
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
   if(pending){bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
-  if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";const a=node("a","chat-download","打开图片");a.href=picture[1];a.target="_blank";a.rel="noopener";bubble.append(im,a)}
+  if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
 
   if(model)bubble.append(node("div","message-model",model));
  }else{
@@ -1146,7 +1145,7 @@ function openKeyPanel(provider){
 }
 
 
-const iv={items:[],i:0,scale:1,x:0,y:0,touch:null,lastTap:null,origin:null};
+const iv={items:[],i:0,scale:1,x:0,y:0,touch:null,lastTap:null,lastTouchEnd:0,origin:null};
 function ivTransform(){$("ivImage").style.transform="translate("+iv.x+"px,"+iv.y+"px) scale("+iv.scale+")"}
 function ivReset(){iv.scale=1;iv.x=0;iv.y=0;ivTransform()}
 function ivClose(){
@@ -1193,7 +1192,7 @@ function wireImageViewer(){
   if(e.key==="ArrowRight"&&iv.scale===1){e.preventDefault();ivShow(iv.i+1)}
  });
  const stage=$("ivStage");
- stage.addEventListener("dblclick",e=>{e.preventDefault();ivZoom()});
+ stage.addEventListener("dblclick",e=>{e.preventDefault();if(Date.now()-iv.lastTouchEnd>550)ivZoom()});
  stage.addEventListener("touchstart",e=>{
   if(e.touches.length===2){iv.touch={pinch:true,d:ivDistance(e.touches[0],e.touches[1]),s:iv.scale};iv.lastTap=null}
   else if(e.touches.length===1){const t=e.touches[0];iv.touch={x:t.clientX,y:t.clientY,lx:t.clientX,ly:t.clientY,moved:false,pinch:false}}
@@ -1208,7 +1207,7 @@ function wireImageViewer(){
  stage.addEventListener("touchend",e=>{
   const s=iv.touch;if(!s)return;
   if(s.pinch){if(!e.touches.length){iv.touch=null;if(iv.scale<1.05)ivReset()}return}
-  if(e.touches.length)return;iv.touch=null;const t=e.changedTouches[0];if(!t)return;
+  if(e.touches.length)return;iv.touch=null;iv.lastTouchEnd=Date.now();const t=e.changedTouches[0];if(!t)return;
   const dx=t.clientX-s.x,dy=t.clientY-s.y;
   if(iv.scale===1){
    if(dy>90&&Math.abs(dy)>Math.abs(dx)*1.3){ivClose();return}
