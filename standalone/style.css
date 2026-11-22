@@ -148,9 +148,7 @@ a{color:inherit}
 .model-action:hover{background:#f4f7f8}
 .check-row{display:flex!important;align-items:flex-start;gap:9px;font-weight:400!important;font-size:13px!important}
 .check-row input{margin-top:4px;flex:none}
-.creation-tabs{display:flex;gap:8px;margin-bottom:12px}
 #createDialog .draw-description{display:block;width:min(100%,900px)}
-#createDialog .creation-tabs{width:min(100%,900px);margin-bottom:6px}
 #createDialog .draw-description textarea{width:100%;min-height:105px}
 .draw-settings{display:flex;flex-direction:column;gap:9px;width:100%;max-width:900px;min-width:0}
 .draw-field{border:0;margin:0;padding:0;min-width:0}
@@ -191,8 +189,6 @@ html.image-viewing,body.image-viewing{overflow:hidden}
 .draw-tile-actions a,.draw-tile-actions button{color:#376b86;text-decoration:none;font-size:13px}
 #drawCancel{align-self:flex-start;min-height:35px}
 @media(max-width:600px){.draw-gallery{gap:8px}.draw-photo{min-height:130px}.draw-tile-actions{gap:8px}}
-.creation-tabs button{flex:1;border:1px solid #e2e8ea;padding:10px;border-radius:11px}
-.creation-tabs button.active{background:#e8f0f2}
 .media-preview{display:flex;flex-direction:column;gap:10px;margin:10px 0}
 .media-preview img,.media-preview video{width:100%;border-radius:12px}
 .action-list,.result-list{display:flex;flex-direction:column;gap:3px}

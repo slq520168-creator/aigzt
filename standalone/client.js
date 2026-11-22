@@ -1356,8 +1356,6 @@ function drawPrefs(){
 function setCreationMode(mode){
  S.createMode=mode;
  const isImage=mode==="image";
- $("imageTab").classList.toggle("active",isImage);
- $("videoTab").classList.toggle("active",!isImage);
  $("createDialogTitle").textContent=isImage?"免费作图":"视频创作";
  $("videoSettings").hidden=isImage;
  $("drawSettings").hidden=!isImage;
@@ -1371,6 +1369,10 @@ function openCreate(){
  if(!S.user){show("authDialog");return}
  setCreationMode("image");show("createDialog");closeMenu();
  void restoreDrawJobs();
+}
+function openVideoCreate(){
+ if(!S.user){show("authDialog");return}
+ setCreationMode("video");show("createDialog");closeMenu();
 }
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
@@ -1539,7 +1541,7 @@ function wire(){
  $("toolsAction").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=!$("toolTray").hidden});
  for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
  $("imageMode").addEventListener("click",()=>{openCreate();$("toolTray").hidden=true});
- $("videoMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="video"?"text":"video");$("toolTray").hidden=true});
+ $("videoMode").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=true;openVideoCreate()});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendMessage()}});
@@ -1573,8 +1575,6 @@ function wire(){
  $("modelFilter").addEventListener("change",e=>{S.filter=e.target.value;S.modelPage=0;renderModels()});
  for(const btn of els("#sourceChips .chip"))btn.addEventListener("click",()=>activateSource(btn.dataset.source));
  $("moreModels").addEventListener("click",()=>{S.modelPage++;renderModels()});
- $("imageTab").addEventListener("click",()=>{setCreationMode("image");void restoreDrawJobs()});
- $("videoTab").addEventListener("click",()=>setCreationMode("video"));
  $("createButton").addEventListener("click",()=>void generateMedia());
  $("drawCancel").addEventListener("click",stopDrawBatch);
  $("drawRefresh").addEventListener("click",()=>void restoreDrawJobs());
