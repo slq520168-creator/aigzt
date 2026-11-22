@@ -36,6 +36,8 @@ const HOSTS={
  xiaomi:{host:"api.xiaomimimo.com",path:"/v1/chat/completions",models:"/v1/models"},
  longcat:{host:"api.longcat.chat",path:"/openai/v1/chat/completions",models:"/openai/v1/models"},
  baichuan:{host:"api.baichuan-ai.com",path:"/v1/chat/completions",models:"/v1/models"},
+ iflytek:{host:"spark-api-open.xf-yun.com",path:"/v1/chat/completions",models:"/v1/models"},
+ sensetime:{host:"token.sensetime.com",path:"/api/v1/chat/completions",models:"/api/v1/models"},
  yandex:{host:"ai.api.cloud.yandex.net",path:"/v1/chat/completions",models:"/v1/models"},
  gigachat:{host:"api.giga.chat",path:"/v1/chat/completions",models:"/v1/models"}
 };
