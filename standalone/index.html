@@ -233,14 +233,15 @@
   <div class="chat-active-model" aria-live="polite"><span>当前聊天模型</span><strong id="chatActiveModelName">免费自动</strong><small id="chatActiveModelNote">上游模型按请求自动选择</small></div>
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">全部模型</button><button class="chip" data-source="free">免费线路</button><button class="chip" data-source="family:china">国内模型</button><button class="chip" data-source="family:international">海外</button><button class="chip" data-source="family:russian">俄罗斯</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:claude">Claude</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button><button class="chip" data-source="family:novai">NovaAI</button><button class="chip" data-source="family:deepseek">DeepSeek</button><button class="chip" data-source="connected">已连接</button></div><div id="modelRegionLinks" class="model-region-links" hidden></div>
+  <div class="model-count" id="modelCount">正在读取真实模型目录…</div>
+  <div class="model-list" id="modelList"></div>
+  <button class="outline full" id="moreModels" type="button" hidden>加载更多模型</button>
   <details class="model-extra" id="modelExtra"><summary>连接更多服务商</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
   <div class="model-quick">
    <button type="button" class="quick-entry" id="groqQuick"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span><strong>Groq 免费额度</strong><small>用个人免费 Key 连接</small></span></button>
    <button type="button" class="quick-entry" id="imageQuick"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span><strong>作图</strong><small>聊天内生成</small></span></button>
   </div>
-  </details><div class="model-count" id="modelCount">正在读取真实模型目录…</div>
-  <div class="model-list" id="modelList"></div>
-  <button class="outline full" id="moreModels" type="button" hidden>加载更多模型</button>
+  </details>
  </dialog>
 
  <dialog id="keyDialog" class="modal workspace-view">

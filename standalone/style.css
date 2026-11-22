@@ -185,12 +185,14 @@ a{color:inherit}
 .wide-modal[open]{display:flex}
 .model-tools{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:9px;flex:none}
 .source-chips{display:flex;gap:7px;overflow-x:auto;padding:8px 0 11px;min-height:40px;flex:none;scrollbar-width:none}
-.model-region-links{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;flex:none;max-height:160px;overflow-y:auto}
-.model-provider-card{display:flex;flex-direction:column;gap:6px;min-width:0;text-align:left;padding:11px 12px;border:1px solid #dfe5f4;border-radius:12px;background:linear-gradient(130deg,#fff,#f7faff)}
+.model-region-links{display:flex;align-items:stretch;gap:7px;flex:none;max-height:none;min-height:50px;overflow-x:auto;overflow-y:hidden;padding:2px 0 6px;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x}
+.model-provider-card{display:flex;flex:0 0 auto;flex-direction:column;justify-content:center;gap:3px;min-width:118px;max-width:150px;text-align:left;padding:7px 10px;border:1px solid #dfe5f4;border-radius:10px;background:linear-gradient(130deg,#fff,#f7faff)}
 .model-provider-card strong{font-size:12px;color:#344a78}
 .model-provider-card small{font-size:10px;color:#8592a8;line-height:1.4}
 .model-provider-card:hover{border-color:#b6c6f0}
-@media(max-width:650px){.model-region-links{grid-template-columns:repeat(2,minmax(0,1fr));max-height:190px}}
+.model-provider-card.selected{border-color:#247aa8;background:#edf7fe}
+.model-provider-card.selected strong{color:#175c83}
+@media(max-width:650px){.model-region-links{gap:6px;min-height:48px}.model-provider-card{min-width:112px;max-width:132px;padding:6px 9px}}
 .chip{padding:7px 12px;border-radius:20px;background:#f3f5f6;white-space:nowrap;color:#495d65}
 .chip.active{background:linear-gradient(115deg,#536baa,#47959c);color:#fff;font-weight:700}
 .model-count{padding:4px 0 10px;color:#677b82;font-size:12px;flex:none}
@@ -362,7 +364,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 #modelDialog .chip{border:1px solid #e6eaf0;background:#fff;border-radius:10px;padding:8px 12px;font-size:12px}
 #modelDialog .chip.active{background:#355b75;border-color:#355b75;color:#fff}
 #modelDialog .model-count{font-size:13px;color:#59708c;padding:1px 3px 0;font-weight:600}
-#modelDialog .model-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;grid-auto-rows:minmax(78px,auto);padding-bottom:10px}
+#modelDialog .model-list{flex:1 1 0%;width:100%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;grid-auto-rows:minmax(78px,auto);padding-bottom:10px}
 #modelDialog .model-action{padding:9px 12px;border-radius:11px}
 #modelDialog .model-extra{background:#fff;border:1px solid #e8edf5}
 #modelDialog #moreModels{align-self:center;flex:none;max-width:300px;padding:9px 18px}
@@ -742,10 +744,10 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .work-model-choose,.work-model-apply{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:none;border:1px solid #356ea1;border-radius:11px;background:#356ea1;color:white;padding:10px 13px;min-height:40px;font-size:13px;font-weight:650;box-shadow:none;cursor:pointer}
 .work-model-choose .ui-icon svg{stroke:#fff}
 .work-model-choose:active,.work-model-apply:active{transform:scale(.985)}
-.work-model-dialog{width:min(760px,calc(100vw - 24px));max-width:760px;max-height:min(89dvh,880px);border-radius:18px;overflow-y:auto;overscroll-behavior:contain;padding:0;border:1px solid #dae4ef;background:#fff}
+.work-model-dialog{width:min(900px,calc(100vw - 24px));max-width:900px;height:min(92dvh,940px);max-height:min(92dvh,940px);border-radius:18px;overflow:hidden;overscroll-behavior:contain;padding:0;border:1px solid #dae4ef;background:#fff}
 .work-model-dialog::backdrop{background:rgba(17,37,69,.3);backdrop-filter:blur(4px)}
 .work-model-dialog .modal-head{position:sticky;top:0;z-index:2;background:rgba(255,255,255,.95);backdrop-filter:blur(10px)}
-.work-model-dialog-content{padding:15px 20px 22px}
+.work-model-dialog-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:15px 20px 22px}
 .work-model-explain{font-size:12px;color:#6c8297;line-height:1.6;margin:0 0 13px}
 .work-model-dialog .work-agent-catalog{display:block;width:100%;min-width:0;max-height:none;overflow:visible;margin:0}
 .work-model-option{display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:6px;min-width:0;min-height:80px;padding:11px 12px;text-align:left;border:1px solid #dfe6ed;border-radius:12px;background:#fff;cursor:pointer;box-shadow:none}
@@ -777,7 +779,7 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  .work-model-ident>strong{font-size:15px}
  .work-model-ident>small{font-size:10px}
  .work-model-choose{font-size:11px;padding:10px 9px;min-height:38px;max-width:44%;white-space:nowrap}
- .work-model-dialog{width:calc(100vw - 12px);max-height:calc(100dvh - 16px);border-radius:15px}
+ .work-model-dialog{width:100%;max-width:none;height:100dvh;max-height:100dvh;border:0;border-radius:0}
  .work-model-dialog-content{padding:12px}
  .work-model-dialog .work-agent-catalog{display:block;width:100%;min-width:0}
  .work-model-option{min-height:76px;padding:9px}
@@ -811,22 +813,15 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 
 /* Work-model sheet: never place its title beneath the installed iPhone status bar. */
 #workModelDialog[open]{
- position:fixed;
- inset:auto;
- top:calc(env(safe-area-inset-top,0px) + 12px);
- left:50%;
- right:auto;
- bottom:auto;
- transform:translateX(-50%);
- margin:0;
- width:min(760px,calc(100vw - 24px));
+ position:fixed;inset:auto;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;right:auto;bottom:auto;
+ transform:translateX(-50%);margin:0;width:min(900px,calc(100vw - 24px));
+ height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px);
  max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px);
- overflow-y:auto;
- overscroll-behavior:contain;
- box-sizing:border-box;
+ display:flex;flex-direction:column;overflow:hidden;overscroll-behavior:contain;box-sizing:border-box;
 }
 html.aigzt-ios-pwa #workModelDialog[open]{
  top:calc(var(--aigzt-ios-safe-top) + 7px);
+ height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top) - env(safe-area-inset-bottom,0px) - 13px);
  max-height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top) - env(safe-area-inset-bottom,0px) - 13px);
 }
 #workModelDialog .modal-head{position:sticky;top:0;z-index:5;margin:0;padding:14px 17px 11px;border-bottom:1px solid #e5ecf6;box-sizing:border-box}
@@ -843,8 +838,8 @@ html.aigzt-ios-pwa #workModelDialog[open]{
 .russian-model-guide p{margin:6px 0 5px;font-size:12px;line-height:1.6;font-weight:620}
 .russian-model-guide small{color:#65849c;line-height:1.55;font-size:11px}
 @media(max-width:650px){
- #workModelDialog[open]{top:calc(env(safe-area-inset-top,0px) + 7px);width:calc(100vw - 12px);max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 14px);border-radius:15px}
- html.aigzt-ios-pwa #workModelDialog[open]{top:calc(var(--aigzt-ios-safe-top) + 6px);max-height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top) - env(safe-area-inset-bottom,0px) - 12px)}
+ #workModelDialog[open]{top:env(safe-area-inset-top,0px);left:0;right:0;bottom:0;transform:none;width:100%;max-width:none;height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));border:0;border-radius:0}
+ html.aigzt-ios-pwa #workModelDialog[open]{top:var(--aigzt-ios-safe-top);height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top));max-height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top))}
  #workModelDialog .modal-head{padding:11px 12px 10px;min-height:59px}
  #workModelDialog .modal-head h2{font-size:17px}
  #workModelDialog .work-model-dialog-content{padding:9px 11px 14px}

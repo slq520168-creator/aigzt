@@ -1624,10 +1624,14 @@ function domesticGroupFor(m){
 }
 function renderChinaBrands(models){
  const target=$("modelRegionLinks"),chinese=S.source==="family:china"||S.source.startsWith("family:cn:");
- target.hidden=!chinese;target.replaceChildren();if(!chinese)return;
+ target.hidden=!chinese;if(!chinese)return;
+ const counts=new Map(CHINA_MODEL_GROUPS.map(group=>[group.id,0]));
+ for(const m of models){const id=domesticGroupFor(m)?.id;if(id)counts.set(id,(counts.get(id)||0)+1)}
+ const signature=S.source+"|"+CHINA_MODEL_GROUPS.map(g=>g.id+":"+counts.get(g.id)).join("|");
+ if(target.dataset.renderSignature===signature)return;
+ const previousScroll=target.scrollLeft;target.replaceChildren();
  for(const group of CHINA_MODEL_GROUPS){
-  const count=models.filter(m=>domesticGroupFor(m)?.id===group.id).length;
-  const selected=S.source==="family:cn:"+group.id;
+  const count=counts.get(group.id)||0,selected=S.source==="family:cn:"+group.id;
   const button=node("button","model-provider-card"+(selected?" selected":""));
   button.type="button";button.setAttribute("aria-pressed",String(selected));
   button.append(node("strong","",group.name),node("small","",count?count+" 个真实目录模型":group.api?"连接官方 API":"暂无公开模型"));
@@ -1636,6 +1640,7 @@ function renderChinaBrands(models){
   else button.disabled=true;
   target.append(button);
  }
+ target.dataset.renderSignature=signature;target.scrollLeft=previousScroll;
 }
 function allModels(){
  const result=[...S.freeModels,...S.remoteModels],seen=new Set(result.map(m=>m.provider+"\0"+m.id));
@@ -1678,7 +1683,7 @@ function modelIsSelected(m){
  return m.type==="text"&&S.provider===via&&S.model===(via==="free"?"free:auto":m.id);
 }
 function renderModels(){
- $("modelRegionLinks").hidden=true;updateChatActiveModel();
+ updateChatActiveModel();
  const models=allModels();renderChinaBrands(models);
  const visible=models.filter(modelMatches);
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
@@ -1689,7 +1694,11 @@ function renderModels(){
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*30);
  $("modelCount").textContent=(S.source==="family:china"||S.source.startsWith("family:cn:")?"国内真实目录 · ":"")+count+" 个模型 · 当前："+(S.provider==="free"?"免费自动":WORK_PROVIDER_SHORT[S.provider]||S.provider);
  $("moreModels").hidden=count<=shown.length;
- const list=$("modelList");list.replaceChildren();
+ const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
+ const signature=viewKey+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)).join("|");
+ if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
+ const previousTop=list.dataset.viewKey===viewKey?list.scrollTop:0;
+ list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));return}
  for(const item of shown){
   const via=item.availableWith==="openrouter-key"?"openrouter":item.provider,selected=modelIsSelected(item);
@@ -1706,6 +1715,7 @@ function renderModels(){
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
  }
+ list.scrollTop=previousTop;
 }
 const domesticCatalogRequested=new Set();
 async function loadConnectedDomesticCatalogs(){
@@ -1750,10 +1760,10 @@ function refreshSourceChips(){
  }
 }
 function openModels(){
- S.modelPage=0;S.filter="all";S.source="all";S.query="";$("modelSearch").value="";
- $("modelFilter").value="all";
- for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source==="all");
+ $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
+ for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
  show("modelDialog");renderModels();void loadCatalog();
+ if(S.source==="family:china"||S.source.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
 }
 function openKeyPanel(provider){
  if(typeof provider==="string"&&$("keyProvider").querySelector('option[value="'+provider+'"]'))$("keyProvider").value=provider;
