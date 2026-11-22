@@ -1293,12 +1293,13 @@ async function runFreeDraw(){
     if(batch.cancelled)return;
     if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
     tile.picture.textContent="生成中";
-    if(await drawTrackJob(result.jobId,tile,batch))success++;else failed++;
-   }catch(e){failed++;tile.picture.textContent="未完成";tile.caption.textContent=humanError(e)}
+    if(await drawTrackJob(result.jobId,tile,batch))success++;
+    else{failed++;if(!batch.cancelled){for(let k=index;k<count;k++){tiles[k].picture.textContent="未提交";tiles[k].caption.textContent="上一张失败，已停止后续请求"}break}}
+   }catch(e){failed++;tile.picture.textContent="未完成";tile.caption.textContent=humanError(e);for(let k=index;k<count;k++){tiles[k].picture.textContent="未提交";tiles[k].caption.textContent="生成来源不可用，已停止后续请求"}break}
    if(!batch.cancelled)$("createStatus").textContent="已生成 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");
   }
  };
- try{await Promise.all(Array.from({length:Math.min(2,count)},()=>task()))}
+ try{await task()}
  finally{
   if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
    $("createStatus").textContent="生成结束：成功 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");

@@ -517,43 +517,49 @@ async function saveKreaImage(env,uid,rawUrl){
  await env.MEDIA.put(uid+"/"+id,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
  return id;
 }
-async function saveVexaFallback(env,uid,task){
- const shape=Object.hasOwn(KREA_SHAPES,task.s)?KREA_SHAPES[task.s]:KREA_SHAPES.portrait;
- const style=Object.hasOwn(KREA_STYLES,task.t)?KREA_STYLES[task.t]:KREA_STYLES["portrait-master"];
- const prompt=String(task.p||"").slice(0,1200);
- if(!prompt)throw Error("missing_prompt");
- const reply=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({prompt:prompt+(style?", "+style:"")+", compose for "+shape[0]+":"+shape[1]+" aspect ratio",model:"hd",preference:"quality"}),redirect:"manual",signal:AbortSignal.timeout(14500)});
- if(!reply.ok)throw Error("fallback_http_"+reply.status);
- const data=await reply.json().catch(()=>null);
- if(data?.success!==true||data.model!=="hd"||data.source!=="deepai.org")throw Error("fallback_not_available");
- const u=new URL(String(data.proxy_url||""));
- if(u.protocol!=="https:"||u.hostname!=="vexa-ai.pages.dev"||!u.pathname.startsWith("/image/proxy/")||u.username||u.password)throw Error("untrusted_fallback");
- const response=await fetch(u.href,{headers:{accept:"image/*"},redirect:"manual",signal:AbortSignal.timeout(12000)});
- const {a,mime}=await downloadImage(response),mid=crypto.randomUUID();
- await env.MEDIA.put(uid+"/"+mid,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
- return mid;
+const GLM_IMAGE="https://multimodalart-glm-image.hf.space";
+function imageShape(shape){return Object.hasOwn(KREA_SHAPES,shape)?KREA_SHAPES[shape]:KREA_SHAPES.portrait}
+function imageStyledPrompt(prompt,style){
+ const suffix=Object.hasOwn(KREA_STYLES,style)?KREA_STYLES[style]:KREA_STYLES["portrait-master"];
+ return suffix?prompt+", "+suffix:prompt;
+}
+function imageGradioArgs(provider,prompt,shape,style,seed){
+ const [width,height]=imageShape(shape),text=imageStyledPrompt(prompt,style);
+ return provider==="glm"?[text,[],seed,false,width,height,20,1.5]:[text,"","Turbo",8,0,width,height,seed,false];
+}
+function imageJobRef(provider,id,prompt,shape,style){
+ return JSON.stringify({v:3,provider,id,p:prompt.slice(0,1200),s:shape,t:style});
+}
+async function submitGradioImage(env,provider,prompt,shape,style){
+ const host=provider==="glm"?GLM_IMAGE:KREA,endpoint=provider==="glm"?"infer":"generate";
+ const data=imageGradioArgs(provider,prompt,shape,style,Math.floor(Math.random()*2147483647));
+ let r;
+ try{r=await fetch(host+"/gradio_api/call/"+endpoint,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data}),redirect:"manual",signal:AbortSignal.timeout(12000)})}
+ catch{throw Object.assign(new Error("图片来源网络中断"),{uncertain:true})}
+ if(!r.ok)throw Object.assign(new Error("图片来源 HTTP "+r.status),{status:r.status,definite:true});
+ let body;
+ try{body=await r.json()}catch{throw Object.assign(new Error("图片来源响应不完整"),{uncertain:true})}
+ const id=String(body?.event_id||"");
+ if(!/^[A-Za-z0-9_-]{8,128}$/.test(id))throw Object.assign(new Error("图片来源拒绝任务"),{definite:true});
+ return id;
 }
 async function submitKrea(req,env,user){
- requireUser(user);const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
+ requireUser(user);
+ const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(!prompt)throw Error("请输入图片描述");
- if(!env.MEDIA)throw Object.assign(new Error("独立图片存储未绑定"),{status:503});
-
+ if(!env.MEDIA)throw Object.assign(new Error("图片存储不可用"),{status:503});
+ const shape=Object.hasOwn(KREA_SHAPES,input.shape)?input.shape:"portrait",style=Object.hasOwn(KREA_STYLES,input.style)?input.style:"portrait-master";
+ let provider="krea",eid;
  try{
-  const seed=Math.floor(Math.random()*2147483647);
-  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?KREA_SHAPES[input.shape]:KREA_SHAPES.portrait;
-  const style=Object.hasOwn(KREA_STYLES,input.style)?KREA_STYLES[input.style]:KREA_STYLES["portrait-master"];
-  const styledPrompt=style?prompt+", "+style:prompt;
-  // Official Gradio call API requires an ordered 'data' argument array.
-  const payload={data:[styledPrompt,"","Turbo",8,0,shape[0],shape[1],seed,false]};
-  const res=await fetch(KREA+"/gradio_api/call/generate",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(12000)});
-  if(!res.ok||res.status>=300)throw Object.assign(new Error(res.status===429?"作图服务当前限流，请稍后重试":"作图服务请求失败 HTTP "+res.status),{status:res.status===429?429:503});
-  const data=await res.json(),eid=String(data?.event_id||"");
-  if(!/^[A-Za-z0-9_-]{8,128}$/.test(eid))throw Error("作图提交失败");
-  const id=crypto.randomUUID(),day="image-unmetered";
-  const external=JSON.stringify({v:2,id:eid,p:prompt,s:input.shape||"portrait",t:input.style||"portrait-master"});
-  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,external,Date.now(),day);
+  try{eid=await submitGradioImage(env,"krea",prompt,shape,style)}
+  catch(e){
+   if(!e.definite)throw e;
+   provider="glm";eid=await submitGradioImage(env,"glm",prompt,shape,style);
+  }
+  const id=crypto.randomUUID(),external=imageJobRef(provider,eid,prompt,shape,style);
+  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,external,Date.now(),"image-unmetered");
   return {ok:true,pending:true,jobId:id,model:"免费作图"};
- }catch(e){throw Object.assign(new Error("作图暂不可用："+(e?.name==="TimeoutError"?"提交超时":e.message||"网络失败")),{status:e?.status===429?429:503})}
+ }catch(e){throw Object.assign(new Error("图片生成服务暂不可用："+(e?.message||"请求失败")),{status:e?.status===429?429:503})}
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
@@ -562,70 +568,89 @@ async function failKreaJob(env,job,message){
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","作图失败："+message,job.message_id,job.user_id).catch(()=>{});
  }
 }
-async function queryKreaEvent(env,eid){
+async function queryGradioImageEvent(env,provider,eid){
+ const host=provider==="glm"?GLM_IMAGE:KREA,endpoint=provider==="glm"?"infer":"generate";
  let resp;
- try{resp=await fetch(KREA+"/gradio_api/call/generate/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
- catch{return {status:"pending",notice:"作图中"}}
- if(!resp.ok||resp.status>=300)return resp.status===404?{status:"failed",error:"作图已失效"}:{status:"pending",notice:"作图中"};
- const reader=resp.body?.getReader();if(!reader)return {status:"pending"};
- const dec=new TextDecoder();let buf="",total=0,doneUrl="",bad="";
- const handle=block=>{
-  const event=block.match(/(?:^|\n)event:\s*([^\n]+)/)?.[1]?.trim();
-  const content=block.split("\n").filter(x=>x.startsWith("data:")).map(x=>x.slice(5).trim()).join("\n");
-  if(event==="error"||event==="failed"){bad="作图失败";return}
-  if(event==="complete"){try{doneUrl=findImageUrl(JSON.parse(content));if(!doneUrl)bad="没有生成图片"}catch{bad="图片结果无效"}}
- };
+ try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
+ catch{return {status:"pending"}}
+ if(!resp.ok)return resp.status===404?{status:"failed",error:"生成任务已失效"}:{status:"pending"};
+ const reader=resp.body?.getReader();if(!reader)return{status:"pending"};
+ const decoder=new TextDecoder();let buffer="",size=0,url="",error="";
+ function consume(chunk){
+  const event=chunk.match(/(?:^|\n)event:\s*([^\n]+)/)?.[1]?.trim();
+  const value=chunk.split("\n").filter(x=>x.startsWith("data:")).map(x=>x.slice(5).trim()).join("\n");
+  if(event==="error"||event==="failed"){error="上游作图失败";return}
+  if(event==="complete"){
+   try{url=findImageUrl(JSON.parse(value));if(!url)error="未返回图片"}catch{error="图片结果无效"}
+  }
+ }
  try{
   for(;;){
-   const {done,value}=await reader.read();if(done)break;
-   total+=value.length;if(total>180000)throw Error("too_large");
-   buf+=dec.decode(value,{stream:true}).replace(/\r\n/g,"\n");
-   let end;while((end=buf.indexOf("\n\n"))>=0){handle(buf.slice(0,end));buf=buf.slice(end+2);if(doneUrl||bad)break}
-   if(doneUrl||bad)break;
+   const {value,done}=await reader.read();
+   if(done)break;
+   size+=value.byteLength;if(size>200000){error="生成响应过大";break}
+   buffer+=decoder.decode(value,{stream:true}).replace(/\r\n/g,"\n");
+   let end;
+   while((end=buffer.indexOf("\n\n"))>=0){consume(buffer.slice(0,end));buffer=buffer.slice(end+2);if(url||error)break}
+   if(url||error)break;
   }
-  if(buf.trim()&&!doneUrl&&!bad)handle(buf);
- }catch(e){if(e?.message==="too_large")bad="图片数据无效"}
- finally{reader.cancel().catch(()=>{})}
- return bad?{status:"failed",error:bad}:doneUrl?{status:"complete",url:doneUrl}:{status:"pending",notice:"作图中"};
+  if(buffer.trim()&&!url&&!error)consume(buffer);
+ }catch{/* A stream interruption is not evidence of a failed task. */}
+ finally{try{await reader.cancel()}catch{}}
+ return error?{status:"failed",error}:url?{status:"complete",url}:{status:"pending"};
 }
 async function imageJobStatus(env,user,id){
  requireUser(user);
  const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
  if(!job)return fail("作图任务不存在",404);
  if(job.status==="complete")return response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"免费作图"});
- if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
- if(job.status==="recovering"){if(Date.now()-job.checked_at>45000)await failKreaJob(env,job,"备用生成超时");return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
- if(Date.now()-job.created_at>30*60000){await failKreaJob(env,job,"作图超时");return response({ok:true,done:true,failed:true,error:"作图超时"})}
+ if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
  const now=Date.now();
- if(now-(job.checked_at||0)<6800)return response({ok:true,done:false,pending:true,waitSeconds:9,startedAt:job.created_at});
- const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,id,user.id,now-6700);
- if(!claimed.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:9,startedAt:job.created_at});
- let upstreamId=job.external_id,backup=null;
- if(typeof upstreamId==="string"&&upstreamId.startsWith("{")){try{const v=JSON.parse(upstreamId);if(v.v===2&&v.id){upstreamId=v.id;backup=v}}catch{}}
- const state=await queryKreaEvent(env,upstreamId);
- if(state.status==="failed"){
-  if(backup?.p){
-   const lock=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
-   if(!lock.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
-   try{
-    const mid=await saveVexaFallback(env,user.id,backup);
-    await dbRun(env.DB,"UPDATE image_jobs SET status='complete',media_id=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",mid,Date.now(),id,user.id);
-    if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mid+")",job.message_id,user.id);
-    return response({ok:true,done:true,image:"/api/files/"+mid,model:"免费作图"});
-   }catch(e){await failKreaJob(env,job,"免费作图来源暂不可用");return response({ok:true,done:true,failed:true,error:"生成未完成，免费服务暂时繁忙"})}
-  }
-  await failKreaJob(env,job,state.error);return response({ok:true,done:true,failed:true,error:state.error});
+ if(job.status==="recovering"){
+  if(now-job.checked_at>45000){await failKreaJob(env,job,"备用来源提交超时");return response({ok:true,done:true,failed:true,error:"备用来源提交超时"})}
+  return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
  }
- if(state.status==="pending")return response({ok:true,done:false,pending:true,waitSeconds:10,startedAt:job.created_at});
+ if(now-job.created_at>30*60000){await failKreaJob(env,job,"生成超时");return response({ok:true,done:true,failed:true,error:"生成超时"})}
+ if(now-(job.checked_at||0)<6800)return response({ok:true,done:false,pending:true,waitSeconds:10,startedAt:job.created_at});
+ const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,id,user.id,now-6700);
+ if(!claimed.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:10,startedAt:job.created_at});
+ let ref={v:1,provider:"krea",id:job.external_id,p:"",s:"portrait",t:"portrait-master"};
+ if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
+  try{
+   const parsed=JSON.parse(job.external_id);
+   if([2,3].includes(parsed.v)&&typeof parsed.id==="string"&&/^[A-Za-z0-9_-]{8,128}$/.test(parsed.id))
+    ref={...ref,...parsed,provider:parsed.v===2?"krea":parsed.provider==="glm"?"glm":"krea"};
+  }catch{}
+ }
+ const state=await queryGradioImageEvent(env,ref.provider,ref.id);
+ if(state.status==="pending")return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
+ if(state.status==="failed"){
+  if(ref.provider==="krea"&&ref.p){
+   const locked=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",Date.now(),id,user.id);
+   if(!locked.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
+   try{
+    const alternateId=await submitGradioImage(env,"glm",ref.p,ref.s,ref.t);
+    const external=imageJobRef("glm",alternateId,ref.p,ref.s,ref.t);
+    const updated=await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",external,Date.now(),id,user.id);
+    if(!updated.meta?.changes)throw Error("任务状态改变");
+    return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
+   }catch{
+    await failKreaJob(env,job,"免费图片来源均未接收任务");
+    return response({ok:true,done:true,failed:true,error:"免费生成来源暂不可用"});
+   }
+  }
+  await failKreaJob(env,job,state.error||"图片生成失败");
+  return response({ok:true,done:true,failed:true,error:state.error||"图片生成失败"});
+ }
  try{
   const mid=await saveKreaImage(env,user.id,state.url);
   const changed=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',media_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",mid,Date.now(),id,user.id);
   if(changed.meta?.changes&&job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mid+")",job.message_id,user.id);
   const final=changed.meta?.changes?mid:(await dbGet(env.DB,"SELECT media_id FROM image_jobs WHERE id=? AND user_id=?",id,user.id))?.media_id;
+  if(!final)return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
   return response({ok:true,done:true,image:"/api/files/"+final,model:"免费作图"});
  }catch{return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
 }
-
 async function createVideo(req,env,user){
  requireUser(user);
  const body=await parseJSON(req);
