@@ -105,7 +105,7 @@ a{color:inherit}
 .message-retry-model{display:inline-grid;place-items:center;width:26px;height:26px;min-width:26px;padding:3px;border:1px solid #d7e3ea;background:#f7fafc;border-radius:8px;color:#416b84;cursor:pointer}
 .message-retry-model .ui-icon,.message-retry-model .ui-icon svg{display:block;width:16px;height:16px}
 .message-retry-model:hover,.message-retry-model:focus-visible{background:#eaf4f9;border-color:#90b8cf}
-.message-used-model{font-size:11px;color:#758992;line-height:1.4;max-width:100%;overflow-wrap:anywhere}
+.message-used-model{font-size:9px;color:#b4232e;line-height:1.4;max-width:100%;overflow-wrap:anywhere}
 .message-send-pending{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:7px;font-size:11px;color:#7c8790}
 .message-resend{font-size:11px;line-height:1.4;border:1px solid #cedce6;border-radius:7px;color:#356e93;background:#fff;padding:4px 8px;cursor:pointer}
 .draw-previous-section{margin-top:12px;padding-top:10px;border-top:1px solid #e3eaed}
@@ -130,7 +130,7 @@ a{color:inherit}
 .composer-model-switch .ui-icon,.composer-model-switch .ui-icon svg{display:block;width:16px;height:16px}
 .composer-model-switch:hover,.composer-model-switch:focus-visible{border-color:#7aa9c7;background:#eaf4f9}
 .composer-model-caption{color:#899ba4;white-space:nowrap;font-size:10px;font-weight:500}
-.composer-model-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#315f7a;font-size:11px;font-weight:700}
+.composer-model-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b4232e;font-size:9px;font-weight:700}
 .composer-inner{display:flex;align-items:flex-end;gap:6px;min-height:32px;min-width:0;max-width:100%}
 .composer textarea{background:transparent;outline:0;border:0;resize:none;flex:1 1 0%;min-width:0;width:1px;max-width:100%;height:32px;min-height:32px;max-height:132px;padding:5px 3px;line-height:22px;font-size:16px;overflow-y:hidden;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}
 .composer textarea::placeholder{color:#9ba5a9}
