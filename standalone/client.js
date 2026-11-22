@@ -1,7 +1,7 @@
 "use strict";
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
- modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,
+ modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
@@ -136,6 +136,8 @@ function refreshKeyPanel(){
 }
 async function fetchConnections(){
  if(!S.user){S.savedProviders={};S.connected={};S.connectionsLoaded=false;return}
+ if(S.connectionsLoading)return;
+ S.connectionsLoading=true;
  try{
   const result=await api("/api/connections"),saved={};
   for(const item of result.connections||[]){
@@ -151,7 +153,7 @@ async function fetchConnections(){
  }catch(e){
   S.connectionsLoaded=false;
   flashError("密钥状态暂未同步："+humanError(e));
- }
+ }finally{S.connectionsLoading=false}
 }
 function isFreeModel(provider,model){
  if(provider==="free")return true;
@@ -955,10 +957,14 @@ async function sendMessage(){
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
- const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status"),dots=node("span","thinking-dots");
- for(let i=0;i<3;i++)dots.append(node("i"));dots.setAttribute("aria-hidden","true");
- const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考…");
- status.append(dots,waitLabel);loadingBubble.replaceChildren(status);
+ const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
+ const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考");
+ if(S.composerMode!=="text"){
+  const dots=node("span","thinking-dots");
+  for(let i=0;i<3;i++)dots.append(node("i"));
+  dots.setAttribute("aria-hidden","true");status.append(dots);
+ }
+ status.append(waitLabel);loadingBubble.replaceChildren(status);
  const startedAt=Date.now();
  const imageTimer=S.composerMode==="image"?window.setInterval(()=>{
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
@@ -1080,8 +1086,16 @@ function openModels(){
 }
 function openKeyPanel(provider){
  if(typeof provider==="string"&&$("keyProvider").querySelector('option[value="'+provider+'"]'))$("keyProvider").value=provider;
+ if(S.user&&!S.connectionsLoaded){
+  // Do not flash a fresh API-key form before saved account connections have loaded.
+  $("keyAdvanced").open=false;
+  $("savedConnectionPanel").hidden=true;
+  $("keyStatus").textContent="正在恢复已保存连接";
+  show("keyDialog");
+  if(!S.connectionsLoading)void fetchConnections();
+  return;
+ }
  refreshKeyPanel();show("keyDialog");
- if(S.user&&!S.connectionsLoaded)void fetchConnections();
 }
 function setCreationMode(mode){
  S.createMode=mode;
@@ -1182,7 +1196,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.freeToolsMode=false;S.freeToolsCategory="全部";S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
