@@ -750,6 +750,7 @@ async function imageJobStatus(env,user,id){
  const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
  if(!job)return fail("作图任务不存在",404);
  if(job.status==="complete")return response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"免费作图"});
+ if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
  if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
   try{const ref=JSON.parse(job.external_id);
    if(ref.v===4&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
