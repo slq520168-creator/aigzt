@@ -32,7 +32,7 @@
     <div class="sidebar-links">
      <button class="nav-row" id="navWork"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作任务</span></button>
      <button class="nav-row" id="navCode"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>编程助手</span></button>
-     <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>AI 模型</span><small id="modelTitle" class="side-model-label">免费自动</small></button>
+     <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>聊天模型设置</span><small id="modelTitle" class="side-model-label">免费自动</small></button>
      <button class="nav-row" id="navFreeTools"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>免费工具</span></button>
      <button class="nav-row" id="navDraw"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>免费作图</span></button>
      <button class="nav-row" id="groqConnect"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span>Groq 免费额度</span></button>
@@ -49,8 +49,13 @@
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
    <header class="topbar">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button></div>
-    <div class="top-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
+    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="panel-left" aria-hidden="true"></span></button>
+     <div class="top-mode-switch" role="tablist" aria-label="切换聊天和工作">
+      <button type="button" id="topChat" class="top-mode-tab active" role="tab" aria-selected="true" aria-controls="conversation">聊天</button>
+      <button type="button" id="topWork" class="top-mode-tab" role="tab" aria-selected="false" aria-controls="workBoard">工作</button>
+     </div>
+    </div>
+    <div class="top-right"><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>任务与阶段自动保存 · 模型不可用时继续接力</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
@@ -105,7 +110,6 @@
       <button type="submit" class="send" id="sendBtn" aria-label="发送消息"><span class="ui-icon" data-icon="arrow-up" aria-hidden="true"></span></button>
      </div>
      <div class="tool-tray" id="toolTray" hidden>
-      <button type="button" class="subtle" id="composeModels"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span><span>模型</span></button>
       <button type="button" class="subtle" id="imageMode" aria-pressed="false"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>作图</span></button>
       <button type="button" class="subtle" id="videoMode" aria-pressed="false"><span class="ui-icon" data-icon="video" aria-hidden="true"></span><span>视频</span></button>
       <button type="button" class="subtle" id="codeToggle" aria-pressed="false"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>代码</span></button>

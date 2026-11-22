@@ -592,7 +592,6 @@ function appendMessage(role,content,model,existingRow=null){
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
   if(!pending&&!picture&&String(content||"").trim())renderAssistantText(bubble,content);
 
-  if(model&&!/^free:(?:auto|vireonix|vexa|openrouter|groq|cehpoint)$|^(?:vireonix|vexa|groq)\/|^openrouter\/openrouter\/free(?:$|\b)/i.test(model))bubble.append(node("div","message-model",model));
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   if(lines.length>1){
@@ -619,7 +618,7 @@ function newChat(){
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
- S.chatId=null;S.attachments=[];renderAttachments();setFreeDefault();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
+ S.chatId=null;S.attachments=[];renderAttachments();if(S.provider!=="free"&&!connected(S.provider))setFreeDefault(false);setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();closeMenu();
 }
 function startCoding(){
@@ -1000,6 +999,17 @@ function syncWorkspaceRoute(name){
  const hash=name?"#"+name:"";
  if(location.hash!==hash)history.replaceState(history.state,"",location.pathname+location.search+hash);
 }
+/* Top-level mode tabs are a single App Shell control, never a chat message or model control. */
+function syncTopMode(){
+ const chatting=!S.workMode&&!S.freeToolsMode,working=!!S.workMode;
+ for(const [id,active] of [["topChat",chatting],["topWork",working]]){
+  const button=$(id);button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active));
+ }
+ $("headerChatModels").hidden=!chatting;
+ $("headerMore").hidden=!chatting;
+ $("headerNew").setAttribute("aria-label",working?"新建工作任务":"新建聊天");
+ $("headerNew").title=working?"新建工作任务":"新建聊天";
+}
 function setFreeToolsMode(enabled){
  S.freeToolsMode=!!enabled;$("shell").classList.toggle("free-tools-active",S.freeToolsMode);
  if(enabled){
@@ -1010,7 +1020,7 @@ function setFreeToolsMode(enabled){
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   if(!S.workMode){$("conversation").hidden=false;syncWorkspaceRoute("")}
  }
- closeMenu();syncHomeAmbient();
+ closeMenu();syncHomeAmbient();syncTopMode();
 }
 function restoreWorkspaceRoute(){
  if(location.hash==="#tools")setFreeToolsMode(true);
@@ -1029,7 +1039,7 @@ function setWorkMode(on){
   $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");
   $("prompt").placeholder="向 AI 提问…";syncWorkspaceRoute("");
  }
- closeMenu();syncHomeAmbient();
+ closeMenu();syncHomeAmbient();syncTopMode();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
 function renderWorkTasks(){
@@ -1770,8 +1780,12 @@ function wire(){
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
  $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
- $("newChat").addEventListener("click",newChat);$("headerNew").addEventListener("click",newChat);
+ $("newChat").addEventListener("click",newChat);
  $("headerMore").addEventListener("click",()=>openChatActions());
+ $("headerChatModels").addEventListener("click",()=>{if(!S.workMode&&!S.freeToolsMode)openModels()});
+ $("topChat").addEventListener("click",()=>{if(S.workMode)setWorkMode(false);else if(S.freeToolsMode)setFreeToolsMode(false);else syncTopMode()});
+ $("topWork").addEventListener("click",()=>{if(!S.workMode)setWorkMode(true);else syncTopMode()});
+ $("headerNew").addEventListener("click",()=>S.workMode?newWorkDraft():newChat());
  $("searchBtn").addEventListener("click",()=>{closeMenu();show("searchDialog");$("chatSearchInput").focus()});
  $("newProject").addEventListener("click",()=>openProject());
  $("accountBtn").addEventListener("click",()=>{if(!S.user)show("authDialog");else void openSettings()});
@@ -1793,7 +1807,6 @@ function wire(){
  $("settingRainbow").addEventListener("change",e=>{applyTheme(e.target.checked?"rainbow":"plain");void persistPrefs().catch(err=>flashError(humanError(err)))});
  $("archivedChats").addEventListener("click",()=>void listArchived());
  
- $("composeModels").addEventListener("click",()=>{hideAttachMenu();openModels()});
  $("attachButton").addEventListener("click",()=>{$("attachMenu").hidden=!$("attachMenu").hidden;$("toolTray").hidden=true});
  $("cameraAction").addEventListener("click",()=>{hideAttachMenu();$("cameraInput").click()});
  $("photosAction").addEventListener("click",()=>{hideAttachMenu();$("photosInput").click()});
