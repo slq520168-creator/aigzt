@@ -139,17 +139,27 @@ async function api(path,body){
  return data;
 }
 let avatarOwner=null,avatarEpoch=0;
-function refreshAvatar(){
- const uid=S.user?.id||null,letter=S.user?.email?.slice(0,1).toUpperCase()||"A";
- const targets=[$("accountAvatar"),$("settingsAvatarThumb")].filter(Boolean),epoch=++avatarEpoch;
+let avatarObjectUrl=null;
+async function refreshAvatar(){
+ const uid=S.user?.id||null,letter=S.user?.email?.slice(0,1).toUpperCase()||"A",epoch=++avatarEpoch;
+ const targets=[$("accountAvatar"),$("settingsAvatarThumb")].filter(Boolean);
  for(const target of targets)target.textContent=letter;
- if(!uid)return;
- for(const target of targets){
-  const img=new Image();img.alt="";img.decoding="async";
-  img.onload=()=>{if(epoch===avatarEpoch&&S.user?.id===uid)target.replaceChildren(img)};
-  img.onerror=()=>{};
-  img.src="/api/avatar?v="+epoch;
- }
+ if(!uid){if(avatarObjectUrl){URL.revokeObjectURL(avatarObjectUrl);avatarObjectUrl=null}return false}
+ try{
+  const response=await fetch("/api/avatar?refresh="+Date.now(),{credentials:"same-origin",cache:"no-store"});
+  if(!response.ok)return false;
+  const type=(response.headers.get("content-type")||"").split(";")[0];
+  if(!["image/jpeg","image/png","image/webp"].includes(type))return false;
+  const blob=await response.blob();if(!blob.size)return false;
+  const url=URL.createObjectURL(blob),img=new Image();
+  try{await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error("头像无法解码"));img.src=url})}
+  catch(error){URL.revokeObjectURL(url);throw error}
+  if(epoch!==avatarEpoch||S.user?.id!==uid){URL.revokeObjectURL(url);return false}
+  const old=avatarObjectUrl;avatarObjectUrl=url;
+  for(const target of targets){const copy=img.cloneNode(false);copy.alt="";target.replaceChildren(copy)}
+  if(old)URL.revokeObjectURL(old);
+  return true;
+ }catch{return false}
 }
 function setAuthUI(){
  const logged=!!S.user,uid=S.user?.id||null;
@@ -161,9 +171,10 @@ function setAuthUI(){
 async function uploadAvatar(file){
  if(!S.user){show("authDialog");return}
  if(!file)return;
- const status=$("avatarStatus"),button=$("changeAvatar");
+ const status=$("avatarStatus"),label=$("changeAvatar");
  if(file.size>12000000||!/^image\//.test(file.type)){status.textContent="请选择12MB以内的图片";return}
- button.disabled=true;status.textContent="正在处理头像…";
+ if(label.getAttribute("aria-busy")==="true")return;
+ label.setAttribute("aria-busy","true");status.textContent="正在处理头像…";
  let url;
  try{
   url=URL.createObjectURL(file);
@@ -179,9 +190,10 @@ async function uploadAvatar(file){
   const resp=await fetch("/api/avatar",{method:"POST",credentials:"same-origin",body:form});
   const data=await resp.json().catch(()=>null);
   if(!resp.ok||!data?.ok)throw Error(data?.error||"头像保存失败");
-  status.textContent="头像已保存";refreshAvatar();
+  const verified=await refreshAvatar();if(!verified)throw Error("头像已保存，但图片读取失败");
+  status.textContent="头像已更换";
  }catch(error){status.textContent="更换失败："+humanError(error)}
- finally{if(url)URL.revokeObjectURL(url);button.disabled=false}
+ finally{if(url)URL.revokeObjectURL(url);label.removeAttribute("aria-busy")}
 }
 
 const KEY_SITES={
@@ -505,6 +517,67 @@ async function pollImageJob(bubble,id,manual){
  }
 }
 
+/* Format AI output as a single conversational reply. No model-supplied HTML is executed. */
+function renderAssistantText(bubble,answer){
+ const lines=String(answer||"").replace(/\r\n/g,"\n").split("\n");
+ bubble.classList.remove("chat-revealing");bubble.replaceChildren();let paragraph=[],list=null,pre=null,code=null;
+ function inline(target,value){
+  const pattern=/(\*\*[^*]+\*\*|\x60[^\x60]+\x60)/g;
+  let index=0,match;
+  while((match=pattern.exec(value))){
+   if(match.index>index)target.append(document.createTextNode(value.slice(index,match.index)));
+   const raw=match[0],bold=raw.startsWith("**");
+   target.append(node(bold?"strong":"code","",bold?raw.slice(2,-2):raw.slice(1,-1)));
+   index=pattern.lastIndex;
+  }
+  if(index<value.length)target.append(document.createTextNode(value.slice(index)));
+ }
+ function flush(){
+  if(paragraph.length){const p=node("p");inline(p,paragraph.join("\n"));bubble.append(p);paragraph=[]}
+ }
+ for(const original of lines){
+  const line=original.trimEnd(),trim=line.trim();
+  if(/^\x60{3}/.test(trim)){
+   flush();list=null;
+   if(pre){pre=null;code=null}
+   else{pre=node("pre","chat-code");code=node("code");pre.append(code);bubble.append(pre)}
+   continue;
+  }
+  if(pre){code.append(document.createTextNode(original+"\n"));continue}
+  if(!trim){flush();list=null;continue}
+  const heading=trim.match(/^(#{1,3})\s+(.+)$/);
+  if(heading){flush();list=null;const h=node("h"+Math.min(4,heading[1].length+2));inline(h,heading[2]);bubble.append(h);continue}
+  const bullet=trim.match(/^([-*]|\d+\.)\s+(.+)$/);
+  if(bullet){
+   flush();const listType=/^\d/.test(bullet[1])?"ol":"ul";
+   if(!list||list.tagName.toLowerCase()!==listType){list=node(listType);bubble.append(list)}
+   const item=node("li");inline(item,bullet[2]);list.append(item);continue;
+  }
+  if(trim.startsWith("> ")){flush();list=null;const quote=node("blockquote");inline(quote,trim.slice(2));bubble.append(quote);continue}
+  list=null;paragraph.push(line);
+ }
+ flush();
+}
+async function revealCompletedReply(row,reply){
+ const bubble=row?.querySelector(".bubble");if(!bubble||!row.isConnected)return;
+ const viewport=$("conversation"),letters=Array.from(String(reply||""));
+ if(!letters.length)return;
+ bubble.classList.add("chat-revealing");bubble.replaceChildren();
+ if(document.hidden||window.matchMedia("(prefers-reduced-motion:reduce)").matches){bubble.textContent=letters.join("");return}
+ const batch=Math.max(7,Math.ceil(letters.length/65));let index=0;
+ await new Promise(resolve=>{
+  const frame=()=>{
+   if(!row.isConnected){resolve();return}
+   const next=Math.min(letters.length,index+batch);
+   const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<155;
+   bubble.append(document.createTextNode(letters.slice(index,next).join("")));
+   index=next;if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
+   if(index>=letters.length)resolve();else requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+ });
+}
+
 function appendMessage(role,content,model,existingRow=null){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
  bubble.textContent=String(content||"");
@@ -514,6 +587,7 @@ function appendMessage(role,content,model,existingRow=null){
   if(pending){bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
+  if(!pending&&!picture&&String(content||"").trim())renderAssistantText(bubble,content);
 
   if(model&&!/^free:(?:auto|vireonix|vexa|openrouter|groq|cehpoint)$|^(?:vireonix|vexa|groq)\/|^openrouter\/openrouter\/free(?:$|\b)/i.test(model))bubble.append(node("div","message-model",model));
  }else{
@@ -660,29 +734,64 @@ const WORK_PROVIDER_NAMES={
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
  minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
 };
+/* Display every supported API channel and the original work-product names.
+   Product names do not imply that the external proprietary agent is connected. */
+const WORK_PRODUCT_DIRECTORY=[
+ {name:"QwenWork",region:"中国",provider:"qwen"},
+ {name:"WorkBuddy",region:"中国",provider:"hunyuan"},
+ {name:"Kimi Work",region:"中国",provider:"kimi"},
+ {name:"Manus",region:"中国"},
+ {name:"Qwen Code",region:"中国",provider:"qwen"},
+ {name:"Kimi Code",region:"中国",provider:"kimi"},
+ {name:"Claude Cowork",region:"国际",provider:"claude"},
+ {name:"Claude Code",region:"国际",provider:"claude"},
+ {name:"ChatGPT Work",region:"国际",provider:"openai"},
+ {name:"OpenAI Codex",region:"国际",provider:"openai"},
+ {name:"Google Antigravity",region:"国际",provider:"gemini"},
+ {name:"Nova AI Agent",region:"国际",provider:"novai"},
+ {name:"Nova Workspace",region:"国际",provider:"novai"},
+ {name:"GigaAgent",region:"俄罗斯"},
+ {name:"GigaCowork",region:"俄罗斯"},
+ {name:"GigaCode",region:"俄罗斯"},
+ {name:"Alice AI Agents",region:"俄罗斯"},
+ {name:"Yandex AI Studio",region:"俄罗斯"},
+ {name:"GigaChat",region:"俄罗斯"},
+ {name:"YandexGPT / Alice",region:"俄罗斯"}
+];
 function renderWorkAgentCatalog(){
  const target=$("workAgentCatalog");target.replaceChildren();
  const locked=S.workBusy||["running","completed","cancelled"].includes(S.workDetail?.task?.status);
- const available=[["free",{model:"free:auto",consent:true,verified:true}],...Object.entries(S.savedProviders).filter(([id])=>id!=="free")];
+ const selectable=[["free","AIGZT · 免费自动"],...Object.entries(WORK_PROVIDER_NAMES).filter(([id])=>id!=="free").map(([id,name])=>[id,name])];
+ target.append(node("div","work-directory-title","站内可执行模型 · 点击连接或选择"));
  const grid=node("div","work-agent-items work-agent-live-items");
- for(const [id,record] of available){
-  const authorized=id==="free"||!!record.consent||isFreeModel(id,record.model);
-  const selected=S.workStages.length>0&&S.workStages.every(step=>(id==="free"?step.provider==="auto":step.provider===id));
+ for(const [id,name] of selectable){
+  const record=S.savedProviders[id],authorized=id==="free"||!!record&&(!!record.consent||isFreeModel(id,record.model));
+  const selected=S.workStages.length>0&&S.workStages.every(step=>id==="free"?step.provider==="auto"||step.provider==="free":step.provider===id);
   const button=node("button","work-agent-product work-agent-local"+(selected?" selected":""));button.type="button";button.disabled=locked;
-  const content=node("span","work-agent-description");
-  content.append(node("strong","",id==="free"?"AIGZT · 免费自动":WORK_PROVIDER_NAMES[id]||id),node("small","",id==="free"?"本站免费模型接力":authorized?"已连接 · 本站执行":"已保存 · 等待额度授权"));
-  button.append(content,node("span","work-agent-meta",selected?"已选择":authorized?"选择":"授权"));
+  const detail=node("span","work-agent-description");
+  detail.append(node("strong","",name),node("small","",id==="free"?"本站免费线路 · 自动接力":authorized?"已连接 · 在本站执行":record?"已保存 · 需要授权额度":"未连接 · 点击配置 API"));
+  button.append(detail,node("span","work-agent-meta",selected?"已选择":authorized?"选择":"连接"));
   button.addEventListener("click",()=>{
    if(!authorized){openKeyPanel(id);return}
    if(!S.workStages.length)resetWorkPlan();
-   for(const step of S.workStages){step.provider=id==="free"?"auto":id;step.model=id==="free"?"":record.model||""}
+   for(const step of S.workStages){step.provider=id==="free"?"auto":id;step.model=id==="free"?"":record?.model||""}
    renderWorkEditor();renderWorkAgentCatalog();
-  });
-  grid.append(button);
+  });grid.append(button);
  }
- target.append(grid);
- const add=node("button","work-add","＋ 连接更多执行模型");add.type="button";
- add.addEventListener("click",()=>openKeyPanel());target.append(add);
+ target.append(grid,node("div","work-directory-title","工作代理产品 · 对应模型 API 与原产品代理不同"));
+ for(const region of ["中国","国际","俄罗斯"]){
+  const section=node("section","work-agent-region-group");
+  section.append(node("h4","",region));
+  const products=node("div","work-agent-products");
+  for(const item of WORK_PRODUCT_DIRECTORY.filter(x=>x.region===region)){
+   const canConnect=!!item.provider&&Object.hasOwn(WORK_PROVIDER_NAMES,item.provider);
+   const el=node("button","work-agent-reference");el.type="button";el.disabled=!canConnect||locked;
+   el.append(node("strong","",item.name),node("small","",canConnect?"连接对应模型 API · 由 AIGZT 执行任务":"尚无站内原生代理接口"));
+   if(canConnect)el.addEventListener("click",()=>openKeyPanel(item.provider));
+   products.append(el);
+  }
+  section.append(products);target.append(section);
+ }
 }
 function resetWorkPlan(){
  S.workStages=[
@@ -1070,6 +1179,7 @@ async function sendMessage(){
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
+  let receivedStreamingText=false;
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
  const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考");
  const dots=node("span","thinking-dots");
@@ -1087,11 +1197,12 @@ async function sendMessage(){
     const bubble=loadingBubble,viewport=$("conversation");
     const onDelta=token=>{
      if(!active||!loading.isConnected)return;
+     receivedStreamingText=true;
      pending+=token;if(scheduled)return;scheduled=true;
      requestAnimationFrame(()=>{
       scheduled=false;if(!active||!loading.isConnected)return;
       if(!pending)return;
-      if(bubble.querySelector(".thinking-status"))bubble.replaceChildren();
+      if(bubble.querySelector(".thinking-status")){bubble.classList.add("chat-revealing");bubble.replaceChildren()}
       const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
       bubble.textContent+=pending;pending="";
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
@@ -1108,7 +1219,8 @@ async function sendMessage(){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:S.composerMode,prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
-  S.chatId=result.chatId;appendMessage("assistant",result.reply,isFreeMessage?null:result.model,loading);
+  if(loading.isConnected&&S.composerMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
+  if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,isFreeMessage?null:result.model,loading)}
   await fetchChats();void fetchMe();
  }catch(e){
   loading.remove();
@@ -1129,7 +1241,7 @@ async function sendMessage(){
    flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e));
   }
  }
- finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;$("prompt").focus()}
+ finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false}
 }
 async function loadCatalog(){
  if(S.loadedCatalog)return;
@@ -1631,7 +1743,7 @@ function wire(){
  $("newProject").addEventListener("click",()=>openProject());
  $("accountBtn").addEventListener("click",()=>{if(!S.user)show("authDialog");else void openSettings()});
  $("settingsBtn").addEventListener("click",()=>void openSettings());
- $("changeAvatar").addEventListener("click",()=>$("avatarInput").click());
+ $("changeAvatar").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("avatarInput").click()}});
  $("avatarInput").addEventListener("change",e=>{const file=e.target.files?.[0];e.target.value="";if(file)void uploadAvatar(file)});
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
