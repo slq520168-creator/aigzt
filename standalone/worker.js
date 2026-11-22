@@ -462,6 +462,7 @@ async function chat(req,env,user){
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
  if(lines.length&&!context.length&&provider==="free"&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n提示：外部免费文字模型不能直接解析图片或PDF像素，不要虚构文件内容。"};
  const mode=body.mode==="code"?"code":"general";
+ if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。默认像自然对话一样直接回答，段落简洁、有针对性；不要未经要求堆叠长报告、多份答案或大量编号清单。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。不得虚构执行状态。"});
  let giveBack=null,result;
  try{
   if(provider==="free"){
@@ -510,6 +511,28 @@ async function uploadFile(req,env,user){
  try{await env.MEDIA.put(user.id+"/"+id,file.stream(),{httpMetadata:{contentType:type},customMetadata:{name}})}
  catch(e){await refund().catch(()=>{});throw e}
  return {ok:true,id,name,type,size:file.size,url:"/api/files/"+id};
+}
+async function avatarUpload(req,env,user){
+ requireUser(user);
+ if(!env.MEDIA)return fail("头像存储尚未配置",503);
+ if(Number(req.headers.get("content-length")||0)>1800000)return fail("头像文件过大",413);
+ const reader=req.body?.getReader();if(!reader)return fail("请选择头像",400);
+ const parts=[];let size=0;
+ for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>1800000){await reader.cancel().catch(()=>{});return fail("头像不得超过1.8MB",413)}parts.push(value)}
+ const upload=new Request(req.url,{method:"POST",headers:{"content-type":req.headers.get("content-type")||""},body:new Blob(parts)});
+ const file=(await upload.formData()).get("file");
+ if(!(file instanceof File)||!file.size||file.size>1400000)return fail("请选择小于1.4MB的图片",400);
+ if(!["image/jpeg","image/png","image/webp"].includes(file.type.toLowerCase()))return fail("只支持 JPEG、PNG、WebP 图片",400);
+ await env.MEDIA.put(user.id+"/profile/avatar",file.stream(),{httpMetadata:{contentType:file.type},customMetadata:{name:"用户头像"}});
+ return response({ok:true});
+}
+async function avatarRead(env,user){
+ requireUser(user);
+ const obj=await env.MEDIA?.get(user.id+"/profile/avatar");
+ if(!obj)return fail("尚未设置头像",404);
+ const type=obj.httpMetadata?.contentType||"image/jpeg";
+ if(!["image/jpeg","image/png","image/webp"].includes(type))return fail("头像格式无效",415);
+ return new Response(obj.body,{headers:{"content-type":type,"cache-control":"private,no-store","x-content-type-options":"nosniff","content-security-policy":"default-src 'none'; sandbox"}});
 }
 async function readFile(env,user,id){
  requireUser(user);
@@ -1266,6 +1289,8 @@ async function main(req,env){
  const imageJob=path.match(/^\/api\/image\/task\/([0-9a-f-]{36})$/i);
  if(imageJob&&req.method==="GET")return imageJobStatus(env,user,imageJob[1]);
  if(path==="/api/chat/media"&&req.method==="POST")return response(await mediaChat(req,env,user));
+  if(path==="/api/avatar"&&req.method==="GET")return avatarRead(env,user);
+  if(path==="/api/avatar"&&req.method==="POST")return avatarUpload(req,env,user);
  if(path==="/api/files/upload"&&req.method==="POST")return response(await uploadFile(req,env,user));
  const fm=path.match(/^\/api\/files\/([0-9a-f-]{36})$/);
  if(fm&&req.method==="GET")return readFile(env,user,fm[1]);
@@ -1364,7 +1389,7 @@ async function main(req,env){
  }
  if(path==="/api/files"&&req.method==="GET"){
   const listing=await env.MEDIA.list({prefix:user.id+"/",limit:80,include:["customMetadata","httpMetadata"]});
-  return response({ok:true,files:listing.objects.map(x=>({id:x.key.slice(user.id.length+1),name:x.customMetadata?.name||"附件",type:x.httpMetadata?.contentType||"",size:x.size,url:"/api/files/"+x.key.slice(user.id.length+1)}))});
+  return response({ok:true,files:listing.objects.filter(x=>x.key!==user.id+"/profile/avatar").map(x=>({id:x.key.slice(user.id.length+1),name:x.customMetadata?.name||"附件",type:x.httpMetadata?.contentType||"",size:x.size,url:"/api/files/"+x.key.slice(user.id.length+1)}))});
  }
  if(path==="/api/chats/search"&&req.method==="GET"){
   const query=truncate(url.searchParams.get("q"),60).trim();

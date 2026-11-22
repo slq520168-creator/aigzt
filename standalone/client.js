@@ -138,12 +138,50 @@ async function api(path,body){
  if(!resp.ok||!data?.ok)throw Error(data?.error||"请求失败，HTTP "+resp.status);
  return data;
 }
+let avatarOwner=null,avatarEpoch=0;
+function refreshAvatar(){
+ const uid=S.user?.id||null,letter=S.user?.email?.slice(0,1).toUpperCase()||"A";
+ const targets=[$("accountAvatar"),$("settingsAvatarThumb")].filter(Boolean),epoch=++avatarEpoch;
+ for(const target of targets)target.textContent=letter;
+ if(!uid)return;
+ for(const target of targets){
+  const img=new Image();img.alt="";img.decoding="async";
+  img.onload=()=>{if(epoch===avatarEpoch&&S.user?.id===uid)target.replaceChildren(img)};
+  img.onerror=()=>{};
+  img.src="/api/avatar?v="+epoch;
+ }
+}
 function setAuthUI(){
- const logged=!!S.user;
+ const logged=!!S.user,uid=S.user?.id||null;
  $("accountName").textContent=logged?S.user.email:"登录 / 注册";
- $("accountAvatar").textContent=logged?S.user.email.slice(0,1).toUpperCase():"A";
+ if(uid!==avatarOwner){avatarOwner=uid;refreshAvatar()}
  const q=S.quota;
  $("quotaLabel").textContent=q&&logged?"免费请求保护配额："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"外部免费 · 登录后使用";
+}
+async function uploadAvatar(file){
+ if(!S.user){show("authDialog");return}
+ if(!file)return;
+ const status=$("avatarStatus"),button=$("changeAvatar");
+ if(file.size>12000000||!/^image\//.test(file.type)){status.textContent="请选择12MB以内的图片";return}
+ button.disabled=true;status.textContent="正在处理头像…";
+ let url;
+ try{
+  url=URL.createObjectURL(file);
+  const photo=new Image();
+  await new Promise((resolve,reject)=>{photo.onload=resolve;photo.onerror=()=>reject(Error("图片无法读取"));photo.src=url});
+  const canvas=document.createElement("canvas");canvas.width=256;canvas.height=256;
+  const ctx=canvas.getContext("2d");if(!ctx)throw Error("设备不支持处理图片");
+  const side=Math.min(photo.naturalWidth,photo.naturalHeight),sx=(photo.naturalWidth-side)/2,sy=(photo.naturalHeight-side)/2;
+  ctx.drawImage(photo,sx,sy,side,side,0,0,256,256);
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",.86));
+  if(!blob)throw Error("头像压缩失败");
+  const form=new FormData();form.append("file",blob,"avatar.jpg");
+  const resp=await fetch("/api/avatar",{method:"POST",credentials:"same-origin",body:form});
+  const data=await resp.json().catch(()=>null);
+  if(!resp.ok||!data?.ok)throw Error(data?.error||"头像保存失败");
+  status.textContent="头像已保存";refreshAvatar();
+ }catch(error){status.textContent="更换失败："+humanError(error)}
+ finally{if(url)URL.revokeObjectURL(url);button.disabled=false}
 }
 
 const KEY_SITES={
@@ -197,7 +235,7 @@ async function fetchConnections(){
    saved[item.provider]={model:item.model||"",consent:!!item.consent,verified:!!item.verified,updatedAt:item.updatedAt};
    if(item.model&&!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model}];
   }
-  S.savedProviders=saved;S.connectionsLoaded=true;refreshSourceChips();
+  S.savedProviders=saved;S.connectionsLoaded=true;refreshSourceChips();if(S.workMode)renderWorkAgentCatalog();
   if(S.provider!=="free"&&!connected(S.provider))setFreeDefault(false);
   S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);
   S.selectedFree=isFreeModel(S.provider,S.model);
@@ -467,10 +505,11 @@ async function pollImageJob(bubble,id,manual){
  }
 }
 
-function appendMessage(role,content,model){
- const row=node("div","message "+role),bubble=node("div","bubble",content);
+function appendMessage(role,content,model,existingRow=null){
+ const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
+ bubble.textContent=String(content||"");
  if(role==="assistant"){
-  const icon=node("span","avatar-ai");icon.innerHTML="<svg viewBox=\"0 0 36 36\" width=\"34\" height=\"34\" aria-hidden=\"true\"><rect x=\"4\" y=\"6\" width=\"28\" height=\"27\" rx=\"12\" fill=\"#d6eef1\" stroke=\"#92c4ce\" stroke-width=\"1.2\"/><path d=\"M4 15C0 12 3 7 8 10M32 15c4-3 1-8-4-5\" fill=\"#b0d9e6\"/><circle cx=\"13\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><circle cx=\"23\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><path d=\"M14 26q4 3 8 0\" fill=\"none\" stroke=\"#496f77\" stroke-width=\"1.7\" stroke-linecap=\"round\"/><circle cx=\"8.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><circle cx=\"27.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><path d=\"M18 6V2\" stroke=\"#74aab6\" stroke-width=\"1.8\"/><circle cx=\"18\" cy=\"3\" r=\"2\" fill=\"#f7c975\"/></svg>";row.append(icon,bubble);
+  const icon=node("span","avatar-ai");icon.innerHTML="<svg viewBox=\"0 0 36 36\" width=\"34\" height=\"34\" aria-hidden=\"true\"><rect x=\"4\" y=\"6\" width=\"28\" height=\"27\" rx=\"12\" fill=\"#d6eef1\" stroke=\"#92c4ce\" stroke-width=\"1.2\"/><path d=\"M4 15C0 12 3 7 8 10M32 15c4-3 1-8-4-5\" fill=\"#b0d9e6\"/><circle cx=\"13\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><circle cx=\"23\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><path d=\"M14 26q4 3 8 0\" fill=\"none\" stroke=\"#496f77\" stroke-width=\"1.7\" stroke-linecap=\"round\"/><circle cx=\"8.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><circle cx=\"27.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><path d=\"M18 6V2\" stroke=\"#74aab6\" stroke-width=\"1.8\"/><circle cx=\"18\" cy=\"3\" r=\"2\" fill=\"#f7c975\"/></svg>";if(!existingRow)row.append(icon,bubble);
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
   if(pending){bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
@@ -490,8 +529,12 @@ function appendMessage(role,content,model){
   }
   row.append(bubble);
  }
- $("messageList").append(row);
- $("conversation").scrollTop=$("conversation").scrollHeight;
+ if(!existingRow)$("messageList").append(row);
+ const viewport=$("conversation");
+ if(viewport&&!viewport.hidden){
+  const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<150;
+  if(nearBottom||role==="user")viewport.scrollTop=viewport.scrollHeight;
+ }
  return row;
 }
 function newChat(){
@@ -501,7 +544,6 @@ function newChat(){
  if(S.workMode)setWorkMode(false);
  S.chatId=null;S.attachments=[];renderAttachments();setFreeDefault();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();closeMenu();
- $("prompt").focus();
 }
 function startCoding(){
  if(S.busy)return;
@@ -583,7 +625,7 @@ function setComposerMode(mode){
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
  $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
  $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":"向 AI 提问…";
- resizePrompt();$("prompt").focus();
+ resizePrompt();
 }
 function renderAttachments(){
  const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
@@ -618,48 +660,29 @@ const WORK_PROVIDER_NAMES={
  grok:"xAI API",gemini:"Gemini API",qwen:"阿里百炼 API",deepseek:"DeepSeek API",zhipu:"智谱 API",kimi:"Moonshot API",
  minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API"
 };
-const WORK_AGENT_PRODUCTS=[
- {name:"QwenWork",desc:"千问 · 办公工作代理",url:"https://qwenwork.cn",region:"中国",kind:"work"},
- {name:"WorkBuddy",desc:"腾讯 · AI 办公工作台",url:"https://cloud.tencent.com/product/workbuddy",region:"中国",kind:"work"},
- {name:"Kimi Work",desc:"Kimi · 多步骤工作",url:"https://www.kimi.com/en/help/others/product-comparison",region:"中国",kind:"work"},
- {name:"Manus",desc:"通用任务代理",url:"https://manus.im",region:"中国",kind:"work"},
- {name:"Qwen Code",desc:"千问 · 编程代理",url:"https://github.com/QwenLM/qwen-code",region:"中国",kind:"dev"},
- {name:"Kimi Code",desc:"Kimi · 编程代理",url:"https://www.kimi.com/code/en",region:"中国",kind:"dev"},
- {name:"Claude（含 Cowork）",desc:"Anthropic · 办公与多步骤工作",url:"https://claude.com/product/cowork",region:"国际",kind:"work"},
- {name:"Claude Code",desc:"Anthropic · 编程代理",url:"https://claude.com/product/claude-code",region:"国际",kind:"dev"},
- {name:"ChatGPT Work",desc:"OpenAI · 工作代理",url:"https://chatgpt.com",region:"国际",kind:"work"},
- {name:"OpenAI Codex",desc:"OpenAI · 编程代理",url:"https://chatgpt.com/codex",region:"国际",kind:"dev"},
- {name:"Google Antigravity",desc:"Google · 开发代理",url:"https://antigravity.google",region:"国际",kind:"dev"},
- {name:"Nova AI（Mac Agent）",desc:"Mac · 网页、邮件和自动任务",url:"https://nova-ai-agent.com/",region:"国际",kind:"work"},
- {name:"Nova（Agent Workspace）",desc:"Mac · Claude / ChatGPT 代理工作台",url:"https://supernova.md/",region:"国际",kind:"work"},
- {name:"Nova AI（免费多模型）",desc:"novaai.one · 7 个模型自动路由，无需自带密钥；官网使用",url:"https://www.novaai.one/",region:"国际",kind:"web"},
- {name:"Nova AI（模型聚合）",desc:"novai.su · 多模型接口与免费模型",url:"https://once-cf.novai.su/",region:"国际",kind:"api"},
- {name:"NovAI（中国模型）",desc:"aiapi-pro.com · 中国模型与免费 Flash",url:"https://aiapi-pro.com/",region:"中国",kind:"api"},
- {name:"GigaAgent（ГигаАгент）",desc:"Sber · 俄罗斯自主任务代理",url:"https://www.sberbank.ru/ru/sberpress/all/article?blockID=1303&lang=ru&newsID=79a5051e-0de1-40eb-94b7-10ca383ca531&regionID=78&type=NEWS",region:"俄罗斯",kind:"work"},
- {name:"GigaCowork",desc:"Sber · 团队协作工作代理",url:"https://www.sberbank.ru/ru/sberpress/tekhnologii/article?blockID=69b149cd-6db4-45aa-ade1-b6920d771b11&lang=ru&newsID=d43562d5-d15c-49af-88bb-8ad23bdd3323&regionID=77&type=NEWS",region:"俄罗斯",kind:"work"},
- {name:"GigaCode",desc:"Sber · 编程代理",url:"https://www.sberbank.ru/ru/sberpress/tekhnologii/article?blockID=69b149cd-6db4-45aa-ade1-b6920d771b11&lang=ru&newsID=b91a0cfe-70f9-47cb-aa52-c19ebacc6197&regionID=16&type=NEWS",region:"俄罗斯",kind:"dev"},
- {name:"Alice AI Agents（Алиса AI）",desc:"Yandex · 研究、预约等工作代理",url:"https://alice.yandex.ru/support/ru/assistant/chat/agents",region:"俄罗斯",kind:"work"},
- {name:"Yandex AI Studio · Agent Atelier",desc:"Yandex Cloud · AI 代理开发",url:"https://yandex.cloud/en/docs/stackland/concepts/components/ai-studio",region:"俄罗斯",kind:"dev"},
- {name:"GigaChat",desc:"Sber · 俄罗斯模型及 AI 助手",url:"https://giga.chat/portal",region:"俄罗斯",kind:"assistant"},
- {name:"Alice AI / YandexGPT",desc:"Yandex · 俄罗斯 AI 助手及模型",url:"https://alice.yandex.ru/about",region:"俄罗斯",kind:"assistant"}
-];
 function renderWorkAgentCatalog(){
  const target=$("workAgentCatalog");target.replaceChildren();
- for(const region of ["中国","国际","俄罗斯"]){
-  const group=node("details","work-agent-group");group.open=true;
-  const items=WORK_AGENT_PRODUCTS.filter(x=>x.region===region);
-  const heading=node("summary","work-agent-region",region+" · "+items.length+" 项");
-  const grid=node("div","work-agent-items");
-  for(const item of items){
-   const link=node("a","work-agent-product");link.href=item.url;link.target="_blank";link.rel="noopener noreferrer";
-   link.setAttribute("aria-label",item.name+" · 打开官方网站");
-   const details=node("span","work-agent-description");
-   details.append(node("strong","",item.name),node("small","",item.desc));
-   const meta=node("span","work-agent-meta",item.kind==="assistant"?"AI 助手":item.kind==="api"?"API":item.kind==="web"?"官网":"官网");
-   link.append(details,meta);grid.append(link);
-  }
-  group.append(heading,grid);target.append(group);
+ const locked=S.workBusy||["running","completed","cancelled"].includes(S.workDetail?.task?.status);
+ const available=[["free",{model:"free:auto",consent:true,verified:true}],...Object.entries(S.savedProviders).filter(([id])=>id!=="free")];
+ const grid=node("div","work-agent-items work-agent-live-items");
+ for(const [id,record] of available){
+  const authorized=id==="free"||!!record.consent||isFreeModel(id,record.model);
+  const selected=S.workStages.length>0&&S.workStages.every(step=>(id==="free"?step.provider==="auto":step.provider===id));
+  const button=node("button","work-agent-product work-agent-local"+(selected?" selected":""));button.type="button";button.disabled=locked;
+  const content=node("span","work-agent-description");
+  content.append(node("strong","",id==="free"?"AIGZT · 免费自动":WORK_PROVIDER_NAMES[id]||id),node("small","",id==="free"?"本站免费模型接力":authorized?"已连接 · 本站执行":"已保存 · 等待额度授权"));
+  button.append(content,node("span","work-agent-meta",selected?"已选择":authorized?"选择":"授权"));
+  button.addEventListener("click",()=>{
+   if(!authorized){openKeyPanel(id);return}
+   if(!S.workStages.length)resetWorkPlan();
+   for(const step of S.workStages){step.provider=id==="free"?"auto":id;step.model=id==="free"?"":record.model||""}
+   renderWorkEditor();renderWorkAgentCatalog();
+  });
+  grid.append(button);
  }
+ target.append(grid);
+ const add=node("button","work-add","＋ 连接更多执行模型");add.type="button";
+ add.addEventListener("click",()=>openKeyPanel());target.append(add);
 }
 function resetWorkPlan(){
  S.workStages=[
@@ -1028,12 +1051,9 @@ async function sendMessage(){
  const loading=appendMessage("assistant","");
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
  const waitLabel=node("span","",S.composerMode==="image"?"作图中 1秒":S.composerMode==="video"?"正在创建视频…":"正在思考");
- if(S.composerMode!=="text"){
-  const dots=node("span","thinking-dots");
-  for(let i=0;i<3;i++)dots.append(node("i"));
-  dots.setAttribute("aria-hidden","true");status.append(dots);
- }
- status.append(waitLabel);loadingBubble.replaceChildren(status);
+ const dots=node("span","thinking-dots");
+ for(let i=0;i<3;i++)dots.append(node("i"));
+ dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);loadingBubble.replaceChildren(status);
  const startedAt=Date.now();
  const imageTimer=S.composerMode==="image"?window.setInterval(()=>{
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
@@ -1050,7 +1070,7 @@ async function sendMessage(){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:S.composerMode,prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
-  S.chatId=result.chatId;loading.remove();appendMessage("assistant",result.reply,isFreeMessage?null:result.model);
+  S.chatId=result.chatId;appendMessage("assistant",result.reply,isFreeMessage?null:result.model,loading);
   await fetchChats();void fetchMe();
  }catch(e){
   loading.remove();
@@ -1123,33 +1143,8 @@ function modelMatches(m){
  if(S.filter==="code"&&!/cod(e|er|ing)|deepseek|qwen|gpt|claude|gemini|glm|devstral|starcoder/i.test(t))return false;
  return true;
 }
-function renderProviderSpotlight(){
- const box=$("modelRegionLinks");box.replaceChildren();
- const groups={
-  "family:russian":[
-   {name:"GigaChat",desc:"Sber · 俄罗斯 AI",url:"https://giga.chat/portal"},
-   {name:"Alice AI · YandexGPT",desc:"Yandex · 俄罗斯 AI",url:"https://alice.yandex.ru/about"},
-   {name:"Yandex AI Studio",desc:"Yandex Cloud · 模型与代理",url:"https://yandex.cloud/en/ai"},
-   {name:"Nova AI API",provider:"novai"}],
-  "family:international":[
-   {name:"OpenAI · GPT",provider:"openai"},{name:"Anthropic · Claude",provider:"claude"},
-   {name:"xAI · Grok",provider:"grok"},{name:"Google · Gemini",provider:"gemini"},
-   {name:"OpenRouter",provider:"openrouter"},{name:"Groq",provider:"groq"},
-   {name:"Nova AI",provider:"novai"},{name:"Cerebras",provider:"cerebras"}],
-  "family:novai":[{name:"Nova AI · 多模型",provider:"novai"},{name:"NovAI · 中国模型",provider:"novai_pro"}]
- };
- const items=groups[S.source]||[];box.hidden=!items.length;
- for(const item of items){
-  const b=node("button","model-provider-card");b.type="button";
-  b.append(node("strong","",item.name),node("small","",item.desc||(connected(item.provider)?"已连接":"需连接个人 API")));
-  b.addEventListener("click",()=>{
-   if(item.url)window.open(item.url,"_blank","noopener,noreferrer");
-   else{hide("modelDialog");openKeyPanel(item.provider)}
-  });box.append(b);
- }
-}
 function renderModels(){
- renderProviderSpotlight();
+ $("modelRegionLinks").hidden=true;
  const visible=allModels().filter(modelMatches);
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*30);
  $("modelCount").textContent=count+" 项"+(S.source==="free"?" · 当前默认：免费自动":"");
@@ -1157,13 +1152,14 @@ function renderModels(){
  const list=$("modelList");list.replaceChildren();
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的真实模型，请切换筛选。":"模型目录尚未连接成功。"));return}
  for(const item of shown){
-  const row=node("div","model-row"),info=node("div","model-info"),title=node("strong","",item.name||item.id);
+  const selected=S.model===item.id&&S.provider===item.provider;
+  const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
   const saved=Boolean(S.savedProviders[item.provider]);
   const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费线路":saved?"已连接":item.free?"免费 · 需连接":"需连接");
   title.append(tag);info.append(title,node("small","",item.provider==="free"?"平台路由 · 真实模型由上游决定":"接入平台："+item.provider+" · 模型 ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
   const button=node("button","model-action",actionable?(item.type!=="text"?"使用":S.model===item.id?"已选":item.provider==="free"||saved?"使用":"连接"):"暂不支持");
-  button.disabled=!actionable||S.model===item.id;
+  button.disabled=!actionable||selected;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
  }
@@ -1597,6 +1593,8 @@ function wire(){
  $("newProject").addEventListener("click",()=>openProject());
  $("accountBtn").addEventListener("click",()=>{if(!S.user)show("authDialog");else void openSettings()});
  $("settingsBtn").addEventListener("click",()=>void openSettings());
+ $("changeAvatar").addEventListener("click",()=>$("avatarInput").click());
+ $("avatarInput").addEventListener("change",e=>{const file=e.target.files?.[0];e.target.value="";if(file)void uploadAvatar(file)});
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
  $("deleteProject").addEventListener("click",()=>void deleteProject());

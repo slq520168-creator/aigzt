@@ -54,10 +54,10 @@
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>任务与阶段自动保存 · 模型不可用时继续接力</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
-    <details class="work-agents" id="workAgents" open><summary>工作代理 <small>中国 · 国际 · 俄罗斯</small></summary>
+    <details class="work-agents" id="workAgents" open><summary>站内工作模型 <small>模型在 AIGZT 内执行，不跳转官网</small></summary>
      <div class="work-agent-status"><strong>AIGZT 工作执行器</strong><span>站内可用 · 文本及代码任务接力</span></div>
      <div id="workAgentCatalog" class="work-agent-catalog"></div>
-     <p class="work-agent-disclaimer">站内任务由 AIGZT 执行；外部代理通过各自官网账号使用。</p>
+     <p class="work-agent-disclaimer">选定已连接的 API 模型后，规划、制作与复核由本站工作执行器依次完成，并保留任务记录。未连接的第三方工作产品不会被冒充为已接入代理。</p>
     </details>
     <details class="work-config" id="workConfig">
      <summary>配置执行步骤与模型 <span id="workConfigSummary">按任务自由配置</span></summary>
@@ -145,7 +145,7 @@
  </dialog>
  <dialog id="settingsDialog" class="modal settings-dialog workspace-view" aria-label="设置">
   <div class="modal-head"><h2>设置</h2><button class="close-modal" data-close="settingsDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
-  <div class="settings-group"><h3>账号</h3><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
+  <div class="settings-group"><h3>账号</h3><div class="profile-editor"><span id="settingsAvatarThumb" class="settings-avatar-thumb" aria-hidden="true">A</span><div class="profile-editor-info"><strong>个人头像</strong><small id="avatarStatus">支持照片上传，自动裁剪为正方形</small><button type="button" class="outline" id="changeAvatar">更换头像</button></div></div><input id="avatarInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden><div id="settingsEmail" class="setting-value"></div><button id="settingsLogout" class="danger-link">退出登录</button></div>
   <div class="settings-group"><h3>外观</h3><label class="setting-switch">七彩呼吸效果<input type="checkbox" id="settingRainbow"></label></div>
   <div class="settings-group"><h3>跨会话记忆</h3><label class="setting-switch">在新对话中引用历史上下文<input type="checkbox" id="settingMemory"></label>
    <form id="memoryForm" class="memory-form"><input id="memoryInput" maxlength="450" placeholder="保存需要长期记住的内容" required><button class="primary" type="submit">保存</button></form>
@@ -165,7 +165,7 @@
  </dialog>
 
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
-  <div class="modal-head"><div><h2>模型</h2><p id="modelSummary">默认使用免费自动线路</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="modal-head"><div><h2>选择 AI 模型</h2><p id="modelSummary">默认免费自动 · 连接后可使用更多模型</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">全部模型</button><button class="chip" data-source="free">免费线路</button><button class="chip" data-source="family:international">海外</button><button class="chip" data-source="family:russian">俄罗斯</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:claude">Claude</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button><button class="chip" data-source="family:novai">NovaAI</button><button class="chip" data-source="family:deepseek">DeepSeek</button><button class="chip" data-source="connected">已连接</button></div><div id="modelRegionLinks" class="model-region-links" hidden></div>
   <details class="model-extra" id="modelExtra"><summary>连接更多服务商</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>
