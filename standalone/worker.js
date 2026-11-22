@@ -518,6 +518,9 @@ async function saveKreaImage(env,uid,rawUrl){
  return id;
 }
 const GLM_IMAGE="https://multimodalart-glm-image.hf.space";
+const RIO_IMAGE="https://rioshiina-imagegen.hf.space";
+// Exactly the fixed IM source order. Never reorder based on UI settings or arbitrary heuristics.
+const IM_IMAGE_STAGES=Object.freeze(["krea","rio","vexa","glm"]);
 function imageShape(shape){return Object.hasOwn(KREA_SHAPES,shape)?KREA_SHAPES[shape]:KREA_SHAPES.portrait}
 function imageStyledPrompt(prompt,style){
  const suffix=Object.hasOwn(KREA_STYLES,style)?KREA_STYLES[style]:KREA_STYLES["portrait-master"];
@@ -549,17 +552,14 @@ async function submitKrea(req,env,user){
  if(!prompt)throw Error("请输入图片描述");
  if(!env.MEDIA)throw Object.assign(new Error("图片存储不可用"),{status:503});
  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?input.shape:"portrait",style=Object.hasOwn(KREA_STYLES,input.style)?input.style:"portrait-master";
- let provider="krea",eid;
- try{
-  try{eid=await submitGradioImage(env,"krea",prompt,shape,style)}
-  catch(e){
-   if(!e.definite)throw e;
-   provider="glm";eid=await submitGradioImage(env,"glm",prompt,shape,style);
-  }
-  const id=crypto.randomUUID(),external=imageJobRef(provider,eid,prompt,shape,style);
-  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,external,Date.now(),"image-unmetered");
-  return {ok:true,pending:true,jobId:id,model:"免费作图"};
- }catch(e){throw Object.assign(new Error("图片生成服务暂不可用："+(e?.message||"请求失败")),{status:e?.status===429?429:503})}
+ const seed=Math.floor(Math.random()*2147483647);
+ let primary=null;
+ try{primary=await submitGradioImage(env,"krea",prompt,shape,style)}
+ catch{/* As in IM auto mode, the next fixed source is RioShiina, not GLM. */}
+ const ref={v:4,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
+ const id=crypto.randomUUID();
+ await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,JSON.stringify(ref),Date.now(),"image-unmetered");
+ return {ok:true,pending:true,jobId:id,model:"免费作图"};
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
@@ -599,11 +599,162 @@ async function queryGradioImageEvent(env,provider,eid){
  finally{try{await reader.cancel()}catch{}}
  return error?{status:"failed",error}:url?{status:"complete",url}:{status:"pending"};
 }
+
+function imageRefV4(ref){return JSON.stringify(ref)}
+function imagePending(job){return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
+function imageRioFindTask(value){
+ if(Array.isArray(value)){for(const v of value){const found=imageRioFindTask(v);if(found)return found}return null}
+ if(typeof value==="string"){try{return imageRioFindTask(JSON.parse(value))}catch{return null}}
+ if(!value||typeof value!=="object")return null;
+ if(typeof value.task_id==="string"&&value.task_id.length>2)return value;
+ if(typeof value.taskId==="string"&&value.taskId.length>2)return {...value,task_id:value.taskId};
+ for(const v of Object.values(value)){const found=imageRioFindTask(v);if(found)return found}
+ return null;
+}
+async function imageRioSubmit(env,endpoint,data){
+ const res=await fetch(RIO_IMAGE+"/gradio_api/call/"+endpoint,{
+  method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},
+  body:JSON.stringify({data}),redirect:"manual",signal:AbortSignal.timeout(12000)
+ });
+ if(!res.ok||res.status>=300)throw Error("Rio "+endpoint+" HTTP "+res.status);
+ const body=await res.json();
+ const id=String(body?.event_id||"");
+ if(!/^[A-Za-z0-9_-]{8,128}$/.test(id))throw Error("Rio 没有任务编号");
+ return id;
+}
+async function imageRioRead(env,endpoint,eventId){
+ let res;
+ try{res=await fetch(RIO_IMAGE+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eventId),{
+  headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
+ catch{return {status:"pending"}}
+ if(res.status===404)return {status:"failed",error:"Rio 任务不存在"};
+ if(!res.ok||!res.body)return {status:"pending"};
+ const reader=res.body.getReader(),decoder=new TextDecoder();
+ let buffer="",size=0,result=null,fail=false;
+ const consume=part=>{
+  const event=part.match(/(?:^|\n)event:\s*([^\n]+)/)?.[1]?.trim();
+  const data=part.split("\n").filter(x=>x.startsWith("data:")).map(x=>x.slice(5).trim()).join("\n");
+  if(event==="error"||event==="failed"){fail=true;return}
+  if(event==="complete"){try{result=JSON.parse(data)}catch{fail=true}}
+ };
+ try{
+  for(;;){
+   const {value,done}=await reader.read();if(done)break;
+   size+=value.byteLength;if(size>200000){fail=true;break}
+   buffer+=decoder.decode(value,{stream:true}).replace(/\r\n/g,"\n");
+   let end;while((end=buffer.indexOf("\n\n"))>=0){consume(buffer.slice(0,end));buffer=buffer.slice(end+2);if(fail||result!==null)break}
+   if(fail||result!==null)break;
+  }
+  if(buffer.trim()&&result===null&&!fail)consume(buffer);
+ }catch{/* interrupted stream remains pending */}
+ finally{try{await reader.cancel()}catch{}}
+ return fail?{status:"failed",error:"Rio 生成失败"}:result!==null?{status:"complete",data:result}:{status:"pending"};
+}
+async function imageVexaRender(env,uid,ref){
+ const shape=imageShape(ref.s),prompt=imageStyledPrompt(ref.p,ref.t);
+ const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",
+  headers:{"content-type":"application/json",accept:"application/json"},
+  body:JSON.stringify({prompt:prompt+", compose for "+shape[0]+":"+shape[1]+" aspect ratio",model:"hd",preference:"quality"}),
+  redirect:"manual",signal:AbortSignal.timeout(14500)});
+ if(!res.ok)throw Error("Vexa HD HTTP "+res.status);
+ const data=await res.json();
+ if(data?.success!==true||data?.model!=="hd"||data?.source!=="deepai.org")throw Error("Vexa 未生成有效图片");
+ const url=new URL(String(data.proxy_url||""));
+ if(url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/")||url.username||url.password)throw Error("Vexa 图片地址未通过校验");
+ const file=await fetch(url.href,{headers:{accept:"image/*"},redirect:"manual",signal:AbortSignal.timeout(11000)});
+ const {a,mime}=await downloadImage(file),mid=crypto.randomUUID();
+ await env.MEDIA.put(uid+"/"+mid,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
+ return mid;
+}
+async function imageV4Move(env,job,ref,nextStage){
+ if(nextStage>=IM_IMAGE_STAGES.length){
+  await failKreaJob(env,job,"四级免费作图来源均未成功");
+  return response({ok:true,done:true,failed:true,error:"免费作图服务目前全部不可用"});
+ }
+ const next={...ref,stage:nextStage,phase:"new",id:"",taskId:"",stageAt:Date.now()};
+ await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(next),Date.now(),job.id,job.user_id);
+ return imagePending(job);
+}
+async function imageV4Pending(env,job,ref){
+ await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(ref),Date.now(),job.id,job.user_id);
+ return imagePending(job);
+}
+async function imageV4Complete(env,job,mediaId){
+ const changed=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='recovering'",mediaId,Date.now(),job.id,job.user_id);
+ if(changed.meta?.changes&&job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mediaId+")",job.message_id,job.user_id);
+ return response({ok:true,done:true,image:"/api/files/"+mediaId,model:"免费作图"});
+}
+async function imageV4Status(env,user,job,ref){
+ const now=Date.now();
+ if(now-job.created_at>30*60000){await failKreaJob(env,job,"作图超时");return response({ok:true,done:true,failed:true,error:"作图超时"})}
+ if(job.status==="recovering"){
+  if(now-job.checked_at>45000){
+   await failKreaJob(env,job,"任务处理超时");
+   return response({ok:true,done:true,failed:true,error:"图片处理状态中断，请重新提交"});
+  }
+  return imagePending(job);
+ }
+ if(now-(job.checked_at||0)<6800)return imagePending(job);
+ const claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-6700);
+ if(!claim.meta?.changes)return imagePending(job);
+ const stage=IM_IMAGE_STAGES[ref.stage];
+ if(!stage){await failKreaJob(env,job,"作图任务阶段无效");return response({ok:true,done:true,failed:true,error:"作图任务状态异常"})}
+ try{
+  if(now-(ref.stageAt||now)>(stage==="rio"?155000:stage==="glm"?160000:stage==="krea"?140000:35000))return imageV4Move(env,job,ref,ref.stage+1);
+  if(stage==="vexa"){
+   try{return await imageV4Complete(env,job,await imageVexaRender(env,user.id,ref))}
+   catch{return imageV4Move(env,job,ref,ref.stage+1)}
+  }
+  if(ref.phase==="new"){
+   if(stage==="rio"){
+    // Match IM's RioShiina/ImageGen parameters, including async_execution and the Krea-2-Turbo model.
+    const shape=imageShape(ref.s),params={
+     task_type:"txt2img",model:"Krea-2-Turbo",prompt:imageStyledPrompt(ref.p,ref.t),
+     width:shape[0],height:shape[1],seed:ref.seed,steps:8,cfg:1,sampler:"euler",scheduler:"simple",
+     zero_gpu_duration:80,async_execution:true};
+    const eventId=await imageRioSubmit(env,"run",[JSON.stringify(params)]);
+    return imageV4Pending(env,job,{...ref,id:eventId,phase:"run"});
+   }
+   const id=await submitGradioImage(env,stage,ref.p,ref.s,ref.t);
+   return imageV4Pending(env,job,{...ref,id,phase:"event"});
+  }
+  if(stage==="rio"){
+   if(ref.phase==="rio-poll"){
+    const eventId=await imageRioSubmit(env,"get_task_status",[ref.taskId]);
+    return imageV4Pending(env,job,{...ref,id:eventId,phase:"rio-result"});
+   }
+   const step=await imageRioRead(env,ref.phase==="rio-result"?"get_task_status":"run",ref.id);
+   if(step.status==="pending")return imageV4Pending(env,job,ref);
+   if(step.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
+   const url=findImageUrl(step.data);
+   if(url)return imageV4Complete(env,job,await saveKreaImage(env,user.id,url));
+   const task=imageRioFindTask(step.data);
+   if(!task)return imageV4Move(env,job,ref,ref.stage+1);
+   const status=String(task.status||"").toLowerCase();
+   if(["failed","error","cancelled","canceled"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
+   return imageV4Pending(env,job,{...ref,phase:"rio-poll",id:"",taskId:task.task_id});
+  }
+  // Official Krea and GLM both use their confirmed Gradio generation endpoints.
+  const state=await queryGradioImageEvent(env,stage,ref.id);
+  if(state.status==="pending")return imageV4Pending(env,job,ref);
+  if(state.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
+  return imageV4Complete(env,job,await saveKreaImage(env,user.id,state.url));
+ }catch(error){
+  // No hidden loop, no parallel submits. A finished/failed stage advances once in IM order.
+  return imageV4Move(env,job,ref,ref.stage+1);
+ }
+}
+
 async function imageJobStatus(env,user,id){
  requireUser(user);
  const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
  if(!job)return fail("作图任务不存在",404);
  if(job.status==="complete")return response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"免费作图"});
+ if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
+  try{const ref=JSON.parse(job.external_id);
+   if(ref.v===4&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
+  }catch(e){if(e?.status)throw e}
+ }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
  const now=Date.now();
  if(job.status==="recovering"){
