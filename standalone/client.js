@@ -49,10 +49,25 @@ const ICONS={
  share:'<path d="M12 16V3m-5 5 5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
  download:'<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>'
 };
+/* Local two-tone professional vector icons, rendered consistently on all pages. */
+const ICON_GRADIENTS={blue:["#4e78e6","#32b2c8"],teal:["#2498bd","#30c1a1"],violet:["#7662dc","#b374d9"],rose:["#b86dd8","#e47d9f"],amber:["#eaa143","#ee775c"],slate:["#6481bf","#619fc9"]};
+const ICON_TONES={
+ menu:"blue","panel-left":"blue",layers:"violet",zap:"amber","list-checks":"violet",x:"slate",plus:"teal",
+ "square-pen":"blue",search:"teal","message-circle":"teal",compass:"teal",paperclip:"blue",link:"teal",
+ "circle-user":"violet",settings:"slate",folder:"amber","chevron-down":"slate",ellipsis:"slate",
+ palette:"rose",camera:"blue",image:"rose",blocks:"violet","arrow-up":"teal",mic:"teal",
+ "brain-circuit":"violet",video:"rose","code-2":"blue",pin:"amber",archive:"slate",trash:"rose",
+ share:"teal",download:"blue"
+};
+let iconGradientSerial=0;
 function renderIcons(scope=document){
- for(const e of scope.querySelectorAll("[data-icon]")){
-  const path=ICONS[e.dataset.icon]||ICONS.folder;
-  e.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';
+ const icons=[...scope.querySelectorAll("[data-icon]")];
+ if(scope.matches?.("[data-icon]"))icons.unshift(scope);
+ for(const el of icons){
+  const name=el.dataset.icon,path=ICONS[name]||ICONS.folder;
+  const [from,to]=ICON_GRADIENTS[ICON_TONES[name]||"blue"];
+  const id="aigzt-icon-"+(++iconGradientSerial);
+  el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#'+id+')" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+from+'"/><stop offset="100%" stop-color="'+to+'"/></linearGradient></defs>'+path+'</svg>';
  }
 }
 function iconSlot(name){const e=node("span","ui-icon");e.dataset.icon=name;return e;}
@@ -409,8 +424,12 @@ async function listArchived(){
  hide("settingsDialog");S.archivedView=true;S.activeProjectId=null;newChat();await fetchChats();openMenu();
 }
 
-function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat")}
-function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat")}
+function syncHomeAmbient(){
+ const view=$("conversation");
+ document.body.classList.toggle("home-ambient",!!view&&view.classList.contains("empty-chat")&&!view.hidden&&!S.workMode&&!S.freeToolsMode);
+}
+function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient()}
+function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient()}
 
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
@@ -530,23 +549,30 @@ function setModel(row){
 
 function resizePrompt(){
  const textarea=$("prompt");if(!textarea)return;
- textarea.style.height="auto";
- const max=Math.max(88,Math.min(116,Math.round((window.visualViewport?.height||window.innerHeight)*.21)));
- const needed=textarea.scrollHeight;
+ textarea.style.height="24px";
+ const needed=textarea.scrollHeight,max=96;
  textarea.style.height=Math.max(24,Math.min(needed,max))+"px";
  textarea.style.overflowY=needed>max?"auto":"hidden";
 }
+let promptLayoutFrame=0;
 function settlePromptSize(){
- resizePrompt();
- requestAnimationFrame(resizePrompt);
+ if(promptLayoutFrame)return;
+ promptLayoutFrame=requestAnimationFrame(()=>{promptLayoutFrame=0;resizePrompt()});
 }
+let viewportLayoutFrame=0;
 function syncMobileHeight(){
- if(!window.visualViewport)return;
- const active=document.activeElement;
- const keyboardVisible=(active===$("prompt")||active?.matches?.("input,textarea"))&&window.visualViewport.height<window.innerHeight-90;
- if(keyboardVisible)document.documentElement.style.setProperty("--aigzt-visible-height",Math.round(window.visualViewport.height)+"px");
- else document.documentElement.style.removeProperty("--aigzt-visible-height");
- resizePrompt();
+ if(!window.visualViewport||viewportLayoutFrame)return;
+ viewportLayoutFrame=requestAnimationFrame(()=>{
+  viewportLayoutFrame=0;
+  const root=document.documentElement;
+  const keyboardVisible=document.activeElement===$("prompt")&&window.innerHeight-window.visualViewport.height>140;
+  root.classList.toggle("aigzt-keyboard-visible",keyboardVisible);
+  const next=keyboardVisible?Math.round(window.visualViewport.height)+"px":"";
+  if(root.style.getPropertyValue("--aigzt-visible-height")!==next){
+   if(next)root.style.setProperty("--aigzt-visible-height",next);
+   else root.style.removeProperty("--aigzt-visible-height");
+  }
+ });
 }
 
 function setComposerMode(mode){
@@ -835,7 +861,7 @@ function setFreeToolsMode(enabled){
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   if(!S.workMode){$("conversation").hidden=false;syncWorkspaceRoute("")}
  }
- closeMenu();
+ closeMenu();syncHomeAmbient();
 }
 function restoreWorkspaceRoute(){
  if(location.hash==="#tools")setFreeToolsMode(true);
@@ -854,7 +880,7 @@ function setWorkMode(on){
   $("workBoard").hidden=true;$("conversation").hidden=false;
   $("prompt").placeholder="向 AI 提问…";syncWorkspaceRoute("");
  }
- closeMenu();
+ closeMenu();syncHomeAmbient();
 }
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
 function renderWorkTasks(){
@@ -1593,11 +1619,9 @@ function wire(){
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);
- $("prompt").addEventListener("change",settlePromptSize);
- $("prompt").addEventListener("paste",()=>requestAnimationFrame(settlePromptSize));
- $("prompt").addEventListener("blur",()=>{document.documentElement.style.removeProperty("--aigzt-visible-height");settlePromptSize()});
+ $("prompt").addEventListener("blur",()=>{syncMobileHeight();settlePromptSize()});
  window.addEventListener("resize",syncMobileHeight);
- if(window.visualViewport){window.visualViewport.addEventListener("resize",syncMobileHeight);window.visualViewport.addEventListener("scroll",syncMobileHeight)}
+ if(window.visualViewport)window.visualViewport.addEventListener("resize",syncMobileHeight)
 
  document.addEventListener("click",e=>{if(!$("attachMenu").hidden&&!$("attachMenu").contains(e.target)&&!$("attachButton").contains(e.target))hideAttachMenu()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")hideAttachMenu()});
@@ -1637,6 +1661,6 @@ function hideAttachMenu(){$("attachMenu").hidden=true}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
- applyTheme(enabled?"rainbow":"plain");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
+ applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
  restoreWorkspaceRoute();updateModelTitle();
 });
