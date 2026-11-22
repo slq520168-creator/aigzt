@@ -476,11 +476,19 @@ function appendMessage(role,content,model){
  return row;
 }
 function newChat(){
+ S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
  S.chatId=null;S.attachments=[];renderAttachments();setFreeDefault();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";settlePromptSize();flashError("");renderHistory();closeMenu();
  $("prompt").focus();
+}
+function startCoding(){
+ if(S.busy)return;
+ newChat();
+ S.code=true;$("codeToggle").classList.add("active");$("codeToggle").setAttribute("aria-pressed","true");
+ $("prompt").value="请帮我完成以下编程需求，提供完整可运行的代码、错误处理和验证步骤：\n";
+ settlePromptSize();$("prompt").focus();
 }
 async function loadChat(id){
  if(S.busy)return;
@@ -1145,10 +1153,30 @@ function drawTile(index,status="准备生成",shape="portrait"){
 function drawResult(tile,url){
  const img=node("img");img.src=url;img.alt="AI 生成图片";img.loading="lazy";
  tile.picture.replaceChildren(img);
+ tile.tile.querySelector(".draw-tile-actions")?.remove();
  const actions=node("div","draw-tile-actions"),view=node("a","","查看"),save=node("a","","保存");
  view.href=url;view.target="_blank";view.rel="noopener";
  save.href=url;save.download="aigzt-image.png";
- actions.append(view,save);tile.tile.append(actions);
+ actions.append(view,save);
+ if(typeof navigator.share==="function"){
+  const share=node("button","","分享图片");share.type="button";
+  share.addEventListener("click",async()=>{
+   share.disabled=true;
+   try{
+    const resp=await fetch(url,{credentials:"same-origin",cache:"no-store"});
+    if(!resp.ok)throw Error("无法读取图片");
+    const blob=await resp.blob();
+    if(!blob.type.startsWith("image/"))throw Error("图片格式不受支持");
+    const suffix=blob.type==="image/jpeg"?"jpg":blob.type==="image/webp"?"webp":"png";
+    const file=new File([blob],"aigzt-image."+suffix,{type:blob.type});
+    if(typeof navigator.canShare==="function"&&!navigator.canShare({files:[file]}))throw Error("当前浏览器不支持分享图片文件");
+    await navigator.share({files:[file],title:"AIGZT 图片"});
+   }catch(e){if(e?.name!=="AbortError")flashError("分享未完成，请使用保存图片："+humanError(e))}
+   finally{share.disabled=false}
+  });
+  actions.append(share);
+ }
+ tile.tile.append(actions);
  tile.caption.textContent="生成完成 · 已保存到账号";
 }
 function drawSleep(ms,signal){
@@ -1183,7 +1211,7 @@ function stopDrawBatch(){
  const b=S.drawBatch;
  if(!b)return;
  b.cancelled=true;b.controller.abort();S.drawBatch=null;
- $("drawCancel").hidden=true;$("createButton").disabled=false;
+ $("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
  $("createStatus").textContent="已停止查询；提交过的任务可以稍后重新打开查看";
 }
 async function runFreeDraw(){
@@ -1195,6 +1223,8 @@ async function runFreeDraw(){
  if(![1,2,4].includes(count)){ $("createStatus").textContent="图片数量不正确";return }
  const batch={cancelled:false,controller:new AbortController()};
  S.drawBatch=batch;$("drawResults").replaceChildren();
+ $("drawResultTitle").textContent="本次生成";
+ $("drawRefresh").disabled=true;
  const tiles=Array.from({length:count},(_,i)=>drawTile(i+1,"准备生成",shape));
  $("createButton").disabled=true;$("drawCancel").hidden=false;
  $("createStatus").textContent="正在生成 "+count+" 张图片";
@@ -1215,17 +1245,19 @@ async function runFreeDraw(){
  };
  try{await Promise.all(Array.from({length:Math.min(2,count)},()=>task()))}
  finally{
-  if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;
+  if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;$("drawRefresh").disabled=false;
    $("createStatus").textContent="生成结束：成功 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");
   }
  }
 }
 async function restoreDrawJobs(){
  if(S.drawBatch||!S.user)return;
+ $("drawRefresh").disabled=true;
  try{
   const data=await api("/api/image/jobs");
   if(!$("createDialog").open||S.createMode!=="image"||S.drawBatch)return;
   $("drawResults").replaceChildren();
+  $("drawResultTitle").textContent="我的作品";
   for(const [i,job] of (data.jobs||[]).slice(0,16).entries()){
    const tile=drawTile(i+1,job.status==="complete"?"生成完成":job.status==="pending"?"等待生成":"未完成");
    if(job.status==="complete"&&job.image){drawResult(tile,job.image)}
@@ -1242,6 +1274,19 @@ async function restoreDrawJobs(){
    }
   }
  }catch(e){$("createStatus").textContent="历史图片暂时读取失败："+humanError(e)}
+ finally{$("drawRefresh").disabled=Boolean(S.drawBatch)}
+}
+
+function drawPrefs(){
+ const ids=["drawStyle","drawShape","drawCount"];
+ try{
+  const state=JSON.parse(localStorage.getItem("aigzt:draw-prefs")||"{}");
+  for(const id of ids)if(typeof state[id]==="string"&&Array.from($(id).options).some(x=>x.value===state[id]))$(id).value=state[id];
+ }catch{}
+ const save=()=>{
+  try{localStorage.setItem("aigzt:draw-prefs",JSON.stringify(Object.fromEntries(ids.map(id=>[id,$(id).value]))))}catch{}
+ };
+ for(const id of ids)$(id).addEventListener("change",save);
 }
 
 function setCreationMode(mode){
@@ -1249,10 +1294,12 @@ function setCreationMode(mode){
  const isImage=mode==="image";
  $("imageTab").classList.toggle("active",isImage);
  $("videoTab").classList.toggle("active",!isImage);
+ $("createDialogTitle").textContent=isImage?"免费作图":"视频创作";
  $("videoSettings").hidden=isImage;
  $("drawSettings").hidden=!isImage;
- $("drawResults").hidden=!isImage;
+ $("drawResultSection").hidden=!isImage;
  $("drawCancel").hidden=!isImage||!S.drawBatch;
+ $("drawRefresh").disabled=Boolean(S.drawBatch);
  $("createButton").textContent=isImage?"生成免费图片":"使用我的 Grok 生成视频";
  $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
 }
@@ -1387,6 +1434,7 @@ function wire(){
  $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
+ $("navCode").addEventListener("click",startCoding);
  
  $("domesticProviderList");initDomesticProviderLinks();
  $("workClose").addEventListener("click",()=>setWorkMode(false));
@@ -1461,10 +1509,12 @@ function wire(){
  $("modelFilter").addEventListener("change",e=>{S.filter=e.target.value;S.modelPage=0;renderModels()});
  for(const btn of els("#sourceChips .chip"))btn.addEventListener("click",()=>activateSource(btn.dataset.source));
  $("moreModels").addEventListener("click",()=>{S.modelPage++;renderModels()});
- $("imageTab").addEventListener("click",()=>setCreationMode("image"));
+ $("imageTab").addEventListener("click",()=>{setCreationMode("image");void restoreDrawJobs()});
  $("videoTab").addEventListener("click",()=>setCreationMode("video"));
  $("createButton").addEventListener("click",()=>void generateMedia());
  $("drawCancel").addEventListener("click",stopDrawBatch);
+ $("drawRefresh").addEventListener("click",()=>void restoreDrawJobs());
+ drawPrefs();
  $("createDialog").addEventListener("close",stopDrawBatch);
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;

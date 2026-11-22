@@ -150,11 +150,20 @@ a{color:inherit}
 .check-row input{margin-top:4px;flex:none}
 .creation-tabs{display:flex;gap:8px;margin-bottom:12px}
 #createDialog .draw-description{display:block;width:min(100%,900px)}
+#createDialog .creation-tabs{width:min(100%,900px);margin-bottom:6px}
 #createDialog .draw-description textarea{width:100%;min-height:105px}
 .draw-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:900px}
 .draw-settings label{display:flex;flex-direction:column;gap:6px}
 .draw-settings select{width:100%;min-height:43px;border:1px solid #dde6e9;border-radius:10px;background:#fff;padding:8px 10px}
-.draw-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:12px;width:100%;max-width:900px;margin-top:10px}
+.draw-main-action{display:flex;align-items:stretch;gap:9px;width:100%;max-width:900px;margin-top:5px}
+.draw-main-action #createButton{flex:1;min-width:0;margin:0}
+.draw-main-action #drawCancel{flex:none;padding:0 12px}
+.draw-result-section{display:flex;flex-direction:column;gap:9px;max-width:900px;width:100%;min-width:0}
+.draw-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px;border-bottom:1px solid #edf0f2;padding-bottom:8px}
+.draw-result-head h3{font-size:14px;font-weight:600;margin:0}
+.draw-refresh{color:#527b8c;padding:5px 8px;border-radius:8px;font-size:12px}
+.draw-refresh:hover{background:#f0f5f7}
+.draw-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:12px;width:100%;min-width:0}
 .draw-tile{min-width:0;border:1px solid #e5e9eb;border-radius:14px;overflow:hidden;background:#fff}
 .draw-photo{aspect-ratio:3/4;background:#f4f6f6;display:flex;align-items:center;justify-content:center;color:#76868d;font-size:13px;overflow:hidden}
 .draw-photo img{display:block;width:100%;height:100%;object-fit:contain}
@@ -163,7 +172,8 @@ a{color:inherit}
 .draw-photo[data-shape="landscape"]{aspect-ratio:4/3}
 .draw-photo[data-shape="landscape169"]{aspect-ratio:16/9}
 .draw-caption{display:block;padding:8px 10px;color:#708086;font-size:12px;overflow-wrap:anywhere}
-.draw-tile-actions{display:flex;gap:10px;padding:3px 10px 10px}
+.draw-tile-actions{display:flex;gap:12px;padding:6px 10px 10px;flex-wrap:wrap;align-items:center}
+.draw-tile-actions a,.draw-tile-actions button{min-height:30px;display:inline-flex;align-items:center}
 .draw-tile-actions a,.draw-tile-actions button{color:#376b86;text-decoration:none;font-size:13px}
 #drawCancel{align-self:flex-start;min-height:35px}
 @media(max-width:600px){.draw-settings{grid-template-columns:repeat(2,minmax(0,1fr))}.draw-settings label:first-child{grid-column:1/-1}.draw-gallery{gap:8px}.draw-photo{min-height:130px}.draw-tile-actions{gap:8px}}

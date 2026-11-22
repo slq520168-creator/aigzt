@@ -31,6 +31,7 @@
     <div id="projectsList" class="project-list" aria-label="项目列表"></div>
     <div class="sidebar-links">
      <button class="nav-row" id="navWork"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作任务</span></button>
+     <button class="nav-row" id="navCode"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>编程助手</span></button>
      <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>AI 模型</span><small id="modelTitle" class="side-model-label">免费自动</small></button>
      <button class="nav-row" id="navFreeTools"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>免费工具</span></button>
      <button class="nav-row" id="navDraw"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>免费作图</span></button>
@@ -199,7 +200,7 @@
  </dialog>
 
  <dialog id="createDialog" class="modal workspace-view">
-  <div class="modal-head"><div><h2>免费作图</h2></div><button class="close-modal" data-close="createDialog" aria-label="关闭">×</button></div>
+  <div class="modal-head"><div><h2 id="createDialogTitle">免费作图</h2></div><button class="close-modal" data-close="createDialog" aria-label="关闭">×</button></div>
   <div class="creation-tabs"><button id="imageTab" class="active">免费作图</button><button id="videoTab">Grok 视频</button></div>
   <label class="draw-description">画面描述<textarea id="createPrompt" rows="4" maxlength="1400" placeholder="描述你要生成的图片…"></textarea></label>
   <div id="drawSettings" class="draw-settings">
@@ -211,11 +212,16 @@
    <label>比例<select id="drawShape"><option value="square">1:1 方图</option><option value="portrait" selected>3:4 竖图</option><option value="portrait916">9:16 全屏竖图</option><option value="landscape">4:3 横图</option><option value="landscape169">16:9 全屏横图</option></select></label>
    <label>数量<select id="drawCount"><option value="1">1 张</option><option value="2">2 张</option><option value="4">4 张</option></select></label>
   </div>
-  <div class="draw-gallery" id="drawResults" aria-live="polite"></div>
-  <button type="button" class="outline" id="drawCancel" hidden>停止查询</button>
   <div id="videoSettings" hidden><label>Grok 视频模型<select id="videoModel"><option value="grok-imagine-video-1.5">Grok Imagine Video 1.5</option></select></label><p class="small-note">视频可能按秒收费，必须使用自己的 Grok API Key，并明确确认费用。</p><label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用本人 Grok 额度，可能产生费用。</label></div>
-  <button class="primary full" id="createButton">生成免费图片</button>
-  <p id="createStatus" class="form-message"></p>
+  <div class="draw-main-action">
+   <button class="primary full" id="createButton">生成免费图片</button>
+   <button type="button" class="outline" id="drawCancel" hidden>停止查询</button>
+  </div>
+  <p id="createStatus" class="form-message" role="status" aria-live="polite"></p>
+  <div id="drawResultSection" class="draw-result-section">
+   <div class="draw-result-head"><h3 id="drawResultTitle">我的作品</h3><button type="button" class="draw-refresh" id="drawRefresh">刷新作品</button></div>
+   <div class="draw-gallery" id="drawResults" aria-live="polite"></div>
+  </div>
   <div class="media-preview" id="mediaPreview"></div>
   <button id="refreshVideo" class="outline full" hidden>查询视频任务</button>
  </dialog>
