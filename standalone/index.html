@@ -216,14 +216,16 @@
  <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">
   <div class="modal-head"><div><h2>选择工作模型</h2><p>只影响工作任务，不修改聊天模型</p></div><button type="button" class="close-modal" data-close="workModelDialog" aria-label="关闭工作模型"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="work-model-dialog-content">
-   <p class="work-model-explain">工作模型与聊天分开。支持按国家选择服务商；官方 API 连接验证后才能在本站执行。</p>
+   <div class="work-current-model" aria-live="polite"><span>当前工作模型</span><strong id="workCurrentModelName">免费自动</strong><small id="workCurrentModelNote">实际免费模型由线路调度 · 与聊天独立</small></div>
+   <p class="work-model-explain">选择后用于工作任务；未连接的服务商需要先验证授权。</p>
    <div id="workAgentCatalog" class="work-agent-catalog" aria-label="工作模型服务商"></div>
    <div id="workSpecificChooser" class="work-specific-chooser" hidden></div>
    <div id="workModelMessage" class="work-model-message" role="status"></div>
   </div>
  </dialog>
  <dialog id="modelDialog" class="modal wide-modal workspace-view">
-  <div class="modal-head"><div><h2>选择 AI 模型</h2><p id="modelSummary">默认免费自动 · 可选择已连接的模型</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="modal-head"><div><h2>选择聊天模型</h2><p id="modelSummary">聊天与工作分别选择模型</p></div><button class="close-modal" data-close="modelDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
+  <div class="chat-active-model" aria-live="polite"><span>当前聊天模型</span><strong id="chatActiveModelName">免费自动</strong><small id="chatActiveModelNote">上游模型按请求自动选择</small></div>
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">全部模型</button><button class="chip" data-source="free">免费线路</button><button class="chip" data-source="family:international">海外</button><button class="chip" data-source="family:russian">俄罗斯</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:claude">Claude</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button><button class="chip" data-source="family:novai">NovaAI</button><button class="chip" data-source="family:deepseek">DeepSeek</button><button class="chip" data-source="connected">已连接</button></div><div id="modelRegionLinks" class="model-region-links" hidden></div>
   <details class="model-extra" id="modelExtra"><summary>连接更多服务商</summary><div class="domestic-providers"><strong>国内及多模型聚合 API</strong><div id="domesticProviderList"></div><p>需要个人服务商密钥。<a href="https://jules.google/docs/changelog/2026-10-29" target="_blank" rel="noopener noreferrer">Jules 已停止接受新任务</a></p></div>

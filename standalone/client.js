@@ -668,8 +668,21 @@ async function loadChat(id){
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
+function chatSelectedName(){
+ if(S.provider==="free")return "免费自动";
+ const raw=String(S.modelTitle||S.model||"").trim(),label=raw.startsWith(S.provider+" · ")?raw.slice(S.provider.length+3):raw;
+ return (WORK_PROVIDER_SHORT[S.provider]||S.provider)+" · "+(label||S.model);
+}
+function updateChatActiveModel(){
+ const title=$("chatActiveModelName"),note=$("chatActiveModelNote");
+ if(!title||!note)return;
+ title.textContent=chatSelectedName();
+ note.textContent=S.provider==="free"?"免费线路自动选择上游，具体模型按每次请求决定":
+ "选定模型 ID："+S.model+" · "+(S.savedProviders[S.provider]?.verified?"连接已保存":"连接尚待验证");
+}
 function updateModelTitle(){
  $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
+ updateChatActiveModel();
 }
 function setModel(row){
  if(row.type!=="text"){
@@ -763,13 +776,28 @@ const WORK_PROVIDER_NAMES={
  minimax:"MiniMax API",siliconflow:"硅基流动 API",doubao:"火山方舟 API",qianfan:"百度千帆 API",hunyuan:"腾讯混元 API",yandex:"Yandex AI Studio · 俄罗斯",gigachat:"GigaChat · 俄罗斯"
 };
 /* Work-task models are independent from the chat model and its selector. */
+const WORK_PROVIDER_SHORT={free:"免费自动",auto:"免费自动",groq:"Groq",openrouter:"OpenRouter",deepseek:"DeepSeek",yandex:"YandexGPT",gigachat:"GigaChat",qwen:"千问",zhipu:"智谱",kimi:"Kimi",minimax:"MiniMax",siliconflow:"硅基流动",doubao:"豆包",qianfan:"千帆",hunyuan:"混元",novai:"NovaAI",novai_pro:"NovaAI 中国",openai:"OpenAI",claude:"Claude",grok:"Grok",gemini:"Gemini",cerebras:"Cerebras"};
+function currentWorkStage(){
+ const index=Math.min(S.workDetail?.task?.nextStep||0,Math.max(0,S.workStages.length-1));
+ return {index,step:S.workStages[index]||{provider:"auto",model:""}};
+}
+function currentWorkModelName(){
+ const s=currentWorkStage().step,p=s.provider||"auto";
+ return p==="auto"||p==="free"?"免费自动":(WORK_PROVIDER_SHORT[p]||WORK_PROVIDER_NAMES[p]||p)+(s.model?" · "+s.model:"");
+}
 function updateWorkSelectedModel(){
  const label=$("workSelectedModel");if(!label)return;
- const next=Math.min(S.workDetail?.task?.nextStep||0,Math.max(0,S.workStages.length-1));
- const plan=S.workStages.slice(next);
- if(!plan.length){label.textContent="免费自动";return}
- const first=plan[0],same=plan.every(s=>s.provider===first.provider&&s.model===first.model);
- label.textContent=!same?"多模型分阶段执行":first.provider==="auto"||first.provider==="free"?"免费自动":(WORK_PROVIDER_NAMES[first.provider]||first.provider)+(first.model?" · "+first.model:"");
+ const {index,step}=currentWorkStage(),future=S.workStages.slice(index);
+ const same=future.every(s=>s.provider===step.provider&&s.model===step.model);
+ const name=currentWorkModelName();label.textContent=name+(same?"":" · 多模型接力");
+ const title=$("workCurrentModelName"),note=$("workCurrentModelNote");
+ if(title)title.textContent=name;
+ if(note){
+  const automatic=step.provider==="auto"||step.provider==="free";
+  const last=String(S.workDetail?.task?.model||"");
+  note.textContent=(automatic?"实际免费模型由线路自动选择":"当前阶段已选择具体模型")+(same?"":" · 后续阶段可不同")+
+   (S.workDetail?.steps?.length&&last&&last!=="free:auto"?" · 上次执行："+last:"");
+ }
 }
 async function chooseDedicatedWorkModel(provider,model){
  if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="执行中不能更改模型";return}
@@ -804,7 +832,8 @@ async function chooseDedicatedWorkModel(provider,model){
 function renderWorkProviderModels(provider){
  const panel=$("workSpecificChooser");panel.hidden=false;panel.replaceChildren();
  const record=S.savedProviders[provider],models=workModelsFor(provider);
- let chosen=record?.model||models[0]?.id||"";
+ const active=currentWorkStage().step;
+ let chosen=active.provider===provider&&active.model?active.model:record?.model||models[0]?.id||"";
  const title=node("div","work-choose-head");
  title.append(node("strong","",WORK_PROVIDER_NAMES[provider]||provider),node("small","","只对工作任务生效"));
  const control=workModelPicker(provider,chosen,value=>{chosen=value},false);
@@ -829,7 +858,7 @@ function renderWorkAgentCatalog(){
   button.type="button";button.textContent=region;
   button.setAttribute("aria-pressed",String(S.workModelRegion===region));
   button.addEventListener("click",()=>{
-   S.workModelRegion=region;$("workSpecificChooser").hidden=true;
+   S.workModelRegion=region;S.workPickingProvider="";$("workSpecificChooser").hidden=true;
    $("workModelMessage").textContent="";
    renderWorkAgentCatalog();
   });
@@ -841,14 +870,18 @@ function renderWorkAgentCatalog(){
   const name=provider==="free"?"免费自动":WORK_PROVIDER_NAMES[provider];
   const record=S.savedProviders[provider];
   const ready=provider==="free"||!!record?.verified&&(!!record.consent||isFreeModel(provider,record.model));
-  const button=node("button","work-model-option "+(ready?"ready":"connect"));
-  button.type="button";
-  button.append(node("strong","",name),node("small","",provider==="free"?"使用现有免费线路":ready?"连接已验证 · 选择模型":record?"需要验证连接或授权":"点击配置官方 API"),node("span","work-model-option-action",ready?"选择":"连接"));
+  const active=currentWorkStage().step;
+  const selected=provider==="free"?(!active.provider||active.provider==="auto"||active.provider==="free"):active.provider===provider;
+  const button=node("button","work-model-option "+(ready?"ready":"connect")+(selected?" selected":""));
+  button.type="button";button.setAttribute("aria-pressed",String(selected));
+  const top=node("span","work-model-option-head");
+  top.append(node("strong","",WORK_PROVIDER_SHORT[provider]||name),node("span","work-model-option-action",selected?"当前":ready?"选择":"连接"));
+  button.append(top,node("small","",provider==="free"?"自动调用真实免费线路":ready?selected?"当前工作阶段所选 · 可更换模型":"已验证连接 · 点击选择模型":record?"需要验证连接或授权":"连接官方 API 后使用"));
   button.addEventListener("click",()=>{
    if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前任务正在执行，不能更换模型";return}
    if(!ready){hide("workModelDialog");openKeyPanel(provider);return}
    if(provider==="free"){void chooseDedicatedWorkModel("free","");return}
-   renderWorkProviderModels(provider);
+   S.workPickingProvider=provider;renderWorkProviderModels(provider);
    // Fetch only after an actual user click, not on each render or dialog open.
    if(S.savedProviders[provider]&&S.workCatalogLoading?.[provider]!=="done"&&S.workCatalogLoading?.[provider]!=="busy"){
     if(!S.workCatalogLoading)S.workCatalogLoading={};
@@ -858,7 +891,7 @@ function renderWorkAgentCatalog(){
      if(!Array.isArray(data.models)||!data.models.length)throw Error("没有获取到可用模型");
      S.connected[provider]=data.models;
      S.workCatalogLoading[provider]="done";
-     if($("workModelDialog").open&&!$("workSpecificChooser").hidden){
+     if($("workModelDialog").open&&!$("workSpecificChooser").hidden&&S.workPickingProvider===provider){
       renderWorkProviderModels(provider);$("workModelMessage").textContent="";
      }
     }).catch(e=>{
@@ -1524,22 +1557,33 @@ function modelMatches(m){
  if(S.filter==="code"&&!/cod(e|er|ing)|deepseek|qwen|gpt|claude|gemini|glm|devstral|starcoder/i.test(t))return false;
  return true;
 }
+function modelIsSelected(m){
+ const via=m.availableWith==="openrouter-key"?"openrouter":m.provider;
+ return m.type==="text"&&S.provider===via&&S.model===(via==="free"?"free:auto":m.id);
+}
 function renderModels(){
- $("modelRegionLinks").hidden=true;
+ $("modelRegionLinks").hidden=true;updateChatActiveModel();
  const visible=allModels().filter(modelMatches);
+ if(S.provider!=="free"&&!visible.some(modelIsSelected)){
+  const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model)};
+  if(modelMatches(active))visible.unshift(active);
+ }
+ visible.sort((a,b)=>Number(modelIsSelected(b))-Number(modelIsSelected(a)));
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*30);
- $("modelCount").textContent=count+" 项"+(S.source==="free"?" · 当前默认：免费自动":"");
+ $("modelCount").textContent=count+" 个模型 · 当前："+(S.provider==="free"?"免费自动":WORK_PROVIDER_SHORT[S.provider]||S.provider);
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList");list.replaceChildren();
- if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的真实模型，请切换筛选。":"模型目录尚未连接成功。"));return}
+ if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));return}
  for(const item of shown){
-  const selected=S.model===item.id&&S.provider===item.provider;
+  const via=item.availableWith==="openrouter-key"?"openrouter":item.provider,selected=modelIsSelected(item);
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
-  const saved=Boolean(S.savedProviders[item.provider]);
-  const tag=node("span","price-tag"+(item.free?" free":""),item.provider==="free"?"免费线路":saved?"已连接":item.free?"免费 · 需连接":"需连接");
-  title.append(tag);info.append(title,node("small","",item.provider==="free"?"平台路由 · 真实模型由上游决定":"接入平台："+item.provider+" · 模型 ID："+item.id));
+  if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
+  const saved=S.savedProviders[via],verified=!!saved?.verified;
+  const tag=node("span","price-tag"+(item.free?" free":""),selected?"当前选择":via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
+  title.append(tag);
+  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":"服务商："+(WORK_PROVIDER_SHORT[via]||via)+" · 模型 ID："+item.id));
   const actionable=["text","image","video"].includes(item.type);
-  const button=node("button","model-action",actionable?(item.type!=="text"?"使用":S.model===item.id?"已选":item.provider==="free"||saved?"使用":"连接"):"暂不支持");
+  const button=node("button","model-action",!actionable?"暂不支持":selected?"当前使用":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!actionable||selected;
   if(actionable)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
@@ -1974,6 +2018,11 @@ function wire(){
   $("workModelMessage").textContent="";
   $("workSpecificChooser").hidden=true;
   $("workSpecificChooser").replaceChildren();
+  S.workPickingProvider="";
+  const p=currentWorkStage().step.provider;
+  S.workModelRegion=["yandex","gigachat"].includes(p)?"俄罗斯":
+    ["qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","novai_pro"].includes(p)?"中国":
+    ["groq","openrouter","cerebras","openai","claude","novai","grok","gemini"].includes(p)?"国际":"推荐";
   renderWorkAgentCatalog();show("workModelDialog");
   requestAnimationFrame(()=>{$("workModelDialog").scrollTop=0});
  });

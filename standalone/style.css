@@ -731,18 +731,28 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .work-model-choose,.work-model-apply{display:inline-flex;align-items:center;justify-content:center;gap:7px;flex:none;border:1px solid #356ea1;border-radius:11px;background:#356ea1;color:white;padding:10px 13px;min-height:40px;font-size:13px;font-weight:650;box-shadow:none;cursor:pointer}
 .work-model-choose .ui-icon svg{stroke:#fff}
 .work-model-choose:active,.work-model-apply:active{transform:scale(.985)}
-.work-model-dialog{width:min(760px,calc(100vw - 24px));max-width:760px;max-height:min(89dvh,880px);border-radius:21px;overflow-y:auto;overscroll-behavior:contain;padding:0;border:1px solid #dae4ef;background:linear-gradient(180deg,#fff,#f8fbff)}
+.work-model-dialog{width:min(760px,calc(100vw - 24px));max-width:760px;max-height:min(89dvh,880px);border-radius:18px;overflow-y:auto;overscroll-behavior:contain;padding:0;border:1px solid #dae4ef;background:#fff}
 .work-model-dialog::backdrop{background:rgba(17,37,69,.3);backdrop-filter:blur(4px)}
 .work-model-dialog .modal-head{position:sticky;top:0;z-index:2;background:rgba(255,255,255,.95);backdrop-filter:blur(10px)}
 .work-model-dialog-content{padding:15px 20px 22px}
 .work-model-explain{font-size:12px;color:#6c8297;line-height:1.6;margin:0 0 13px}
-.work-model-dialog .work-agent-catalog{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;max-height:none;overflow:visible}
-.work-model-option{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;position:relative;min-width:0;min-height:79px;padding:12px 14px 12px 12px;text-align:left;border:1px solid #c8def3;border-radius:13px;background:linear-gradient(145deg,#f0f7ff,#e9fbf9);cursor:pointer;box-shadow:0 1px 3px rgba(57,103,164,.05)}
-.work-model-option.connect{background:linear-gradient(145deg,#f7f8ff,#f4f7ff);border-color:#e0e6f6}
-.work-model-option strong{font-size:13px;color:#2a527c;overflow-wrap:anywhere;padding-right:32px}
-.work-model-option small{font-size:11px;color:#628ba0;line-height:1.35;overflow-wrap:anywhere}
-.work-model-option-action{position:absolute;right:9px;top:11px;font-size:11px;color:#357fbd;font-weight:750}
-.work-model-option.ready:hover,.work-model-option.connect:hover{border-color:#73b3df;background:#e9f5ff}
+.work-model-dialog .work-agent-catalog{display:block;width:100%;min-width:0;max-height:none;overflow:visible;margin:0}
+.work-model-option{display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:6px;min-width:0;min-height:80px;padding:11px 12px;text-align:left;border:1px solid #dfe6ed;border-radius:12px;background:#fff;cursor:pointer;box-shadow:none}
+.work-model-option.connect{background:#fafcfe;border-color:#e4eaef}
+.work-model-option strong{font-size:13px;color:#29465c;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;font-weight:700}
+.work-model-option small{font-size:11px;color:#708495;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.work-model-option-action{font-size:10px;color:#326b94;font-weight:700;flex:none;white-space:nowrap;background:#edf4fa;border-radius:7px;padding:3px 6px}
+.work-model-option-head{display:flex;align-items:center;justify-content:space-between;gap:5px;min-width:0}
+.work-model-option.selected{background:#f0f7fc;border-color:#3480b4;box-shadow:inset 0 0 0 1px #a9cae2}
+.work-model-option.selected .work-model-option-action{background:#2b719d;color:#fff}
+.work-current-model,.chat-active-model{flex:none;display:flex;flex-direction:column;gap:3px;border:1px solid #c9dce9;background:#f5f9fc;border-radius:11px;padding:10px 12px;min-width:0}
+.work-current-model>span,.chat-active-model>span{font-size:11px;color:#647f91;font-weight:650}
+.work-current-model strong,.chat-active-model strong{font-size:14px;color:#245171;overflow-wrap:anywhere;line-height:1.45}
+.work-current-model small,.chat-active-model small{font-size:11px;color:#617b8e;line-height:1.45;overflow-wrap:anywhere}
+.chat-active-model{padding:9px 12px}
+@media(max-width:650px){.work-current-model,.chat-active-model{padding:8px 10px}.work-model-option-head{gap:3px}.work-model-option-action{padding:3px 5px}.work-current-model strong,.chat-active-model strong{font-size:13px}}
+
+.work-model-option.ready:hover,.work-model-option.connect:hover{border-color:#9dbed7;background:#f6fafc}
 .work-specific-chooser{margin-top:14px;padding:16px;border-radius:15px;border:1px solid #a9cce8;background:#fff;display:flex;flex-direction:column;align-items:stretch;gap:12px}
 .work-specific-chooser[hidden]{display:none!important}
 .work-choose-head{display:flex;flex-direction:column;gap:3px}
@@ -758,8 +768,8 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  .work-model-choose{font-size:11px;padding:10px 9px;min-height:38px;max-width:44%;white-space:nowrap}
  .work-model-dialog{width:calc(100vw - 12px);max-height:calc(100dvh - 16px);border-radius:15px}
  .work-model-dialog-content{padding:12px}
- .work-model-dialog .work-agent-catalog{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
- .work-model-option{min-height:75px;padding:9px}
+ .work-model-dialog .work-agent-catalog{display:block;width:100%;min-width:0}
+ .work-model-option{min-height:76px;padding:9px}
  .work-model-option strong{font-size:12px}
  .work-model-option small{font-size:10px}
 }
@@ -812,11 +822,11 @@ html.aigzt-ios-pwa #workModelDialog[open]{
 #workModelDialog .modal-head h2{font-size:19px;color:#294e78}
 #workModelDialog .modal-head .close-modal{flex:none;width:36px;height:36px}
 #workModelDialog .work-model-dialog-content{padding:12px 16px 16px}
-.work-region-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:4px;border-radius:12px;background:#edf3fc;margin-bottom:12px}
+.work-region-tabs{display:grid;width:100%;box-sizing:border-box;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:4px;border-radius:11px;background:#edf2f7;margin-bottom:12px}
 .work-region-tab{min-width:0;border:1px solid transparent;border-radius:10px;background:transparent;color:#6482a3;min-height:37px;font-weight:680;font-size:13px;text-align:center;cursor:pointer;touch-action:manipulation}
 .work-region-tab.active{background:#fff;color:#3168a9;border-color:#bfd7f5;box-shadow:0 2px 6px rgba(42,101,168,.1)}
 .work-region-tab:focus-visible{outline:2px solid #498dde}
-.work-region-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.work-region-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));min-width:0;width:100%;gap:9px}
 .russian-model-guide{margin:12px 0 0;padding:11px 13px;background:linear-gradient(135deg,#eff5ff,#f0f9fb);border:1px solid #d8e8f8;border-radius:12px;color:#385c81}
 .russian-model-guide strong{display:block;font-size:13px;font-weight:730}
 .russian-model-guide p{margin:6px 0 5px;font-size:12px;line-height:1.6;font-weight:620}
@@ -828,7 +838,7 @@ html.aigzt-ios-pwa #workModelDialog[open]{
  #workModelDialog .modal-head h2{font-size:17px}
  #workModelDialog .work-model-dialog-content{padding:9px 11px 14px}
  .work-region-tab{font-size:12px;min-height:36px}
- .work-region-models{gap:7px}
+ .work-region-models{gap:8px}
 }
 
 /* Real project tools; the rest of the work UI is unchanged. */
