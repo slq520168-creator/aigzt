@@ -451,7 +451,7 @@ async function mediaChat(req,env,user){
  if(!prompt)throw Error("请输入创作描述");
  const exists=b.chatId?await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",b.chatId,user.id):null;
  if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
- const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
+ const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt,style:b.style,shape:b.shape}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
  const result=mode==="image"?await submitKrea(mediaReq,env,user):await createVideo(mediaReq,env,user);
  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply=mode==="image"?(result.pending?"[[aigzt:image-job:"+result.jobId+"]]":"![生成图片]("+result.image+")"):"视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
  if(!exists){const pid=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/.test(b.projectId)?b.projectId:null;
@@ -469,6 +469,26 @@ async function mediaChat(req,env,user){
 
 
 const KREA="https://krea-krea-2.hf.space";
+const KREA_SHAPES=Object.freeze({square:[1024,1024],portrait:[832,1216],portrait916:[576,1024],landscape:[1216,832],landscape169:[1024,576]});
+const KREA_STYLES=Object.freeze({
+ "portrait-master":"photorealistic portrait photography, natural skin texture, detailed eyes and hands, professional camera, cinematic lighting",
+ "natural-portrait":"natural portrait photography, daylight, candid expression, realistic skin, authentic photo",
+ "studio-portrait":"studio portrait photography, professional softbox lighting, realistic skin details",
+ "fashion-editorial":"high fashion editorial photography, dramatic lighting, sharp detail, magazine quality",
+ "cinematic-portrait":"cinematic photorealistic portrait, realistic facial proportions, film lighting, filmic grading",
+ "casual-photo":"casual smartphone photography, natural everyday scene, authentic snapshot",
+ "pro-photo":"professional commercial photography, high resolution, detailed",
+ "cinematic":"cinematic still, film grain, dramatic composition, movie lighting",
+ none:"",
+ anime:"anime illustration, detailed anime art",
+ "cute-anime":"cute anime illustration, soft colors, kawaii",
+ "digital-painting":"digital painting, detailed brushwork",
+ oil:"oil painting on canvas, expressive brushwork",
+ watercolor:"watercolor painting, soft washes and textured paper",
+ pencil:"pencil sketch, graphite drawing, detailed shading",
+ cartoon:"cartoon illustration, clean linework, bold colors",
+ fantasy:"fantasy landscape, epic scenery, cinematic lighting"
+});
 function hfHeaders(env){const t=String(env.HF_TOKEN||env.HUGGINGFACE_TOKEN||"").trim();return /^hf_[A-Za-z0-9_-]{16,}$/.test(t)?{authorization:"Bearer "+t}:{}}
 function detectImage(a){if(a.length>4&&a[0]===137&&a[1]===80&&a[2]===78&&a[3]===71)return"image/png";if(a.length>3&&a[0]===255&&a[1]===216&&a[2]===255)return"image/jpeg";if(a.length>12&&String.fromCharCode(...a.slice(0,4))==="RIFF"&&String.fromCharCode(...a.slice(8,12))==="WEBP")return"image/webp";return""}
 async function downloadImage(resp){
@@ -504,8 +524,12 @@ async function submitKrea(req,env,user){
 
  try{
   const seed=Math.floor(Math.random()*2147483647);
-  const payload={prompt,negative_prompt:"",model:"Turbo",steps:8,guidance:0,width:1024,height:1024,seed,randomize:false};
-  const res=await fetch(KREA+"/gradio_api/call/v2/generate",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(12000)});
+  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?KREA_SHAPES[input.shape]:KREA_SHAPES.portrait;
+  const style=Object.hasOwn(KREA_STYLES,input.style)?KREA_STYLES[input.style]:KREA_STYLES["portrait-master"];
+  const styledPrompt=style?prompt+", "+style:prompt;
+  // Official Gradio call API requires an ordered 'data' argument array.
+  const payload={data:[styledPrompt,"","Turbo",8,0,shape[0],shape[1],seed,false]};
+  const res=await fetch(KREA+"/gradio_api/call/generate",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(12000)});
   if(!res.ok||res.status>=300)throw Object.assign(new Error(res.status===429?"作图服务当前限流，请稍后重试":"作图服务请求失败 HTTP "+res.status),{status:res.status===429?429:503});
   const data=await res.json(),eid=String(data?.event_id||"");
   if(!/^[A-Za-z0-9_-]{8,128}$/.test(eid))throw Error("作图提交失败");
@@ -919,6 +943,11 @@ async function main(req,env){
  if(path==="/api/provider-models"&&req.method==="POST")return response(await providerModels(await parseJSON(req)));
  if(path==="/api/openrouter/exchange"&&req.method==="POST")return response(await exchangeOpenRouter(await parseJSON(req)));
  if(path==="/api/image"&&req.method==="POST")return response(await submitKrea(req,env,user));
+ if(path==="/api/image/jobs"&&req.method==="GET"){
+  requireUser(user);
+  const rows=(await env.DB.prepare("SELECT id,status,media_id,created_at FROM image_jobs WHERE user_id=? ORDER BY created_at DESC LIMIT 24").bind(user.id).all()).results||[];
+  return response({ok:true,jobs:rows.map(x=>({id:x.id,status:x.status,image:x.status==="complete"&&x.media_id?"/api/files/"+x.media_id:null,createdAt:x.created_at}))});
+ }
  const imageJob=path.match(/^\/api\/image\/task\/([0-9a-f-]{36})$/i);
  if(imageJob&&req.method==="GET")return imageJobStatus(env,user,imageJob[1]);
  if(path==="/api/chat/media"&&req.method==="POST")return response(await mediaChat(req,env,user));

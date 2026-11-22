@@ -4,7 +4,7 @@ const S={
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
- authRegister:false,createMode:"image",videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
+ authRegister:false,createMode:"image",drawBatch:null,videoTask:null,composerMode:"text",attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
 const $=id=>document.getElementById(id);
 const els=id=>document.querySelectorAll(id);
@@ -1136,25 +1136,137 @@ function openKeyPanel(provider){
  }
  refreshKeyPanel();show("keyDialog");
 }
+
+function drawTile(index,status="准备生成",shape="portrait"){
+ const tile=node("article","draw-tile"),picture=node("div","draw-photo",status),caption=node("small","draw-caption","第 "+index+" 张 · "+status);
+ picture.dataset.shape=shape;tile.append(picture,caption);
+ $("drawResults").append(tile);return {tile,picture,caption};
+}
+function drawResult(tile,url){
+ const img=node("img");img.src=url;img.alt="AI 生成图片";img.loading="lazy";
+ tile.picture.replaceChildren(img);
+ const actions=node("div","draw-tile-actions"),view=node("a","","查看"),save=node("a","","保存");
+ view.href=url;view.target="_blank";view.rel="noopener";
+ save.href=url;save.download="aigzt-image.png";
+ actions.append(view,save);tile.tile.append(actions);
+ tile.caption.textContent="生成完成 · 已保存到账号";
+}
+function drawSleep(ms,signal){
+ return new Promise(resolve=>{
+  if(signal.aborted){resolve(false);return}
+  const finish=ok=>{clearTimeout(timer);signal.removeEventListener("abort",abort);resolve(ok)};
+  const abort=()=>finish(false);
+  const timer=setTimeout(()=>finish(true),ms);
+  signal.addEventListener("abort",abort,{once:true});
+ });
+}
+async function drawTrackJob(id,tile,batch){
+ for(let tries=0;tries<150&&!batch.cancelled;tries++){
+  try{
+   const r=await api("/api/image/task/"+encodeURIComponent(id));
+   if(batch.cancelled)return false;
+   if(r.done){
+    if(r.failed){tile.picture.textContent="生成失败";tile.caption.textContent=r.error||"作图服务暂不可用";return false}
+    if(typeof r.image==="string"){drawResult(tile,r.image);return true}
+    tile.picture.textContent="结果为空";tile.caption.textContent="作图服务未返回图片";return false;
+   }
+   tile.caption.textContent="正在生成";
+  }catch(e){
+   tile.caption.textContent="暂时无法查询，可重新打开本页面恢复";
+  }
+  if(!await drawSleep(12000,batch.controller.signal))return false;
+ }
+ if(!batch.cancelled){tile.caption.textContent="任务仍未完成，请稍后重新打开查询"}
+ return false;
+}
+function stopDrawBatch(){
+ const b=S.drawBatch;
+ if(!b)return;
+ b.cancelled=true;b.controller.abort();S.drawBatch=null;
+ $("drawCancel").hidden=true;$("createButton").disabled=false;
+ $("createStatus").textContent="已停止查询；提交过的任务可以稍后重新打开查看";
+}
+async function runFreeDraw(){
+ const prompt=$("createPrompt").value.trim();
+ if(!prompt){$("createStatus").textContent="请输入画面描述";return}
+ if(!S.user){show("authDialog");return}
+ if(S.drawBatch){$("createStatus").textContent="上一批作图尚未完成";return}
+ const count=Number($("drawCount").value),shape=$("drawShape").value,style=$("drawStyle").value;
+ if(![1,2,4].includes(count)){ $("createStatus").textContent="图片数量不正确";return }
+ const batch={cancelled:false,controller:new AbortController()};
+ S.drawBatch=batch;$("drawResults").replaceChildren();
+ const tiles=Array.from({length:count},(_,i)=>drawTile(i+1,"准备生成",shape));
+ $("createButton").disabled=true;$("drawCancel").hidden=false;
+ $("createStatus").textContent="正在生成 "+count+" 张图片";
+ let index=0,success=0,failed=0;
+ const task=async()=>{
+  while(!batch.cancelled&&index<count){
+   const i=index++,tile=tiles[i];
+   tile.picture.textContent="正在提交";
+   try{
+    const result=await api("/api/image",{prompt,style,shape});
+    if(batch.cancelled)return;
+    if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
+    tile.picture.textContent="生成中";
+    if(await drawTrackJob(result.jobId,tile,batch))success++;else failed++;
+   }catch(e){failed++;tile.picture.textContent="未完成";tile.caption.textContent=humanError(e)}
+   if(!batch.cancelled)$("createStatus").textContent="已生成 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");
+  }
+ };
+ try{await Promise.all(Array.from({length:Math.min(2,count)},()=>task()))}
+ finally{
+  if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;
+   $("createStatus").textContent="生成结束：成功 "+success+" 张"+(failed?"，未完成 "+failed+" 张":"");
+  }
+ }
+}
+async function restoreDrawJobs(){
+ if(S.drawBatch||!S.user)return;
+ try{
+  const data=await api("/api/image/jobs");
+  if(!$("createDialog").open||S.createMode!=="image"||S.drawBatch)return;
+  $("drawResults").replaceChildren();
+  for(const [i,job] of (data.jobs||[]).slice(0,16).entries()){
+   const tile=drawTile(i+1,job.status==="complete"?"生成完成":job.status==="pending"?"等待生成":"未完成");
+   if(job.status==="complete"&&job.image){drawResult(tile,job.image)}
+   else if(job.status==="pending"){
+    const button=node("button","","查询结果");button.type="button";
+    button.addEventListener("click",async()=>{
+     if(S.drawBatch)return;
+     const batch={cancelled:false,controller:new AbortController()};
+     S.drawBatch=batch;button.disabled=true;$("drawCancel").hidden=false;
+     try{await drawTrackJob(job.id,tile,batch)}
+     finally{if(S.drawBatch===batch){S.drawBatch=null;$("drawCancel").hidden=true}button.disabled=false}
+    });
+    const actions=node("div","draw-tile-actions");actions.append(button);tile.tile.append(actions);
+   }
+  }
+ }catch(e){$("createStatus").textContent="历史图片暂时读取失败："+humanError(e)}
+}
+
 function setCreationMode(mode){
  S.createMode=mode;
- $("imageTab").classList.toggle("active",mode==="image");
- $("videoTab").classList.toggle("active",mode==="video");
- $("videoSettings").hidden=mode!=="video";
- $("createButton").textContent=mode==="image"?"生成免费图片":"使用我的 Grok 生成视频";
+ const isImage=mode==="image";
+ $("imageTab").classList.toggle("active",isImage);
+ $("videoTab").classList.toggle("active",!isImage);
+ $("videoSettings").hidden=isImage;
+ $("drawSettings").hidden=!isImage;
+ $("drawResults").hidden=!isImage;
+ $("drawCancel").hidden=!isImage||!S.drawBatch;
+ $("createButton").textContent=isImage?"生成免费图片":"使用我的 Grok 生成视频";
  $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
 }
 function openCreate(){
  if(!S.user){show("authDialog");return}
  setCreationMode("image");show("createDialog");closeMenu();
+ void restoreDrawJobs();
 }
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
  const prompt=$("createPrompt").value.trim();if(!prompt){$("createStatus").textContent="请填写画面描述";return}
  const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在创建…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
  try{
-  if(S.createMode==="image"){
-   hide("createDialog");setComposerMode("image");$("prompt").value=prompt;void sendMessage();return;
+  if(S.createMode==="image"){await runFreeDraw();return;
   }else{
    if(!connected("grok"))throw Error("请先连接 Grok 密钥");
    if(!$("confirmVideo").checked)throw Error("视频可能收费，请先勾选费用确认");
@@ -1271,6 +1383,7 @@ function wire(){
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
+ $("navDraw").addEventListener("click",openCreate);
  $("freeToolsClose").addEventListener("click",()=>setWorkMode(false));
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
@@ -1287,7 +1400,7 @@ function wire(){
  $("workDelete").addEventListener("click",()=>void deleteWorkTask());
  $("workExport").addEventListener("click",exportWorkTask);
  $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq")});
- $("imageQuick").addEventListener("click",()=>{hide("modelDialog");setComposerMode("image");$("toolTray").hidden=true});
+ $("imageQuick").addEventListener("click",()=>{hide("modelDialog");openCreate();$("toolTray").hidden=true});
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
  $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
@@ -1313,7 +1426,7 @@ function wire(){
  $("filesAction").addEventListener("click",()=>{hideAttachMenu();$("attachmentInput").click()});
  $("toolsAction").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=!$("toolTray").hidden});
  for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
- $("imageMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="image"?"text":"image");$("toolTray").hidden=true});
+ $("imageMode").addEventListener("click",()=>{openCreate();$("toolTray").hidden=true});
  $("videoMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="video"?"text":"video");$("toolTray").hidden=true});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
@@ -1351,6 +1464,8 @@ function wire(){
  $("imageTab").addEventListener("click",()=>setCreationMode("image"));
  $("videoTab").addEventListener("click",()=>setCreationMode("video"));
  $("createButton").addEventListener("click",()=>void generateMedia());
+ $("drawCancel").addEventListener("click",stopDrawBatch);
+ $("createDialog").addEventListener("close",stopDrawBatch);
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(Speech){$("voiceInput").hidden=false;$("voiceInput").addEventListener("click",()=>{const sr=new Speech();sr.lang="zh-CN";sr.interimResults=false;sr.onresult=e=>{$("prompt").value+=(e.results[0]?.[0]?.transcript||"");$("prompt").focus()};sr.onerror=e=>flashError("语音识别不可用："+e.error);sr.start()})}
