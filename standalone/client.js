@@ -1493,6 +1493,7 @@ async function sendMessage(){
  const submittedMode=S.composerMode;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
+ if(submittedMode==="video"){$("createPrompt").value=prompt;setComposerMode("text");openVideoCreate();return}
  if(submittedMode==="image"&&S.attachments.length){flashError("当前免费作图只支持文字描述，附件已保留，切回聊天可继续发送");return}
  if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
@@ -2005,6 +2006,21 @@ function drawPrefs(){
   $("drawMore").textContent=expanded?"收起风格":"更多风格";$("drawMore").setAttribute("aria-expanded",String(expanded));
  });
 }
+const VIDEO_FREE_SITES=Object.freeze({
+ flow:{name:"Google Flow",url:"https://labs.google/fx/tools/flow",description:"可能提供官方免费使用额度；需到原网站登录操作，额度和地区以官网为准。"},
+ pixverse:{name:"PixVerse",url:"https://app.pixverse.ai/",description:"官网可能提供免费积分；需登录查看实际可用次数及分辨率。"},
+ dreamina:{name:"Dreamina",url:"https://dreamina.capcut.com/",description:"官网可能提供免费额度，需在官方页面完成视频生成。"},
+ vidu:{name:"Vidu",url:"https://www.vidu.com/",description:"官网可能提供免费额度，实际权益需登录确认。"},
+ huggingface:{name:"Hugging Face Spaces",url:"https://huggingface.co/spaces?category=video-generation",description:"社区视频生成 Space，是否在线及限制取决于具体 Space。"}
+});
+function updateVideoProvider(){
+ const provider=$("videoProvider").value,site=VIDEO_FREE_SITES[provider],grok=provider==="grok";
+ $("videoExternal").hidden=grok;$("videoGrokControls").hidden=!grok;
+ $("videoProviderInfo").textContent=grok?"仅此项使用站内 Grok API：需要已连接的个人密钥，并可能计费。":site?.description||"";
+ if(site){$("videoExternalLink").href=site.url;$("videoExternalLink").textContent="打开 "+site.name+" 官网"}
+ $("createButton").textContent=grok?"提交 Grok 视频任务":"复制视频描述";
+ $("refreshVideo").hidden=!grok||!S.videoTask;
+}
 function setCreationMode(mode){
  S.createMode=mode;
  const isImage=mode==="image";
@@ -2014,7 +2030,8 @@ function setCreationMode(mode){
  $("drawResultSection").hidden=!isImage;
  $("drawCancel").hidden=!isImage||!S.drawBatch;
  $("drawElapsed").hidden=!isImage||!S.drawBatch&&$("drawElapsed").textContent==="00:00";
- $("createButton").textContent=isImage?"生成免费图片":"使用我的 Grok 生成视频";
+ $("createButton").textContent=isImage?"生成免费图片":"复制视频描述";
+ if(!isImage)updateVideoProvider();
  $("createStatus").textContent="";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
 }
 function openCreate(){
@@ -2029,6 +2046,19 @@ async function generateMedia(){
  if(!S.user){show("authDialog");return}
  if(S.createMode==="image"){await runFreeDraw();return}
  const prompt=$("createPrompt").value.trim();if(!prompt){$("createStatus").textContent="请填写画面描述";return}
+ const provider=$("videoProvider").value,site=VIDEO_FREE_SITES[provider];
+ if(site){
+  try{
+   if(!navigator.clipboard?.writeText)throw Error("No Clipboard API");
+   await navigator.clipboard.writeText(prompt);
+   $("createStatus").textContent="描述已复制。点击「打开 "+site.name+" 官网」，在官网粘贴并使用账号可用额度生成。";
+  }catch{
+   $("createStatus").textContent="自动复制不可用，请长按描述文本复制后前往 "+site.name+" 官网。";
+   $("createPrompt").focus();$("createPrompt").select();
+  }
+  return;
+ }
+ if(provider!=="grok"){$("createStatus").textContent="视频服务无效";return}
  const btn=$("createButton");btn.disabled=true;$("createStatus").textContent="正在创建…";$("mediaPreview").replaceChildren();$("refreshVideo").hidden=true;
  try{
    if(!connected("grok"))throw Error("请先连接 Grok 密钥");
@@ -2279,6 +2309,7 @@ function wire(){
   $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
  });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
+ $("videoProvider").addEventListener("change",updateVideoProvider);
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(Speech){$("voiceInput").hidden=false;$("voiceInput").addEventListener("click",()=>{const sr=new Speech();sr.lang="zh-CN";sr.interimResults=false;sr.onresult=e=>{$("prompt").value+=(e.results[0]?.[0]?.transcript||"");$("prompt").focus()};sr.onerror=e=>flashError("语音识别不可用："+e.error);sr.start()})}
 }
