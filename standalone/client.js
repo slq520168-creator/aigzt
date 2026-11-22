@@ -256,7 +256,7 @@ async function fetchConnections(){
    if(item.model&&!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model,type:/(?:^|[\/_-])whisper(?:$|[\/_-])/i.test(item.model)?"audio":"text"}];
   }
   S.savedProviders=saved;S.connectionsLoaded=true;refreshSourceChips();if(S.workMode)renderWorkAgentCatalog();
-  if(S.provider!=="free"&&!connected(S.provider))setFreeDefault(false);
+  // Never silently switch the user to a different model during connection refresh.
   S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);
   S.selectedFree=isFreeModel(S.provider,S.model);
   updateModelTitle();
@@ -276,6 +276,31 @@ function isFreeModel(provider,model){
  if(provider==="novai")return /^\[free\]/i.test(model);
  if(provider==="novai_pro")return ["glm-4.7-flash","glm-4.1v-thinking-flash","glm-4.6v-flash"].includes(model);
  return false;
+}
+// Account-scoped model preference, independent of a chat's historical model.
+let restoredChatModelOwner=null;
+function chatModelStorageKey(userId){return "aigzt:chat-model:v1:"+String(userId)}
+function rememberChatModelSelection(){
+ if(!S.user?.id)return;
+ try{localStorage.setItem(chatModelStorageKey(S.user.id),JSON.stringify({provider:S.provider,model:S.model,title:S.modelTitle}))}catch{}
+}
+function restoreChatModelSelection(){
+ const id=String(S.user?.id||"");
+ if(!id||restoredChatModelOwner===id)return;
+ restoredChatModelOwner=id;
+ let saved=null;
+ try{saved=JSON.parse(localStorage.getItem(chatModelStorageKey(id))||"null")}catch{}
+ if(saved&&typeof saved.provider==="string"&&/^[a-z][a-z0-9_-]{0,35}$/.test(saved.provider)&&
+   typeof saved.model==="string"&&saved.model.length>0&&saved.model.length<=180&&
+   typeof saved.title==="string"&&saved.title.length<=240){
+  S.provider=saved.provider;
+  S.model=saved.provider==="free"?"free:auto":chatTextModel(saved.provider,saved.model);
+  S.modelTitle=saved.provider==="free"?"免费自动":saved.title;
+  // Respect saved consent only after connections have loaded; login requests may finish in either order.
+  S.allowPaid=S.connectionsLoaded===true&&Boolean(S.savedProviders[S.provider]?.consent);
+  S.selectedFree=isFreeModel(S.provider,S.model);
+ }else setFreeDefault(false);
+ updateModelTitle();
 }
 function setFreeDefault(render=true){
  S.provider="free";S.model="free:auto";S.modelTitle="免费自动";S.allowPaid=false;S.selectedFree=true;
@@ -304,7 +329,7 @@ async function useSavedConnection(){
   if(!model){$("keyStatus").textContent="密钥已保存。请填写官方模型 ID 后使用。";return}
   S.provider=provider;S.model=model;S.modelTitle=provider+" · "+model;
   S.allowPaid=!!entry.consent;S.selectedFree=isFreeModel(provider,model);
-  updateModelTitle();hide("keyDialog");$("prompt").focus();
+  rememberChatModelSelection();updateModelTitle();hide("keyDialog");$("prompt").focus();
  }catch(e){$("keyStatus").textContent=humanError(e)}
  finally{button.disabled=false}
 }
@@ -315,13 +340,13 @@ async function removeSavedKey(){
  try{
   await api("/api/connections/"+p+"/delete",{});
   delete S.savedProviders[p];delete S.connected[p];delete S.keys[p];
-  if(S.provider===p){S.provider="free";S.model="free:auto";S.modelTitle="免费模型";S.allowPaid=false;updateModelTitle()}
+  if(S.provider===p){setFreeDefault(false);rememberChatModelSelection();updateModelTitle()}
   refreshKeyPanel();$("keyStatus").textContent="已断开";
  }catch(e){$("keyStatus").textContent=humanError(e)}
 }
 
 async function fetchMe(){
- try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;setAuthUI()}
+ try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();setAuthUI()}
  catch(e){flashError("账号状态读取失败："+humanError(e))}
 }
 function renderHistory(){
@@ -651,7 +676,7 @@ function newChat(){
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
- S.chatId=null;S.attachments=[];renderAttachments();if(S.provider!=="free"&&!connected(S.provider))setFreeDefault(false);setComposerMode("text");$("messageList").replaceChildren();showWelcome();
+ S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();closeMenu();
 }
 function startCoding(){
@@ -672,7 +697,8 @@ async function loadChat(id){
   for(const m of v.messages)appendMessage(m.role,m.body,m.model);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
-  if(c&&c.model&&c.provider){S.provider=["free","cloudflare"].includes(c.provider)?"free":c.provider;S.model=S.provider==="free"?"free:auto":chatTextModel(S.provider,c.model);S.modelTitle=S.provider==="free"?"免费自动":S.model;S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);S.selectedFree=isFreeModel(S.provider,S.model);updateModelTitle()}
+  // A chat's saved provider is historical; viewing it must not overwrite the active selection.
+  updateModelTitle();
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
@@ -720,6 +746,7 @@ function setModel(row){
  }
  S.provider=via;S.model=via==="free"?"free:auto":row.id;S.modelTitle=via==="free"?"免费自动":row.name||row.id;
  S.allowPaid=Boolean(S.savedProviders[via]?.consent);S.selectedFree=isFreeModel(via,S.model);
+ rememberChatModelSelection();
  if(S.savedProviders[via])void api("/api/connections/"+via+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
  updateModelTitle();hide("modelDialog");flashError("");
 }
@@ -1957,7 +1984,7 @@ async function finishOpenRouterOAuth(){
   const d=await api("/api/connections",{provider:"openrouter",apiKey:result.key,consent:false});
   S.savedProviders.openrouter={model:d.connection.model,consent:false,verified:!!d.connection.verified,updatedAt:d.connection.updatedAt};
   S.connected.openrouter=d.models||[];
-  S.provider="openrouter";S.model=d.connection.model;S.modelTitle="OpenRouter · "+S.model;S.allowPaid=false;updateModelTitle();
+  S.provider="openrouter";S.model=d.connection.model;S.modelTitle="OpenRouter · "+S.model;S.allowPaid=false;rememberChatModelSelection();updateModelTitle();
   refreshSourceChips();$("keyProvider").value="openrouter";refreshKeyPanel();show("keyDialog");
   $("keyStatus").textContent="授权成功，密钥已加密保存";
  }catch(e){flashError("OpenRouter 授权失败："+humanError(e))}
@@ -1984,7 +2011,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -2006,6 +2033,7 @@ async function verifyKey(event){
    S.provider=p;S.model=rec.model;
    S.modelTitle=p+" · "+(S.connected[p].find(m=>m.id===rec.model)?.name||rec.model);
    S.selectedFree=isFreeModel(p,rec.model);
+   rememberChatModelSelection();
   }
   S.allowPaid=!!rec.consent;updateModelTitle();refreshSourceChips();
   refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已保存，下次打开直接使用":(data.warning||"密钥已保存，请选择官方模型 ID");
