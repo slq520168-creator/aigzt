@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
- allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
  authRegister:false,createMode:"image",drawBatch:null,videoTask:null,composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -657,15 +657,8 @@ function chooseWorkProvider(value,auto=false){
 
 function workModelsFor(provider){
  if(provider==="auto")return [];
- if(provider==="free"){
-  return [
-   {id:"free:auto",name:"平台自动选择免费接口（底层模型不固定）"},
-   {id:"free:vexa",name:"Vexa 接口（底层模型未公开）"},
-   {id:"free:vireonix",name:"Vireonix 接口（底层模型未公开）"},
-   {id:"free:cehpoint",name:"Cehpoint 接口（底层模型未公开）"},
-   ...(S.freeModels.some(x=>x.id==="free:groq")?[{id:"free:groq",name:"Groq 接口（GPT-OSS 20B）"}]:[])
-  ];
- }
+ if(provider==="free")return S.freeModels.length?S.freeModels.map(m=>({id:m.id,name:m.name})):
+ [{id:"free:auto",name:"免费自动"}];
  const models=new Map();
  const add=(m)=>{if(m&&typeof m.id==="string"&&m.id.trim()&&!models.has(m.id))models.set(m.id,{id:m.id,name:typeof m.name==="string"&&m.name.trim()?m.name:m.id})};
  if(provider==="openrouter")for(const m of S.remoteModels)add(m);
@@ -803,52 +796,59 @@ function initDomesticProviderLinks(){
 }
 
 
-const FREE_CREATIVE_MODES=[{"id":"research","name":"研究","icon":"brain-circuit","placeholder":"输入研究主题","action":"chat"},{"id":"imagePrompt","name":"图片提示","icon":"image","placeholder":"描述你想画的内容","action":"chat"},{"id":"group","name":"群聊","icon":"message-circle","placeholder":"输入多角色群聊主题（模拟）","action":"chat"},{"id":"story","name":"故事","icon":"square-pen","placeholder":"输入故事主题","action":"chat"},{"id":"character","name":"角色创作者","icon":"circle-user","placeholder":"描述想创建的角色","action":"chat"},{"id":"code","name":"代码","icon":"code-2","placeholder":"输入编程需求","action":"code"},{"id":"adventure","name":"冒险","icon":"compass","placeholder":"输入冒险设定","action":"chat"},{"id":"mentor","name":"导师","icon":"brain-circuit","placeholder":"输入学习主题","action":"chat"},{"id":"debate","name":"辩论","icon":"message-circle","placeholder":"输入辩论题目","action":"chat"},{"id":"video","name":"视频","icon":"video","placeholder":"","action":"external","url":"https://perchance.org/ai-video-generator"},{"id":"live","name":"直播","icon":"mic","placeholder":"输入直播脚本或流程需求","action":"chat"}];
-const EXTERNAL_FREE_TOOLS=[{"provider":"Perchance","name":"AI 文生图","category":"作图","url":"https://perchance.org/ai-text-to-image-generator"},{"provider":"Perchance","name":"写实照片","category":"作图","url":"https://perchance.org/ai-photo-generator"},{"provider":"Perchance","name":"角色形象","category":"角色","url":"https://perchance.org/ai-character-generator"},{"provider":"Perchance","name":"动漫作图","category":"作图","url":"https://perchance.org/ai-anime-generator"},{"provider":"Perchance","name":"人像生成","category":"作图","url":"https://perchance.org/ai-portrait-generator"},{"provider":"Perchance","name":"剧情场景","category":"写作","url":"https://perchance.org/ai-scenario-generator"},{"provider":"Perchance","name":"图片提示词","category":"作图","url":"https://perchance.org/ai-image-prompt"},{"provider":"Perchance","name":"Flux 提示词","category":"作图","url":"https://perchance.org/ai-image-prompt-generator"},{"provider":"Perchance","name":"AI 聊天","category":"聊天","url":"https://perchance.org/ai-chat"},{"provider":"Perchance","name":"故事生成","category":"写作","url":"https://perchance.org/ai-story-generator"},{"provider":"Perchance","name":"文字冒险 RPG","category":"互动","url":"https://perchance.org/ai-rpg"},{"provider":"Perchance","name":"社区视频生成","category":"视频","url":"https://perchance.org/ai-video-generator"},{"provider":"PerchanceAI","name":"文生图","category":"作图","url":"https://perchanceai.com/t/text-to-image"},{"provider":"PerchanceAI","name":"图生图","category":"修图","url":"https://perchanceai.com/t/img2img"},{"provider":"PerchanceAI","name":"照片编辑","category":"修图","url":"https://perchanceai.com/t/photo-editor"},{"provider":"PerchanceAI","name":"照片增强","category":"修图","url":"https://perchanceai.com/t/ai-photo-enhancer"},{"provider":"PerchanceAI","name":"图片转文字","category":"修图","url":"https://perchanceai.com/t/photo-to-text"},{"provider":"PerchanceAI","name":"故事写作","category":"写作","url":"https://perchanceai.com/t/story"},{"provider":"PerchanceAI","name":"AI 助手","category":"聊天","url":"https://perchanceai.com/c/askbuddy"},{"provider":"PerchanceAI","name":"角色扮演聊天","category":"聊天","url":"https://perchanceai.com/c/ai-roleplay-chat"},{"provider":"PerchanceAI","name":"对话训练","category":"聊天","url":"https://perchanceai.com/c/crush-chat"},{"provider":"PerchanceAI","name":"专业图片生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-image-professional"},{"provider":"PerchanceAI","name":"摄影图片生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-photo"},{"provider":"PerchanceAI","name":"像素画生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-pixel-art-generator"},{"provider":"PerchanceAI","name":"无缝纹理生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/texture-generator"},{"provider":"PerchanceAI","name":"角色参考图","category":"角色","url":"https://perchanceai.com/ai/en/generate/character-reference-sheet"},{"provider":"PerchanceAI","name":"产品创意","category":"写作","url":"https://perchanceai.com/t/product-idea-generator"},{"provider":"PerchanceAI","name":"简笔人物画","category":"作图","url":"https://perchanceai.com/t/stick-figure-generator"},{"provider":"PerchanceAI","name":"角色姓名","category":"写作","url":"https://perchanceai.com/t/1920s-name-generator"},{"provider":"PerchanceAI","name":"角色创建","category":"角色","url":"https://perchanceai.com/c/character-creator"},{"provider":"PerchanceAI","name":"故事协作","category":"写作","url":"https://perchanceai.com/c/story-weaver"},{"provider":"PerchanceAI","name":"剧情互动","category":"互动","url":"https://perchanceai.com/c/dating-sim-text-game"},{"provider":"PerchanceAI","name":"图片变换","category":"修图","url":"https://perchanceai.com/t/image-transform-with-seed"},{"provider":"PerchanceAI","name":"艺术图像","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-art-generator"},{"provider":"PerchanceAI","name":"图像变体","category":"作图","url":"https://perchanceai.com/ai/en/generate/image-to-image"},{"provider":"PerchanceAI","name":"AI 绘图","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-drawing-generator"},{"provider":"PerchanceAI","name":"真假 AI 游戏","category":"互动","url":"https://perchanceai.com/c/bot-or-human"},{"provider":"PerchanceAI","name":"魔法灯互动","category":"互动","url":"https://perchanceai.com/c/ask-a-genie"},{"provider":"PerchanceAI","name":"照片工具库","category":"修图","url":"https://perchanceai.com/ai/en/image"},{"provider":"PerchanceAI","name":"所有免费工具","category":"目录","url":"https://perchanceai.com/explore?focus=1"},{"provider":"PerchanceAI","name":"热门工具","category":"目录","url":"https://perchanceai.com/explore/list/top"},{"provider":"PerchanceAI","name":"图像生成目录","category":"目录","url":"https://perchanceai.com/explore?category=image-generators"},{"provider":"PerchanceAI","name":"照片编辑目录","category":"目录","url":"https://perchanceai.com/explore?category=photo-editing"},{"provider":"PerchanceAI","name":"肖像工具目录","category":"目录","url":"https://perchanceai.com/explore?category=portrait"},{"provider":"PerchanceAI","name":"动漫工具目录","category":"目录","url":"https://perchanceai.com/explore?category=anime"},{"provider":"PerchanceAI","name":"长篇写作目录","category":"目录","url":"https://perchanceai.com/explore?category=prose_writing"},{"provider":"PerchanceAI","name":"写作工具目录","category":"目录","url":"https://perchanceai.com/explore?category=writing"},{"provider":"PerchanceAI","name":"角色互动目录","category":"目录","url":"https://perchanceai.com/explore?category=roleplay"},{"provider":"PerchanceAI","name":"AI 助手目录","category":"目录","url":"https://perchanceai.com/explore?type=assistants"},{"provider":"PerchanceAI","name":"命名工具目录","category":"目录","url":"https://perchanceai.com/explore?category=name_generator"},{"provider":"Perchance","name":"更多社区生成器","category":"目录","url":"https://perchance.org/generators"},{"provider":"FURAI","name":"Velorum 世界观","category":"互动","url":"https://furai.space/"}];
-const FREE_TOOL_CATEGORIES=["全部","模式","作图","修图","聊天","写作","角色","互动","视频","目录"];
+const FREE_CREATIVE_MODES=[{"id":"research","name":"研究","icon":"brain-circuit","placeholder":"输入研究主题","action":"chat"},{"id":"imagePrompt","name":"图片提示","icon":"image","placeholder":"描述想画的内容","action":"chat"},{"id":"group","name":"群聊模拟","icon":"message-circle","placeholder":"输入虚构角色聊天主题","action":"chat"},{"id":"story","name":"故事","icon":"square-pen","placeholder":"输入故事主题","action":"chat"},{"id":"character","name":"角色创作者","icon":"circle-user","placeholder":"描述角色设定","action":"chat"},{"id":"code","name":"编程助手","icon":"code-2","placeholder":"输入编程需求","action":"code"},{"id":"adventure","name":"文字冒险","icon":"compass","placeholder":"输入冒险设定","action":"chat"},{"id":"mentor","name":"导师","icon":"brain-circuit","placeholder":"输入学习主题","action":"chat"},{"id":"debate","name":"辩论","icon":"message-circle","placeholder":"输入辩论主题","action":"chat"},{"id":"image","name":"免费作图","icon":"image","placeholder":"","action":"image"},{"id":"live","name":"直播策划","icon":"mic","placeholder":"输入直播脚本需求","action":"chat"}];
+const FREE_TOOL_CATEGORIES=["全部","模式","免费线路"];
 function freeToolsFilters(){
  const selected=S.freeToolsCategory||"全部",container=$("freeToolFilters");container.replaceChildren();
  for(const label of FREE_TOOL_CATEGORIES){
   const b=node("button","free-filter"+(label===selected?" active":""));b.type="button";
-  b.textContent=label;b.setAttribute("aria-pressed",label===selected?"true":"false");
+  b.textContent=label;b.setAttribute("aria-pressed",String(label===selected));
   b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools()});container.append(b);
  }
 }
-function openFreeTool(url){
- if(navigator.standalone===true||window.matchMedia("(display-mode: standalone)").matches)
-  window.location.assign(url);
- else window.open(url,"_blank","noopener,noreferrer");
-}
 function startFreeCreativeMode(mode){
  if(S.busy)return;
- if(mode.action==="external"){openFreeTool(mode.url);return}
  if(!S.user){show("authDialog");return}
+ if(mode.action==="image"){openCreate();return}
  if(mode.action==="code"){startCoding();return}
  newChat();S.creativeMode=mode.id;$("prompt").placeholder=mode.placeholder;
  const header=$("welcome")?.querySelector("h1");if(header)header.textContent=mode.name;
  $("prompt").focus();
 }
+function selectFreeSource(route){
+ if(!S.user){show("authDialog");return}
+ if(!route.available&&route.id!=="free:auto")return;
+ newChat();S.provider="free";S.model=route.id;S.modelTitle=route.name;S.allowPaid=false;S.selectedFree=true;
+ updateModelTitle();$("prompt").focus();
+}
 function renderFreeTools(){
  freeToolsFilters();
  const search=$("freeToolsSearch").value.trim().toLocaleLowerCase(),filter=S.freeToolsCategory||"全部";
  const includes=fields=>!search||fields.some(s=>String(s).toLocaleLowerCase().includes(search));
- const modes=FREE_CREATIVE_MODES.filter(x=>(filter==="全部"||filter==="模式")&&includes([x.name,x.placeholder]));
- const modeList=$("freeModesList");modeList.replaceChildren();$("freeModesSection").hidden=modes.length===0;
+ const modes=FREE_CREATIVE_MODES.filter(m=>(filter==="全部"||filter==="模式")&&includes([m.name,m.placeholder]));
+ const modeList=$("freeModesList");modeList.replaceChildren();$("freeModesSection").hidden=!modes.length;
  for(const item of modes){
   const button=node("button","free-mode-card");button.type="button";
   const marker=node("span","free-mode-icon");marker.append(iconSlot(item.icon));
   button.append(marker,node("strong","",item.name));
   button.addEventListener("click",()=>startFreeCreativeMode(item));modeList.append(button);renderIcons(button);
  }
- const items=EXTERNAL_FREE_TOOLS.filter(x=>(filter==="全部"||filter===x.category)&&includes([x.name,x.provider,x.category]));
- $("freeToolsCount").textContent=items.length+" 个";const list=$("freeToolsList");list.replaceChildren();
- for(const item of items){
-  const a=node("a","free-tool-card");a.href=item.url;
-  a.target=(navigator.standalone===true||window.matchMedia("(display-mode: standalone)").matches)?"_self":"_blank";
-  a.rel="noopener noreferrer";
-  a.append(node("strong","free-tool-name",item.name),node("span","free-tool-provider",item.provider));list.append(a);
+ const routes=(S.freePoolRoutes||[]).filter(m=>(filter==="全部"||filter==="免费线路")&&includes([m.name,m.id,m.status]));
+ $("freeToolsCount").textContent=routes.length?routes.length+" 条已配置线路":"额度查询中";
+ const list=$("freeToolsList");list.replaceChildren();
+ for(const route of routes){
+  const button=node("button","free-tool-card");button.type="button";button.disabled=route.available===false;
+  button.append(node("strong","free-tool-name",route.name),node("span","free-tool-provider",route.status||"可尝试"));
+  button.addEventListener("click",()=>selectFreeSource(route));list.append(button);
  }
- if(!modes.length&&!items.length)list.append(node("p","free-tools-empty","没有匹配的工具"));
+ if(!modes.length&&!routes.length)list.append(node("p","free-tools-empty",S.freePoolRoutes?.length?"没有匹配项目":"尚未获取免费来源状态"));
+}
+async function loadFreePool(){
+ try{
+  const data=await api("/api/free/status");
+  S.freePoolRoutes=Array.isArray(data.routes)?data.routes:[];
+ }catch{S.freePoolRoutes=[]}
+ if(S.freeToolsMode)renderFreeTools();
 }
 function setFreeToolsMode(enabled){
  S.freeToolsMode=!!enabled;
@@ -858,7 +858,7 @@ function setFreeToolsMode(enabled){
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
   
   
-  $("navFreeTools").classList.add("active");renderFreeTools();
+  $("navFreeTools").classList.add("active");renderFreeTools();void loadFreePool();
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   if(!S.workMode)$("conversation").hidden=false;
