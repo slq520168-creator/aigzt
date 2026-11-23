@@ -37,25 +37,25 @@ test("Translations toggle in place, are cached per message, and don't edit messa
 test("Translation uses dedicated low-latency providers without message writes",()=>{
  const begin=worker.indexOf("async function translateChatMessage("),end=worker.indexOf("const FREE_CREATIVE_PROMPTS",begin);
  const body=worker.slice(begin,end);
- assert.match(worker,/path===\\"\\/api\\/message\\/translate\\"&&req\\.method===\\"POST\\"/);
+ assert.match(worker,/path===\"\/api\/message\/translate\"&&req\.method===\"POST\"/);
  assert.match(body,/GROQ_FREE_KEY/);
  assert.match(body,/OPENROUTER_FREE_KEY/);
  assert.match(body,/reasoning_effort="low"/);
- assert.match(body,/source\\.length>8000/);
- assert.doesNotMatch(body,/freeText\\(env|INSERT INTO|UPDATE messages|env\\.MEDIA\\.put/);
+ assert.match(body,/source\.length>8000/);
+ assert.doesNotMatch(body,/freeText\(env|INSERT INTO|UPDATE messages|env\.MEDIA\.put/);
  assert.doesNotThrow(()=>new Function(js));
 });
 test("Translation errors are retryable instead of permanently cached",()=>{
- assert.match(js,/if\\(state\\?\\.failed\\)/);
- assert.match(js,/state\\.failed=true/);
+ assert.match(js,/if\(state\?\.failed\)/);
+ assert.match(js,/state\.failed=true/);
 });
 test("All literal toolbar icons are implemented without file-folder fallback",()=>{
  const html=fs.readFileSync("standalone/index.html","utf8");
- const part=js.slice(js.indexOf("const ICONS={")+12,js.indexOf("};\\n/* Local two-tone"));
- const keys=[...part.matchAll(/(?:^|\\n)\\s*(?:'([^']+)'|([a-zA-Z0-9_-]+))\\s*:/g)].map(m=>m[1]||m[2]);
- const used=[...html.matchAll(/data-icon="([^"]+)"/g),...js.matchAll(/(?:iconSlot|messageTool|iconButton)\\("([^"]+)"/g)].map(m=>m[1]);
+ const part=js.slice(js.indexOf("const ICONS={")+12,js.indexOf("};\n/* Local two-tone"));
+ const keys=[...part.matchAll(/(?:^|\n)\s*(?:'([^']+)'|([a-zA-Z0-9_-]+))\s*:/g)].map(m=>m[1]||m[2]);
+ const used=[...html.matchAll(/data-icon="([^"]+)"/g),...js.matchAll(/(?:iconSlot|messageTool|iconButton)\("([^"]+)"/g)].map(m=>m[1]);
  for(const name of used)assert.ok(keys.includes(name),"Missing icon: "+name);
- assert.match(js,/path=ICONS\\[name\\]\\|\\|ICONS\\.info/);
+ assert.match(js,/path=ICONS\[name\]\|\|ICONS\.info/);
  for(const icon of ["languages","scan","film","clapperboard"])assert.ok(keys.includes(icon));
 });
 test("Fast translator returns real Chinese output using a mocked upstream response",async()=>{
