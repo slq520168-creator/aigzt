@@ -828,7 +828,7 @@ async function submitQwenImageEdit(env,user,imageId,prompt){
  }
  const data=await response.json().catch(()=>null),event=String(data?.event_id||"");
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(event))throw Object.assign(Error("图生图上游没有返回有效任务编号"),{status:502});
- const id=crypto.randomUUID(),now=Date.now(),ref={v:8,p:"qwenedit",id:event};
+ const id=crypto.randomUUID(),now=Date.now(),ref={v:8,p:"qwenedit",id:event,imageId,prompt:prompt.slice(0,1100)};
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-edit-free')",id,user.id,JSON.stringify(ref),now);
  return {jobId:id,model:"免费图生图 · Qwen Image Edit",pending:true};
 }
@@ -841,13 +841,34 @@ async function qwenEditStatus(env,user,job,ref){
   return response({ok:true,done:true,failed:true,error:reason,officialUrl:QWEN_EDIT_OFFICIAL});
  };
  if(now-job.created_at>15*60000)return failure("免费图生图等待超时");
+ if(job.status==="recovering"){
+  if(now-Number(job.checked_at||0)>45000){
+   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='图生图备用请求中断' WHERE id=? AND user_id=? AND status='recovering'",job.id,user.id);
+   return response({ok:true,done:true,failed:true,error:"图生图备用请求中断，请重新提交"});
+  }
+  return pending();
+ }
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(ref.id||""))return failure("图生图任务编号无效");
  if(now-Number(job.checked_at||0)<9000)return pending();
  const claim=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-8800);
  if(!claim.meta?.changes)return pending();
  const state=ref.deliveryUrl?{status:"complete",url:ref.deliveryUrl}:await queryGradioImageEvent(env,"qwen",ref.id);
  if(state.status==="pending")return pending();
- if(state.status==="failed")return failure("免费图生图上游生成失败");
+ if(state.status==="failed"){
+  if(!hordeUuid(ref.imageId)||!ref.prompt)return failure("免费图生图上游生成失败");
+  // Explicit Qwen failure permits exactly one separate Horde request.
+  const reserved=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering' WHERE id=? AND user_id=? AND status='pending' AND checked_at=?",job.id,user.id,now);
+  if(!reserved.meta?.changes)return pending();
+  try{
+   const eventId=await submitHordeGeneration(env,user,ref.imageId,ref.prompt);
+   await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",JSON.stringify({v:7,p:"horde",id:eventId}),job.id,user.id);
+   return pending();
+  }catch(e){
+   const reason="Qwen 失败，免费社区备用也不可用";
+   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",reason,Date.now(),job.id,user.id);
+   return response({ok:true,done:true,failed:true,error:reason,officialUrl:QWEN_EDIT_OFFICIAL});
+  }
+ }
  if(state.status!=="complete"||!state.url)return failure("图生图生成后没有返回图片");
  let image;
  try{image=await saveKreaImage(env,user.id,state.url,true)}
@@ -862,15 +883,9 @@ async function qwenEditStatus(env,user,job,ref){
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（仅当前会话展示，不保存图片文件）",job.message_id,user.id).catch(()=>{});
  return response({ok:true,done:true,image,temporary:true,model:"免费图生图 · Qwen Image Edit"});
 }
-async function submitHordeImageEdit(env,user,imageId,prompt){
- if(!hordeUuid(imageId))throw Object.assign(Error("请选择一张 JPG、PNG 或 WebP 参考图"),{status:400});
- const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='image-edit-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-11*60000);
- if(active)throw Object.assign(Error("上一张图生图仍在生成，请先完成"),{status:409});
- // Fast instruction-based source first. On a definitive HTTP rejection only,
- // use the existing anonymous community generation path as fallback.
- try{return await submitQwenImageEdit(env,user,imageId,prompt)}
- catch(error){if(error?.definite!==true)throw error}
-
+/* One shared anonymous submission implementation. Accepts source bytes only
+ * from this user's R2 and never submits more than once on an uncertain outcome. */
+async function submitHordeGeneration(env,user,imageId,prompt){
  const obj=await env.MEDIA?.get(user.id+"/"+imageId);
  const mime=String(obj?.httpMetadata?.contentType||"").toLowerCase();
  if(!obj||!["image/webp","image/jpeg","image/png"].includes(mime))throw Object.assign(Error("图生图只支持 JPG、PNG 或 WebP 参考图片"),{status:415});
@@ -890,6 +905,18 @@ async function submitHordeImageEdit(env,user,imageId,prompt){
  }
  const data=await reply.json().catch(()=>null),requestId=String(data?.id||"");
  if(!hordeUuid(requestId))throw Object.assign(Error("免费来源未返回有效任务编号"),{status:502});
+ return requestId;
+}
+async function submitHordeImageEdit(env,user,imageId,prompt){
+ if(!hordeUuid(imageId))throw Object.assign(Error("请选择一张 JPG、PNG 或 WebP 参考图"),{status:400});
+ const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='image-edit-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-11*60000);
+ if(active)throw Object.assign(Error("上一张图生图仍在生成，请先完成"),{status:409});
+ // Fast instruction-based source first. On a definitive HTTP rejection only,
+ // use the existing anonymous community generation path as fallback.
+ try{return await submitQwenImageEdit(env,user,imageId,prompt)}
+ catch(error){if(error?.definite!==true)throw error}
+
+ const requestId=await submitHordeGeneration(env,user,imageId,prompt);
  const id=crypto.randomUUID(),now=Date.now(),ref={v:7,p:"horde",id:requestId};
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-edit-free')",id,user.id,JSON.stringify(ref),now);
  return {jobId:id,model:"免费图生图 · AI Horde",pending:true};
@@ -1032,6 +1059,9 @@ const RIO_IMAGE="https://rioshiina-imagegen.hf.space";
 // Exactly the fixed IM source order. Never reorder based on UI settings or arbitrary heuristics.
 const IM_IMAGE_STAGES=Object.freeze(["krea","rio","vexa","glm"]); // Legacy v4/v5 jobs keep their original stage indices.
 const IM_IMAGE_STAGES_FAST=Object.freeze(["krea","vexa","rio","glm"]); // New v6 jobs try bounded fast source before long Rio queue.
+// New v9 jobs: use a real fast image model first. Legacy v4–v6 stage indices must not change.
+const ZIMAGE_FAST="https://mrfakename-z-image-turbo.hf.space";
+const IM_IMAGE_STAGES_QUICK=Object.freeze(["zimage","vexa","krea","glm"]);
 function imageShape(shape){return Object.hasOwn(KREA_SHAPES,shape)?KREA_SHAPES[shape]:KREA_SHAPES.portrait}
 function imageStyledPrompt(prompt,style){
  const suffix=Object.hasOwn(KREA_STYLES,style)?KREA_STYLES[style]:KREA_STYLES["portrait-master"];
@@ -1057,31 +1087,36 @@ async function submitGradioImage(env,provider,prompt,shape,style){
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(id))throw Object.assign(new Error("图片来源拒绝任务"),{definite:true});
  return id;
 }
+async function submitZImageFast(env,ref){
+ const [width,height]=imageShape(ref.s);
+ const args=[imageStyledPrompt(ref.p,ref.t),Math.max(512,Math.min(1024,height)),Math.max(512,Math.min(1024,width)),9,ref.seed,false];
+ let reply;
+ try{reply=await fetch(ZIMAGE_FAST+"/gradio_api/call/generate_image",{
+  method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},
+  body:JSON.stringify({data:args}),redirect:"manual",signal:AbortSignal.timeout(10000)})}
+ catch{throw Object.assign(Error("免费快速作图提交状态不确定"),{uncertain:true})}
+ if(!reply.ok||reply.status>=300)throw Object.assign(Error("免费快速作图来源拒绝生成请求"),{definite:true});
+ const json=await reply.json().catch(()=>null),id=String(json?.event_id||"");
+ if(!/^[A-Za-z0-9_-]{8,128}$/.test(id))throw Object.assign(Error("快速来源未返回任务编号"),{definite:true});
+ return id;
+}
 async function submitKrea(req,env,user){
  requireUser(user);
  const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(!prompt)throw Error("请输入图片描述");
- /* R2 is not required for newly generated images. */
  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?input.shape:"portrait",style=Object.hasOwn(KREA_STYLES,input.style)?input.style:"portrait-master";
- const seed=Math.floor(Math.random()*2147483647);
- let primary=null;
- try{primary=await submitGradioImage(env,"krea",prompt,shape,style)}
- catch(error){
-  // Unknown submission outcomes must never trigger a second provider request.
-  if(error?.uncertain)throw Object.assign(new Error("图片提交状态不确定，已停止重复提交，请稍后再试"),{status:503});
-  // Only an explicit upstream rejection permits advancing to the next source.
- }
- const ref={v:6,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
- const id=crypto.randomUUID();
- // Bounded per-user cleanup of abandoned tasks (no global scan / scheduled job).
- await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND (external_id LIKE ? OR external_id LIKE ?) ORDER BY created_at ASC LIMIT 24)",user.id,Date.now()-3600000,'{"v":5,%','{"v":6,%').catch(()=>{});
- await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,JSON.stringify(ref),Date.now(),"image-unmetered");
- return {ok:true,pending:true,jobId:id,model:"免费作图"};
+ // Persist first, then schedule exactly one upstream submission on status read.
+ // Existing v6 jobs and their stage positions remain compatible with deployment restarts.
+ const now=Date.now(),id=crypto.randomUUID();
+ const ref={v:9,stage:0,phase:"new",id:"",taskId:"",p:prompt,s:shape,t:style,seed:Math.floor(Math.random()*2147483647),stageAt:now};
+ await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND charged_day='image-unmetered' ORDER BY created_at ASC LIMIT 24)",user.id,now-3600000).catch(()=>{});
+ await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-unmetered')",id,user.id,JSON.stringify(ref),now);
+ return {ok:true,pending:true,jobId:id,model:"免费快速作图"};
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
  if(r.meta?.changes){
-  if(typeof job.external_id==="string"&&(job.external_id.startsWith('{"v":5,')||job.external_id.startsWith('{"v":6,'))){
+  if(typeof job.external_id==="string"&&(job.external_id.startsWith('{"v":5,')||job.external_id.startsWith('{"v":6,')||job.external_id.startsWith('{"v":9,'))){
    await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='failed'",job.id,job.user_id);
   }
   if(job.charged_day!=="image-unmetered")await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",job.charged_day,job.user_id),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",job.charged_day)]).catch(()=>{});
@@ -1089,8 +1124,8 @@ async function failKreaJob(env,job,message){
  }
 }
 async function queryGradioImageEvent(env,provider,eid){
- const host=provider==="glm"?GLM_IMAGE:provider==="qwen"?QWEN_EDIT_HOST:KREA,
-  endpoint=provider==="glm"||provider==="qwen"?"infer":"generate";
+ const host=provider==="glm"?GLM_IMAGE:provider==="qwen"?QWEN_EDIT_HOST:provider==="zimage"?ZIMAGE_FAST:KREA,
+  endpoint=provider==="glm"||provider==="qwen"?"infer":provider==="zimage"?"generate_image":"generate";
  let resp;
  try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
  catch{return {status:"pending"}}
@@ -1131,7 +1166,7 @@ async function queryGradioImageEvent(env,provider,eid){
 }
 
 function imageRefV4(ref){return JSON.stringify(ref)}
-function imagePending(job){return response({ok:true,done:false,pending:true,waitSeconds:typeof job.external_id==="string"&&job.external_id.startsWith('{"v":6,')?7:12,startedAt:job.created_at})}
+function imagePending(job){return response({ok:true,done:false,pending:true,waitSeconds:typeof job.external_id==="string"&&(job.external_id.startsWith('{"v":6,')||job.external_id.startsWith('{"v":9,'))?7:12,startedAt:job.created_at})}
 function imageRioFindTask(value){
  if(Array.isArray(value)){for(const v of value){const found=imageRioFindTask(v);if(found)return found}return null}
  if(typeof value==="string"){try{return imageRioFindTask(JSON.parse(value))}catch{return null}}
@@ -1199,8 +1234,8 @@ async function imageVexaRender(env,uid,ref,temporary=false){
  return mid;
 }
 async function imageV4Move(env,job,ref,nextStage){
- if(nextStage>=IM_IMAGE_STAGES.length){
-  await failKreaJob(env,job,"四级免费作图来源均未成功");
+ if(nextStage>=(ref.v===9?IM_IMAGE_STAGES_QUICK:IM_IMAGE_STAGES).length){
+  await failKreaJob(env,job,"免费作图来源均未成功");
   return response({ok:true,done:true,failed:true,error:"免费作图服务目前全部不可用"});
  }
  const next={...ref,stage:nextStage,phase:"new",id:"",taskId:"",stageAt:Date.now()};
@@ -1236,7 +1271,10 @@ async function imageV4Complete(env,job,mediaId){
 }
 async function imageV4Status(env,user,job,ref){
  const now=Date.now();
- if(now-job.created_at>30*60000){await failKreaJob(env,job,"作图超时");return response({ok:true,done:true,failed:true,error:"作图超时"})}
+ if(now-job.created_at>(ref.v===9?75000:30*60000)){
+  await failKreaJob(env,job,ref.v===9?"免费快速作图超时，请稍后重试":"作图超时");
+  return response({ok:true,done:true,failed:true,error:ref.v===9?"免费来源排队过久，本次已停止等待":"作图超时"});
+ }
  if(job.status==="recovering"){
   if(now-job.checked_at>45000){
    await failKreaJob(env,job,"任务处理超时");
@@ -1247,10 +1285,18 @@ async function imageV4Status(env,user,job,ref){
  if(now-(job.checked_at||0)<6800)return imagePending(job);
  const claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-6700);
  if(!claim.meta?.changes)return imagePending(job);
- const stage=(ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES)[ref.stage];
+ const stage=(ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES)[ref.stage];
  if(!stage){await failKreaJob(env,job,"作图任务阶段无效");return response({ok:true,done:true,failed:true,error:"作图任务状态异常"})}
  try{
-  if(now-(ref.stageAt||now)>(stage==="rio"?155000:stage==="glm"?160000:stage==="krea"?140000:35000))return imageV4Move(env,job,ref,ref.stage+1);
+  if(now-(ref.stageAt||now)>(ref.v===9?(stage==="zimage"?45000:stage==="vexa"?18000:30000):(stage==="rio"?155000:stage==="glm"?160000:stage==="krea"?140000:35000))){
+   // Once a Gradio event was accepted, an unknown queue state must not cause
+   // a second paid/GPU task on a different model.
+   if(ref.v===9&&ref.phase!=="new"&&stage!=="vexa"){
+    await failKreaJob(env,job,"免费GPU排队超时，未重复生成");
+    return response({ok:true,done:true,failed:true,error:"免费来源排队过久，本次停止等待"});
+   }
+   return imageV4Move(env,job,ref,ref.stage+1);
+  }
   if(stage==="vexa"){
    try{
     const result=await imageVexaRender(env,user.id,ref,ref.v>=5);
@@ -1260,6 +1306,10 @@ async function imageV4Status(env,user,job,ref){
   if(ref.phase==="deliver"&&typeof ref.url==="string")
    return imageV4Deliver(env,user,job,ref,ref.url);
   if(ref.phase==="new"){
+   if(stage==="zimage"){
+    const eventId=await submitZImageFast(env,ref);
+    return imageV4Pending(env,job,{...ref,id:eventId,phase:"event"});
+   }
    if(stage==="rio"){
     // Match IM's RioShiina/ImageGen parameters, including async_execution and the Krea-2-Turbo model.
     const shape=imageShape(ref.s),params={
@@ -1313,7 +1363,7 @@ async function imageJobStatus(env,user,id){
   try{const ref=JSON.parse(job.external_id);
    if(ref.v===8&&ref.p==="qwenedit")return qwenEditStatus(env,user,job,ref);
    if(ref.v===7&&ref.p==="horde")return hordeStatus(env,user,job,ref);
-   if([4,5,6].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
+   if([4,5,6,9].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
   }catch(e){if(e?.status)throw e}
  }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
@@ -1409,7 +1459,7 @@ async function fvCreate(env,user,b,provider,model,prompt){
  if(provider==="freeloop"&&(!fvId(b.endImageId)||b.endImageId===b.imageId))throw fvError("首尾帧必须分别上传两张不同的图片",400);
  if(provider!=="freeloop"&&b.endImageId)throw fvError("只有首尾帧视频可以使用结束画面",400);
  if(!env.DB||!env.MEDIA)throw fvError("站点存储暂时不可用",503);
- const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-2100000);
+ const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-600000);
  if(active)throw fvError("已有免费视频任务正在生成，请先查询上一条",409);
  // Validate the user's own R2 file before uploading each frame to Gradio.
  const uploadImage=async imageId=>{
@@ -1455,24 +1505,32 @@ function fvOutput(v,cfg,depth=0){
  if(typeof v==="object"){for(const k of ["url","video","path","name","value"]){const x=fvOutput(v[k],cfg,depth+1);if(x)return x}}
  return "";
 }
+function freeVideoFailure(value){
+ const s=String(value||"").slice(0,1400).toLowerCase();
+ if(/gpu|quota|credit|exceed|rate.limit|429|allowance|limit reached/.test(s))return "免费GPU额度或请求次数已耗尽";
+ if(/login|sign.in|authentication|authorization|unauthorized|token|401|403/.test(s))return "免费来源需要登录或授权";
+ if(/queue|busy|no.?worker|capacity|overload/.test(s))return "免费GPU排队或算力不足";
+ if(/timeout|timed.out|deadline/.test(s))return "免费来源处理超时";
+ return "免费上游生成失败";
+}
 async function fvPoll(env,cfg,eventId){
  let res;
  try{res=await fetch(cfg.url+"/gradio_api/call/generate_video/"+encodeURIComponent(eventId),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(11500)})}
  catch{return {status:"pending"}}
- if([401,403,404,410].includes(res.status))return {status:"failed"};
+ if([401,403,404,410,429].includes(res.status))return {status:"failed",error:freeVideoFailure(String(res.status))};
  if(!res.ok||!res.body)return {status:"pending"};
  const reader=res.body.getReader(),decode=new TextDecoder();
- let buffer="",result=null,fail=false,n=0;
+ let buffer="",result=null,error="",n=0;
  const parse=chunk=>{
   const event=chunk.match(/(?:^|\n)event:\s*([^\n]+)/)?.[1]?.trim();
-  if(event==="error"||event==="failed"){fail=true;return}
+  if(event==="error"||event==="failed"){error=freeVideoFailure(chunk);return}
   if(event!=="complete")return;
   const data=chunk.split("\n").filter(line=>line.startsWith("data:")).map(line=>line.slice(5).trim()).join("\n");
-  try{result=JSON.parse(data)}catch{fail=true}
+  try{result=JSON.parse(data)}catch{error="视频结果格式不兼容"}
  };
- try{for(;;){const {value,done}=await reader.read();if(done)break;n+=value.byteLength;if(n>250000)break;buffer+=decode.decode(value,{stream:true}).replace(/\r/g,"");let x;while((x=buffer.indexOf("\n\n"))>=0){parse(buffer.slice(0,x));buffer=buffer.slice(x+2)}if(result!==null||fail)break}if(buffer.trim()&&result===null&&!fail)parse(buffer)}
+ try{for(;;){const {value,done}=await reader.read();if(done)break;n+=value.byteLength;if(n>250000)break;buffer+=decode.decode(value,{stream:true}).replace(/\r/g,"");let x;while((x=buffer.indexOf("\n\n"))>=0){parse(buffer.slice(0,x));buffer=buffer.slice(x+2)}if(result!==null||error)break}if(buffer.trim()&&result===null&&!error)parse(buffer)}
  catch{}finally{try{await reader.cancel()}catch{}}
- return fail?{status:"failed"}:result!==null?{status:"completed",data:result}:{status:"pending"};
+ return error?{status:"failed",error}:result!==null?{status:"completed",data:result}:{status:"pending"};
 }
 async function fvSave(env,user,rawUrl,cfg){
  const url=new URL(rawUrl);
@@ -1499,7 +1557,7 @@ async function fvStatus(env,user,id){
  if(job.status==="complete"&&fvId(job.media_id))return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+job.media_id,temporaryUrl:false};
  if(job.status==="complete"&&ref.url&&fvOutput(ref.url,cfg)===ref.url)return {ok:true,status:"completed",provider:ref.p,url:ref.url,temporaryUrl:true};
  if(job.status==="failed")return {ok:true,status:"failed",provider:ref.p,error:job.error||"免费视频生成失败",officialUrl:cfg.official};
- if(Date.now()-job.created_at>2100000){
+ if(Date.now()-job.created_at>600000){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='免费任务超时' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频任务超时",job.message_id,user.id).catch(()=>{});
   return {ok:true,status:"failed",error:"免费任务超时",officialUrl:cfg.official};
@@ -1509,7 +1567,12 @@ async function fvStatus(env,user,id){
  if(!claimed.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  const state=await fvPoll(env,cfg,ref.e);
  if(state.status==="pending")return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
- if(state.status==="failed"){await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游生成失败' WHERE id=? AND user_id=? AND status='pending'",id,user.id);if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频生成失败，请重新尝试",job.message_id,user.id).catch(()=>{});return {ok:true,status:"failed",error:"免费来源生成失败",officialUrl:cfg.official}}
+ if(state.status==="failed"){
+  const reason=state.error||"免费来源生成失败";
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=? WHERE id=? AND user_id=? AND status='pending'",reason,id,user.id);
+  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频未完成："+reason,job.message_id,user.id).catch(()=>{});
+  return {ok:true,status:"failed",error:reason,officialUrl:cfg.official}
+ }
  const url=fvOutput(state.data,cfg);
  if(!url){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游视频结果格式不兼容' WHERE id=? AND user_id=? AND status='pending'",id,user.id);

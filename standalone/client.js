@@ -2684,7 +2684,7 @@ async function sendMessage(){
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage();
   });
   const detail=humanError(e);
-  status.append(node("span","",isImageMessage?"本次作图未完成":streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
+  status.append(node("span","",isImageMessage?"作图未完成："+detail:streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage){
    const alternate=messageTool("layers","切换免费模型",()=>{
     if(S.busy||S.workMode||S.freeToolsMode)return;
@@ -3265,12 +3265,19 @@ async function queryVideo(){
   const response=await api("/api/video/status",{provider,requestId:id});
   if(S.videoTask!==id||S.videoTaskProvider!==provider)return;
   $("createStatus").textContent=response.status==="completed"?(response.temporaryUrl?"视频生成完成（第三方下载链接可能过期）":"视频已保存到你的媒体空间"):
-   response.status==="failed"?"服务商生成失败，可查看账户中的任务详情":"视频仍在排队或生成中，稍后手动查询即可。";
+   response.status==="failed"?response.error||"免费来源视频生成失败":"视频仍在排队或生成中，稍后手动查询即可。";
   if(response.url){
    const video=node("video");video.controls=true;video.playsInline=true;video.src=response.url;video.preload="metadata";
    const link=node("a","","打开或保存视频");link.href=response.url;link.target="_blank";link.rel="noopener noreferrer";
    $("mediaPreview").replaceChildren(video,link);$("refreshVideo").hidden=true;
-  }else $("refreshVideo").hidden=response.status==="failed";
+  }else if(response.status==="failed"){
+   $("refreshVideo").hidden=true;
+   if(/^https:\/\/huggingface\.co\/spaces\/[\w-]+\/[\w-]+$/i.test(response.officialUrl||"")){
+    const link=node("a","chat-video-save","打开免费来源查看使用条件");
+    link.href=response.officialUrl;link.target="_blank";link.rel="noopener noreferrer";
+    $("mediaPreview").replaceChildren(link);
+   }
+  }else $("refreshVideo").hidden=false;
  }catch(e){$("createStatus").textContent="视频任务查询失败："+humanError(e)}
  finally{$("refreshVideo").disabled=false}
 }
