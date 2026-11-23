@@ -55,7 +55,8 @@ const ICONS={
  'thumbs-down':'<path d="M7 14V2H3v12zM7 14l5 8a2 2 0 0 0 2-2v-5h6a2 2 0 0 0 2-2l-2-9a2 2 0 0 0-2-2H7"/>',
  'volume-2':'<path d="M11 5 6 9H3v6h3l5 4V5ZM15 9a5 5 0 0 1 0 6m3-9a9 9 0 0 1 0 12"/>',
  share:'<path d="M12 16V3m-5 5 5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
- download:'<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>'
+ download:'<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>',
+ 'file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>'
 };
 /* Local two-tone professional vector icons, rendered consistently on all pages. */
 const ICON_GRADIENTS={blue:["#4e78e6","#32b2c8"],teal:["#2498bd","#30c1a1"],violet:["#7662dc","#b374d9"],rose:["#b86dd8","#e47d9f"],amber:["#eaa143","#ee775c"],slate:["#6481bf","#619fc9"]};
@@ -65,7 +66,7 @@ const ICON_TONES={
  "circle-user":"violet",settings:"slate",folder:"amber","chevron-down":"slate",ellipsis:"slate",
  palette:"rose",camera:"blue",image:"rose",blocks:"violet","arrow-up":"teal",mic:"teal",
  "brain-circuit":"violet",video:"rose","code-2":"blue","sliders-horizontal":"violet",pin:"amber",archive:"slate",trash:"rose",
- bookmark:"violet","refresh-cw":"blue","thumbs-up":"teal","thumbs-down":"rose","volume-2":"blue",share:"teal",download:"blue"
+ bookmark:"violet","refresh-cw":"blue","thumbs-up":"teal","thumbs-down":"rose","volume-2":"blue",share:"teal",download:"blue","file-text":"slate"
 };
 let iconGradientSerial=0;
 function renderIcons(scope=document){
@@ -811,7 +812,7 @@ async function revealCompletedReply(row,reply){
 
 
 const VOICE_CHAT_ENABLED=false; // Keep two-way voice conversation hidden.
-const MESSAGE_READ_ALOUD_ENABLED=true; // User-triggered playback of assistant text only.
+const MESSAGE_READ_ALOUD_ENABLED=false; // Paused until the user explicitly re-enables playback.
 const REPLY_LEVELS={short:"简短",standard:"标准",long:"详细"};
 let replyLevel="standard";
 function closeReplyLevel(){
@@ -1059,13 +1060,20 @@ function retryMessage(row){
  const image=!!row.querySelector("img.chat-generated-image");
  messageDraft(text,true,image?"image":"text");
 }
-function messageDownload(row,content){
+function messageDownload(row,content,format="auto"){
  const image=row.querySelector("img.chat-generated-image");
  const a=node("a");a.style.display="none";
- if(image){a.href=image.currentSrc||image.src;a.download="AIGZT-image.png"}
- else{
-  const blob=new Blob([String(content||"")],{type:"text/markdown;charset=utf-8"});
-  a.href=URL.createObjectURL(blob);a.download="AIGZT-message.md";
+ if(image){
+  const url=image.currentSrc||image.src;
+  const mime=url.match(/^data:image\/(png|jpeg|webp|gif|avif)(?:;|,)/i)?.[1]?.toLowerCase();
+  const ext=mime==="jpeg"?"jpg":mime||"png";
+  a.href=url;a.download="AIGZT-image."+ext;
+ }else{
+  const text=String(content||"");
+  const markdown=format==="md"||(format==="auto"&&/(^|\n)\s*(?:#{1,6}\s|[-*]\s|\d+\.\s|>\s|\|.+\|)|\*\*[^*]+\*\*|\x60{3}/m.test(text));
+  const ext=markdown?"md":"txt";
+  const blob=new Blob([text],{type:markdown?"text/markdown;charset=utf-8":"text/plain;charset=utf-8"});
+  a.href=URL.createObjectURL(blob);a.download="AIGZT-message."+ext;
  }
  document.body.append(a);a.click();a.remove();
  if(!image)setTimeout(()=>URL.revokeObjectURL(a.href),2000);
@@ -1122,7 +1130,7 @@ function appendMessageCopy(row,content){
  if(!text.trim()&&!image)return;
  const user=row.classList.contains("user"),bar=node("div","message-copy-bar");
  if(!image)bar.append(messageTool("copy","复制",b=>copyMessageText(text,b)));
- if(user)bar.append(messageTool("square-pen","编辑并重新发送",()=>messageDraft(row.dataset.sourceText||text)));
+ if(user)bar.append(messageTool("square-pen","编辑消息",()=>messageDraft(row.dataset.sourceText||text)));
  bar.append(messageTool("share","分享",b=>messageShare(row,text,b)));
  bar.append(messageTool("download","下载",()=>messageDownload(row,text)));
  if(!image){
@@ -1142,6 +1150,7 @@ function appendMessageCopy(row,content){
  const more=node("details","message-more-wrap"),trigger=node("summary","message-copy-btn message-more-trigger"),panel=node("div","message-more-panel");
  trigger.setAttribute("aria-label","更多消息操作");trigger.title="更多消息操作";trigger.append(iconSlot("ellipsis"));
  if(!user){
+  if(!image)panel.append(messageTool("file-text","下载 TXT",()=>{more.open=false;messageDownload(row,text,"txt")}));
   const reported=node("div","message-token-report",messageTokenText(row));
   reported.title="仅展示服务商实际报告的 Token；未返回则不估算";
   panel.append(reported);
@@ -1167,8 +1176,8 @@ function appendMessageCopy(row,content){
    }
   }
  }
- if(user)panel.append(messageTool("square-pen","编辑并重新发送",()=>{more.open=false;messageDraft(text)}));
- more.append(trigger,panel);bar.append(more);row.append(bar);renderIcons(trigger);
+ if(!user){more.append(trigger,panel);bar.append(more);renderIcons(trigger)}
+ row.append(bar);
 }
 
 
@@ -2113,9 +2122,7 @@ async function sendMessage(){
    renderAssistantText(bubble,streamedContent);
    appendMessageCopy(loading,streamedContent);
   }else bubble.replaceChildren();
-  const retry=node("button","message-resend",isImageMessage?"重新作图":"手动重试");retry.type="button";
-  retry.setAttribute("aria-label","手动重试这条未完成的消息");
-  retry.addEventListener("click",()=>{
+  const retry=messageTool("refresh-cw",isImageMessage?"重新作图":"手动重试",()=>{
    if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
@@ -2127,8 +2134,7 @@ async function sendMessage(){
   const detail=humanError(e);
   status.append(node("span","",isImageMessage?"本次作图未完成":streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage){
-   const alternate=node("button","message-resend","切换免费模型");alternate.type="button";
-   alternate.addEventListener("click",()=>{
+   const alternate=messageTool("layers","切换免费模型",()=>{
     if(S.busy||S.workMode||S.freeToolsMode)return;
     setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
     if(S.composerMode!=="text")setComposerMode("text");
