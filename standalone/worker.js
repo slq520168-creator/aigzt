@@ -824,7 +824,7 @@ async function queryGradioImageEvent(env,provider,eid){
  let resp;
  try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
  catch{return {status:"pending"}}
- if(!resp.ok)return resp.status===404?{status:"failed",error:"生成任务已失效"}:{status:"pending"};
+ if(!resp.ok)return [401,403,404,410,422].includes(resp.status)?{status:"failed",error:"生成任务已失效或来源拒绝"}:{status:"pending"};
  const reader=resp.body?.getReader();if(!reader)return{status:"pending"};
  const decoder=new TextDecoder();let buffer="",size=0,url="",error="";
  function consume(chunk){
@@ -878,7 +878,7 @@ async function imageRioRead(env,endpoint,eventId){
  try{res=await fetch(RIO_IMAGE+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eventId),{
   headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
  catch{return {status:"pending"}}
- if(res.status===404)return {status:"failed",error:"Rio 任务不存在"};
+ if([401,403,404,410,422].includes(res.status))return {status:"failed",error:"Rio 任务无效或来源拒绝"};
  if(!res.ok||!res.body)return {status:"pending"};
  const reader=res.body.getReader(),decoder=new TextDecoder();
  let buffer="",size=0,result=null,fail=false;
@@ -994,20 +994,24 @@ async function imageV4Status(env,user,job,ref){
    return imageV4Pending(env,job,{...ref,id,phase:"event"});
   }
   if(stage==="rio"){
+   // Read the already submitted Rio status event in this request instead of
+   // inserting an extra 7-second idle round-trip between submit and result.
+   // The pending event id remains durable if the upstream read is unfinished.
+   let rioRef=ref;
    if(ref.phase==="rio-poll"){
     const eventId=await imageRioSubmit(env,"get_task_status",[ref.taskId]);
-    return imageV4Pending(env,job,{...ref,id:eventId,phase:"rio-result"});
+    rioRef={...ref,id:eventId,phase:"rio-result"};
    }
-   const step=await imageRioRead(env,ref.phase==="rio-result"?"get_task_status":"run",ref.id);
-   if(step.status==="pending")return imageV4Pending(env,job,ref);
-   if(step.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
+   const step=await imageRioRead(env,rioRef.phase==="rio-result"?"get_task_status":"run",rioRef.id);
+   if(step.status==="pending")return imageV4Pending(env,job,rioRef);
+   if(step.status==="failed")return imageV4Move(env,job,rioRef,rioRef.stage+1);
    const task=imageRioFindTask(step.data);
    const status=String(task?.status||"").toLowerCase();
    if(["failed","error","cancelled","canceled"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    const url=findImageUrl(task?.result??task)||findImageUrl(step.data);
    if(url)return imageV4Deliver(env,user,job,ref,url);
    if(!task||["complete","completed","success","succeeded","done"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
-   return imageV4Pending(env,job,{...ref,phase:"rio-poll",id:"",taskId:task.task_id});
+   return imageV4Pending(env,job,{...rioRef,phase:"rio-poll",id:"",taskId:task.task_id});
   }
   // Official Krea and GLM both use their confirmed Gradio generation endpoints.
   const state=await queryGradioImageEvent(env,stage,ref.id);
