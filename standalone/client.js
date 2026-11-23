@@ -692,47 +692,6 @@ function setPortraitState(row,state){
   if(avatar.isConnected&&avatar.dataset.state==="finished")avatar.dataset.state="idle";
  },750);
 }
-/* In-memory only: a few recent generated pictures survive chat switching in this tab. */
-const recentImagePreviews=new Map();
-function cacheRecentImage(messageId,url){
- if(!messageId||typeof url!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,/.test(url)||url.length>8500000)return;
- recentImagePreviews.delete(messageId);recentImagePreviews.set(messageId,url);
- let bytes=0;for(const value of recentImagePreviews.values())bytes+=value.length;
- while(recentImagePreviews.size>3||bytes>16500000){
-  const key=recentImagePreviews.keys().next().value;
-  if(key===undefined)break;
-  bytes-=recentImagePreviews.get(key).length;recentImagePreviews.delete(key);
- }
-}
-function showInlineChatImage(bubble,url,opts={}){
- const row=bubble?.closest(".message");
- if(!row||typeof url!=="string"||!/^(data:image\/(?:png|jpeg|webp);base64,|\/api\/files\/[0-9a-f-]{36}$)/i.test(url))return false;
- const preview=node("figure","chat-image-preview"),img=node("img","chat-generated-image");
- img.alt="AI生成图片";img.loading="eager";img.decoding="async";preview.append(img);
- const renderId=opts.jobId||"image-"+String(row.dataset.messageId||"");
- bubble.dataset.imageFinalizing=renderId;
- img.onload=()=>{
-  if(!row.isConnected||bubble.dataset.imageFinalizing!==renderId)return;
-  delete bubble.dataset.imageFinalizing;
-  bubble.classList.remove("chat-image-task");preview.classList.add("is-ready");
-  row.dataset.messageKind="image";
-  if(opts.temporary)cacheRecentImage(row.dataset.messageId,url);
-  appendMessageCopy(row,"");setPortraitState(row,"finished");
-  const viewport=$("conversation");
-  if(viewport&&!viewport.hidden&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<450)
-   viewport.scrollTop=viewport.scrollHeight;
- };
- img.onerror=()=>{
-  if(!bubble.isConnected||bubble.dataset.imageFinalizing!==renderId)return;
-  delete bubble.dataset.imageFinalizing;
-  preview.replaceChildren(node("span","image-job-error","图片加载失败"));
-  setPortraitState(row,"error");
- };
- bubble.replaceChildren(preview);
- img.src=url;
- return true;
-}
-
 function createImageWaitingFrame(){
  const frame=node("div","image-loading-card");frame.setAttribute("role","img");frame.setAttribute("aria-label","七彩图片生成中");
  frame.append(node("span","image-loading-glow"),node("span","image-loading-shimmer"));return frame;
@@ -740,7 +699,6 @@ function createImageWaitingFrame(){
 function showChatImageWaiting(bubble,label){bubble.classList.add("chat-image-task");bubble.replaceChildren(label,createImageWaitingFrame())}
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
- setPortraitState(bubble.closest(".message"),"creating");
  const label=node("span","image-job-label","作图中 1秒");
  bubble.dataset.imageStart=String(Date.now());
  showChatImageWaiting(bubble,label);
@@ -763,12 +721,11 @@ async function pollImageJob(bubble,id,manual){
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
-   if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));setPortraitState(bubble.closest(".message"),"error");return}
-    if(!showInlineChatImage(bubble,r.image,{jobId:id,temporary:Boolean(r.temporary)})){
-     bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片预览不可用"));
-     setPortraitState(bubble.closest(".message"),"error");
-    }
-    return;
+   if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
+   const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
+   img.onload=()=>{if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);const row=bubble.closest(".message");if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}};
+   img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片加载失败"))};
+   img.src=r.image;return;
   }
   delay=Math.max(7000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -1340,15 +1297,14 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
   if(pending){row.dataset.messageKind="image";bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
-  const cachedPreview=messageId?recentImagePreviews.get(messageId):null;
-  if(picture||cachedPreview){row.dataset.messageKind="image";showInlineChatImage(bubble,cachedPreview||picture[1])}
-  if(!pending&&!picture&&!cachedPreview&&String(content||"").trim()){
+  if(picture){row.dataset.messageKind="image";bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
+  if(!pending&&!picture&&String(content||"").trim()){
    renderAssistantText(bubble,content);
    // Keep the answer clean; all actions are in the compact toolbar.
    row.dataset.usedModel=typeof model==="string"?model:"";
    row.dataset.incomplete=incomplete?"1":"0";
   }
-  if(!pending&&!picture&&!cachedPreview)appendMessageCopy(row,content);
+  if(!pending)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   bubble.replaceChildren();

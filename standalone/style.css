@@ -640,13 +640,6 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .thinking-dots i:nth-child(2){animation-delay:.18s}.thinking-dots i:nth-child(3){animation-delay:.36s}
 @keyframes thinkdots{0%,70%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
 @media(prefers-reduced-motion:reduce){.thinking-dots i{animation:none}}
-/* Image-generation previews occupy the corresponding assistant bubble, not a separate panel. */
-.message.assistant .bubble.chat-image-task{width:100%;max-width:440px}
-.message.assistant .chat-image-preview{position:relative;display:block;width:min(100%,420px);max-width:100%;aspect-ratio:4/5;margin:0;border:1px solid #e2e8f1;border-radius:17px;background:linear-gradient(140deg,#eef6fb,#f2f0ff);overflow:hidden}
-.message.assistant .chat-image-preview img.chat-generated-image{display:block;width:100%;height:100%;max-width:none;max-height:none;margin:0;object-fit:contain;border-radius:0;opacity:0;transition:opacity .3s ease}
-.message.assistant .chat-image-preview.is-ready img.chat-generated-image{opacity:1}
-.message.assistant .chat-image-preview .image-job-error{display:grid;place-items:center;height:100%;padding:20px}
-@media(prefers-reduced-motion:reduce){.message.assistant .chat-image-preview img.chat-generated-image{transition:none}}
 .image-job-label{font-size:13px;color:#698189}
 .chat-image-task{width:min(100%,440px);max-width:100%}
 .chat-image-task .image-job-label{display:block;margin:0 0 12px;color:#3e535d;font-size:13px;font-weight:600}
