@@ -800,6 +800,14 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .free-tool-card>.ui-icon{width:16px;height:16px;transform:rotate(45deg);opacity:.55}
 .free-tool-name{font-size:13px;font-weight:650;line-height:1.4;overflow-wrap:anywhere;color:#293e50}
 .free-tool-provider{font-size:11px;color:#7c8c9a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.free-tool-featured{grid-column:1/-1;min-height:105px;align-items:flex-start;padding:16px 18px;border-color:#d8e3ed;background:#fafcfe}
+.free-tool-featured:hover{background:#f5f9fd;border-color:#b8ccdf}
+.free-tool-featured .free-tool-symbol{background:linear-gradient(135deg,#e6efff,#e4f6ef)}
+.free-tool-featured .free-tool-copy{gap:6px}
+.free-tool-featured .free-tool-name{font-size:16px}
+.free-tool-feature-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:3px}
+.free-tool-feature{display:inline-block;padding:4px 8px;border-radius:8px;background:#eef4f8;color:#375a71;font-size:11px;font-weight:500;line-height:1.35}
+.free-tool-note{color:#667c8a;font-size:11px;line-height:1.55;overflow-wrap:anywhere}
 .free-tools-empty{color:#7b8f96;padding:22px 5px;font-size:13px;grid-column:1/-1}
 .shell.free-tools-active #pickModel{display:none!important}
 .shell.free-tools-active #headerMore{visibility:hidden}
