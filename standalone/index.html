@@ -150,9 +150,9 @@
    <div class="composer-area" id="composerArea">
     <div class="error-banner" id="errorBanner" role="alert" hidden></div>
     <div class="attach-menu" id="attachMenu" hidden role="menu">
-     <button type="button" id="cameraAction"><span class="ui-icon" data-icon="camera" aria-hidden="true"></span><span>相机</span></button>
-     <button type="button" id="photosAction"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>照片</span></button>
-     <button type="button" id="filesAction"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>文件</span></button>
+     <label id="cameraAction" for="cameraInput" role="button" tabindex="0"><span class="ui-icon" data-icon="camera" aria-hidden="true"></span><span>相机</span></label>
+     <label id="photosAction" for="photosInput" role="button" tabindex="0"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>照片</span></label>
+     <label id="filesAction" for="attachmentInput" role="button" tabindex="0"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>文件</span></label>
      <button type="button" id="toolsAction"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>工具</span></button>
     </div>
     <div class="reply-level-menu" id="replyLevelMenu" role="group" aria-label="回复长度" hidden>
@@ -183,9 +183,9 @@
       <button type="button" class="mini-tool" id="miniFrameVideo" aria-label="首尾帧" title="首尾帧" aria-pressed="false"><span class="ui-icon" data-icon="clapperboard" aria-hidden="true"></span><span>首尾帧</span></button>
      </div>
     </form>
-    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
-    <input id="photosInput" type="file" accept="image/*,.heic,.heif" multiple hidden>
-    <input id="attachmentInput" type="file" multiple accept="image/*,.heic,.heif,.pdf,.txt,.md,.csv" hidden>
+    <input id="cameraInput" class="native-media-file-input" type="file" accept="image/*" capture="environment" aria-label="拍照上传">
+    <input id="photosInput" class="native-media-file-input" type="file" accept="image/*,.heic,.heif" multiple aria-label="选择照片上传">
+    <input id="attachmentInput" class="native-media-file-input" type="file" multiple accept="image/*,.heic,.heif,.pdf,.txt,.md,.csv" aria-label="选择文件上传">
    </div>
   </main>
  </div>

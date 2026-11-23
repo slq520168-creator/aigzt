@@ -1619,11 +1619,11 @@ function updateComposerModel(){
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
  const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
- name.textContent=imageMode?"免费作图 · 点击左侧返回聊天":videoMode?(VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频")+" · 点击切换":active;
- name.title=imageMode?"当前在聊天中生成图片，成功后直接显示在对话内":videoMode?"选择免费来源或个人 API 视频模型":(work?"当前工作选择：":"当前聊天选择：")+active;
+ name.textContent=imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(S.videoProvider==="freeloop"?"首尾帧视频":S.videoProvider==="freewan"?"图生视频":VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频"):S.code?"代码 · "+active:active;
+ name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击视频可退出":S.code?"代码模式 · "+active:(work?"当前工作选择：":"当前聊天选择：")+active;
  $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":work?"工作模型":"聊天模型";
- switcher.setAttribute("aria-label",imageMode||videoMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型");
- switcher.title=imageMode||videoMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
+ switcher.setAttribute("aria-label",videoMode?"选择视频模型":imageMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型");
+ switcher.title=videoMode?"选择视频模型":imageMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
 }
 function updateModelTitle(){
  $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
@@ -1694,36 +1694,46 @@ function syncMiniTools(){
   btn.classList.toggle("active",yes);btn.setAttribute("aria-pressed",String(yes));
  }
 }
+/* The selected input tool must remain visible. iOS file selection uses the
+ * native label in the existing '+' menu, not a click on display:none input. */
 function chooseMiniTool(action){
  if(S.busy)return;
- hideAttachMenu();$("toolTray").hidden=true;
- if(action==="image-edit"){
+ hideAttachMenu();
+ $("toolTray").hidden=false;
+ const isEdit=action==="image-edit";
+ const isImageVideo=action==="image-video";
+ const isFrameVideo=action==="frame-video";
+ if(!isEdit&&!isImageVideo&&!isFrameVideo)return;
+ if(isEdit){
   setComposerMode("image");
   S.miniToolChoice="image-edit";
-  $("prompt").placeholder="添加参考图片，描述你想修改的内容…";
-  syncMiniTools();
-  if(S.user&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){$("photosInput").click();return}
+  $("prompt").placeholder="上传参考图，然后描述需要修改的内容…";
  }else{
-  const provider=action==="image-video"?"freewan":action==="frame-video"?"freeloop":null;
-  if(!provider)return;
+  const provider=isImageVideo?"freewan":"freeloop";
   selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
   setComposerMode("video");
-  if(provider!=="freetext")$("prompt").placeholder="添加参考图，描述想生成的动作…";
-  syncMiniTools();
-  if(provider!=="freetext"&&S.user&&S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type)).length<(provider==="freeloop"?2:1)){$("photosInput").click();return}
+  $("prompt").placeholder=isFrameVideo?"添加首帧和尾帧两张图，描述过渡动作…":"添加参考图，描述画面需要的动作…";
  }
- $("prompt").focus({preventScroll:true});
+ syncMiniTools();updateComposerModel();
+ const images=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+ const needed=isFrameVideo?2:1;
+ if(S.user&&images.length<needed){
+  // Keep the selected tool highlighted while exposing a visible native picker.
+  $("attachMenu").hidden=false;
+  $("photosAction").focus({preventScroll:true});
+ }else $("prompt").focus({preventScroll:true});
 }
 
 function setComposerMode(mode){
  if(mode!=="image")S.miniToolChoice=null;
  S.composerMode=mode;
  if(S.workMode&&mode!=="text")setWorkMode(false);
+ if(mode!=="text"&&S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false")}
  $("imageMode").classList.toggle("active",mode==="image");
  $("videoMode").classList.toggle("active",mode==="video");
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
  $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
- $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":"向 AI 提问…";
+ $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":S.code?"描述编程任务…":"向 AI 提问…";
  resizePrompt();updateComposerModel();syncMiniTools();
 }
 function renderAttachments(){
@@ -2556,10 +2566,11 @@ async function sendMessage(){
  if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
  if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
-  flashError("请先上传一张参考图");$("photosInput").click();return
+  flashError("请点击＋中的照片上传参考图片");$("toolTray").hidden=false;$("attachMenu").hidden=false;return
  }
  if(freeVideo&&S.videoProvider!=="freetext"&&videoImages.length<(S.videoProvider==="freeloop"?2:1)){
-  flashError(S.videoProvider==="freeloop"?"请从左侧＋上传首帧与尾帧两张图片":"请先从左侧＋上传参考图");return
+  flashError(S.videoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
+  $("toolTray").hidden=false;$("attachMenu").hidden=false;return
  }
  if(freeVideo&&S.videoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
   flashError("首尾帧需要两张不同的图片附件");return
@@ -3475,14 +3486,31 @@ function wire(){
  $("savedMessagesBtn").addEventListener("click",()=>void toggleSavedMessages());
  
  $("attachButton").addEventListener("click",()=>{$("attachMenu").hidden=!$("attachMenu").hidden;$("toolTray").hidden=true});
- $("cameraAction").addEventListener("click",()=>{hideAttachMenu();$("cameraInput").click()});
- $("photosAction").addEventListener("click",()=>{hideAttachMenu();$("photosInput").click()});
- $("filesAction").addEventListener("click",()=>{hideAttachMenu();$("attachmentInput").click()});
+ // Native <label for=file-input> activation is a real iPhone user gesture.
+ for(const id of ["cameraAction","photosAction","filesAction"]){
+  // Leave native label's default activation untouched until the OS picker opens.
+  $(id).addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$(id).click()}});
+ }
  $("toolsAction").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=!$("toolTray").hidden});
- for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
- $("imageMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="image"?"text":"image");$("toolTray").hidden=true;$("prompt").focus()});
- $("videoMode").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=true;setComposerMode(S.composerMode==="video"?"text":"video");$("prompt").focus()});
- $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
+ for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{hideAttachMenu();void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
+ $("imageMode").addEventListener("click",()=>{
+  hideAttachMenu();setComposerMode(S.composerMode==="image"?"text":"image");
+  $("toolTray").hidden=false;$("prompt").focus({preventScroll:true});
+ });
+ $("videoMode").addEventListener("click",()=>{
+  hideAttachMenu();setComposerMode(S.composerMode==="video"?"text":"video");
+  $("toolTray").hidden=false;$("prompt").focus({preventScroll:true});
+ });
+ $("codeToggle").addEventListener("click",()=>{
+  hideAttachMenu();
+  if(S.composerMode!=="text")setComposerMode("text");
+  S.code=!S.code;
+  $("codeToggle").classList.toggle("active",S.code);
+  $("codeToggle").setAttribute("aria-pressed",String(S.code));
+  $("prompt").placeholder=S.code?"描述编程任务…":"向 AI 提问…";
+  $("toolTray").hidden=false;updateComposerModel();
+  $("prompt").focus({preventScroll:true});
+ });
  for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
