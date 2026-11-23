@@ -758,17 +758,21 @@ async function submitHordeImageEdit(env,user,imageId,prompt){
  if(active)throw Object.assign(Error("上一张图生图仍在生成，请先完成"),{status:409});
  const obj=await env.MEDIA?.get(user.id+"/"+imageId);
  const mime=String(obj?.httpMetadata?.contentType||"").toLowerCase();
- if(!obj||!["image/webp","image/png","image/jpeg"].includes(mime))throw Object.assign(Error("参考图片不存在或格式不支持"),{status:415});
+ if(!obj||mime!=="image/webp")throw Object.assign(Error("图生图需要 WebP 参考图，请在图生图模式重新上传图片"),{status:415});
  if(obj.size<200||obj.size>1600000)throw Object.assign(Error("参考图过大，请在作图模式重新上传以自动缩小图片"),{status:413});
  const bytes=new Uint8Array(await obj.arrayBuffer());
  if(detectImage(bytes)!==mime)throw Object.assign(Error("参考图片内容无效"),{status:415});
  const params={n:1,width:512,height:512,steps:18,cfg_scale:7,denoising_strength:0.58,sampler_name:"k_euler_a"};
- const payload={prompt:prompt.slice(0,1100),params,source_image:hordeBase64(bytes),source_processing:"img2img",r2:false,shared:false,nsfw:false};
+ const payload={prompt:prompt.slice(0,1100),params,source_image:hordeBase64(bytes),source_processing:"img2img",r2:true,nsfw:false};
  let reply;
  try{reply=await fetch(HORDE_URL+"/generate/async",{method:"POST",headers:HORDE_HEADERS,body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(15000)})}
  catch{throw Object.assign(Error("免费来源提交状态不确定，请勿重复提交"),{status:503})}
  if(reply.status===429)throw Object.assign(Error("免费社区正在限制请求，请稍后使用"),{status:429});
- if(!reply.ok||reply.status>=300)throw Object.assign(Error("图生图免费来源拒绝任务 (HTTP "+reply.status+")"),{status:503});
+ if(!reply.ok||reply.status>=300){
+  const failure=await reply.json().catch(()=>null);
+  const reason=String(failure?.message||failure?.errors?.[0]?.message||"").slice(0,160).replace(/[<>]/g,"");
+  throw Object.assign(Error("免费图生图来源拒绝任务 (HTTP "+reply.status+")"+(reason?"："+reason:"")),{status:reply.status===403?503:reply.status>=500?503:400});
+ }
  const data=await reply.json().catch(()=>null),requestId=String(data?.id||"");
  if(!hordeUuid(requestId))throw Object.assign(Error("免费来源未返回有效任务编号"),{status:502});
  const id=crypto.randomUUID(),now=Date.now(),ref={v:7,p:"horde",id:requestId};

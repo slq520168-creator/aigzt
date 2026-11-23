@@ -1661,14 +1661,15 @@ function renderAttachments(){
 /* Normal JPG/PNG/WebP attachments stay unchanged.
  * Convert only an oversized reference or HEIC/HEIF used in image-edit mode.
  * Use an Image fallback for iPhone Safari when createImageBitmap cannot decode HEIC. */
+/* AI Horde source_image accepts Base64 WebP. Keep the ordinary text-to-image
+ * implementation unchanged: only optimize a reference added in image mode. */
 async function optimizeImageReference(file){
  if(S.composerMode!=="image")return file;
  const type=String(file.type||"").toLowerCase();
- const standard=["image/jpeg","image/png","image/webp"].includes(type);
+ const supported=["image/jpeg","image/png","image/webp"].includes(type);
  const heic=["image/heic","image/heif"].includes(type)||/\.(heic|heif)$/i.test(file.name||"");
- if(!standard&&!heic)return file;
- // Keep already valid image attachments untouched; backend accepts up to 1.6 MB.
- if(standard&&file.size<=1450000)return file;
+ if(!supported&&!heic)return file;
+ if(type==="image/webp"&&file.size<=1450000)return file;
  let bitmap=null,preview=null,objectUrl="";
  try{
   if(typeof createImageBitmap==="function"){
@@ -1679,30 +1680,29 @@ async function optimizeImageReference(file){
    preview=await new Promise((resolve,reject)=>{
     const img=new Image();
     img.onload=()=>resolve(img);
-    img.onerror=()=>reject(Error("该图片无法转换，请改用 JPG 或 PNG 图片"));
+    img.onerror=()=>reject(Error("此图片无法读取，请选择 JPG、PNG 或 WebP"));
     img.src=objectUrl;
    });
   }
-  const source=bitmap||preview;
-  const width=source.width||source.naturalWidth,height=source.height||source.naturalHeight;
-  if(!width||!height)throw Error("无法读取参考图片尺寸");
+  const source=bitmap||preview,width=source.width||source.naturalWidth,height=source.height||source.naturalHeight;
+  if(!width||!height)throw Error("参考图尺寸无效");
   const canvas=document.createElement("canvas");
-  const draw=side=>{
-   const scale=Math.min(1,side/Math.max(width,height));
+  const encode=async(size,quality)=>{
+   const scale=Math.min(1,size/Math.max(width,height));
    canvas.width=Math.max(1,Math.round(width*scale));
    canvas.height=Math.max(1,Math.round(height*scale));
    const ctx=canvas.getContext("2d");
-   if(!ctx)throw Error("此设备暂不支持图片转换");
+   if(!ctx)throw Error("此设备没有图片转换能力");
    ctx.drawImage(source,0,0,canvas.width,canvas.height);
+   return new Promise((resolve,reject)=>canvas.toBlob(blob=>{
+    if(!blob||blob.type!=="image/webp")return reject(Error("当前浏览器无法生成 WebP 参考图，请换用支持 WebP 的浏览器"));
+    resolve(blob);
+   },"image/webp",quality));
   };
-  const jpeg=quality=>new Promise((resolve,reject)=>{
-   canvas.toBlob(blob=>blob&&blob.type==="image/jpeg"?resolve(blob):reject(Error("此设备暂不支持 JPG 编码")),"image/jpeg",quality);
-  });
-  draw(768);
-  let blob=await jpeg(.78);
-  if(blob.size>1450000){draw(576);blob=await jpeg(.65)}
-  if(blob.size>1500000)throw Error("参考图仍过大，请选较小的图片");
-  return new File([blob],String(file.name||"reference").replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"});
+  let blob=await encode(768,.78);
+  if(blob.size>1450000)blob=await encode(576,.65);
+  if(blob.size>1500000)throw Error("参考图压缩后仍超过上限，请选择较小图片");
+  return new File([blob],String(file.name||"reference").replace(/\.[^.]+$/,"")+".webp",{type:"image/webp"});
  }finally{
   bitmap?.close?.();
   if(objectUrl)URL.revokeObjectURL(objectUrl);
@@ -1712,6 +1712,9 @@ async function optimizeImageReference(file){
 async function uploadSelected(files){
  if(!S.user){show("authDialog");return}
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
+ if(S.composerMode==="image"&&S.miniToolChoice==="image-edit"&&(files.length!==1||S.attachments.length)){
+  flashError("图生图一次仅允许一张参考图片，请先移除原图再选择");return
+ }
  for(const file of files){
   if(file.size>8000000){flashError("单文件最大8MB："+file.name);continue}
   try{
@@ -2456,7 +2459,13 @@ async function sendMessage(){
  if(submittedMode==="video"&&!freeVideo){$("createPrompt").value=prompt;openVideoCreate();return}
  if(freeVideo&&!prompt){flashError("请输入视频描述");return}
  if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
- if(submittedMode==="image"&&!prompt){flashError("请输入修改图片的描述");return}
+ if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
+ if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
+  flashError("请先上传一张参考图");$("photosInput").click();return
+ }
+ if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&S.attachments.length===1&&S.attachments[0].type!=="image/webp"){
+  flashError("这张参考图需要转换，请在图生图模式重新添加图片");return
+ }
  if(freeVideo&&S.videoProvider!=="freetext"&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){flashError("请先从左侧＋上传参考图");return}
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
   flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
