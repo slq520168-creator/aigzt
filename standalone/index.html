@@ -398,8 +398,10 @@
  <fieldset class="draw-field"><legend>数量</legend><div id="drawCount" class="draw-choices draw-count-options" data-value="1" role="group" aria-label="生成数量"><button type="button" class="draw-choice active" data-value="1" aria-pressed="true">1 张</button><button type="button" class="draw-choice" data-value="2" aria-pressed="false">2 张</button><button type="button" class="draw-choice" data-value="4" aria-pressed="false">4 张</button></div></fieldset>
  </div>
  <div id="videoSettings" class="video-settings" hidden>
-  <div class="video-section-heading"><strong>视频模型</strong><span>4 家正式 API · 9 个模型</span></div>
+  <div class="video-section-heading"><strong>视频模型</strong><span>2 个免费来源 · 个人 API 可选</span></div>
   <div id="videoModelGrid" class="video-model-grid" role="group" aria-label="选择视频模型">
+    <button type="button" class="video-model-card selected" data-video-provider="freewan" data-video-model="wan2.2-i2v-fast" aria-pressed="true"><span class="video-card-title"><strong>Wan 2.2 图生视频</strong><span class="video-card-status">免费额度</span></span><small>上传图片 · 约 3 秒 · 共享 ZeroGPU</small></button>
+    <button type="button" class="video-model-card" data-video-provider="freeloop" data-video-model="wan2.2-firstlast" aria-pressed="false"><span class="video-card-title"><strong>Wan 2.2 首尾帧</strong><span class="video-card-status">免费额度</span></span><small>保持首尾画面 · 约 2 秒 · 共享 ZeroGPU</small></button>
    <button type="button" class="video-model-card selected" data-video-provider="grok" data-video-model="grok-imagine-video-1.5" aria-pressed="true"><span class="video-card-title"><strong>Grok Imagine 1.5</strong><span class="video-card-status">个人 API</span></span><small>xAI · 6 秒 / 720p</small></button>
    <button type="button" class="video-model-card" data-video-provider="runway" data-video-model="gen4.5" aria-pressed="false"><span class="video-card-title"><strong>Runway Gen-4.5</strong><span class="video-card-status">个人 API</span></span><small>Runway · 官方视频模型</small></button>
    <button type="button" class="video-model-card" data-video-provider="runway" data-video-model="veo3.1_fast" aria-pressed="false"><span class="video-card-title"><strong>Google Veo 3.1 Fast</strong><span class="video-card-status">个人 API</span></span><small>Runway 多厂商 API</small></button>
@@ -411,15 +413,16 @@
    <button type="button" class="video-model-card" data-video-provider="vidu" data-video-model="viduq2" aria-pressed="false"><span class="video-card-title"><strong>Vidu Q2</strong><span class="video-card-status">个人 API</span></span><small>Vidu 视频 API</small></button>
   </div>
   <div class="video-model-terms">
+    <label id="videoImageRow" class="video-image-upload"><span>图生视频参考图片</span><input type="file" id="videoImageInput" accept="image/jpeg,image/png,image/webp"><small id="videoImageName">选择一张图片，保持人物身份</small></label>
    <div id="videoRatio" class="video-ratio-choices" role="group" aria-label="视频画面比例">
     <button type="button" data-ratio="16:9" class="active" aria-pressed="true">横屏 16:9</button>
     <button type="button" data-ratio="9:16" aria-pressed="false">竖屏 9:16</button>
    </div>
    <p id="videoModelInfo" class="video-availability-note">视频生成使用个人 API Key，实际费用按服务商计费。</p>
    <div class="video-key-row"><span id="videoConnectedStatus">正在检查 API 连接</span><button id="videoConnectKey" class="outline" type="button">连接 API Key</button></div>
-   <label class="check-row"><input id="confirmVideo" type="checkbox">我确认使用所选服务商的个人 API 额度，可能产生费用。</label>
+   <label class="check-row" id="videoConfirmRow" hidden><input id="confirmVideo" type="checkbox">我确认使用所选服务商的个人 API 额度，可能产生费用。</label>
   </div>
-  <p class="video-availability-note">这些均为站内 API 任务，不会跳转外站生成。未绑定的模型可先连接密钥；提交前不会扣除视频生成额度。</p>
+  <p class="video-availability-note">免费模型使用第三方共享计算额度，不保证随时可用；不会自动切换到收费模型。其他模型由用户自行连接授权。</p>
  </div>
  <div class="draw-main-action">
    <button class="primary full" id="createButton">生成免费图片</button>

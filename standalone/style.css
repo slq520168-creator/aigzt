@@ -1111,3 +1111,10 @@ html.aigzt-ios-pwa #workModelDialog[open]{
 #workRunResults a{color:#2d6eaa;text-decoration:underline}
 #workToolStatus{min-height:15px;color:#486c84;font-size:12px;margin:0;overflow-wrap:anywhere}
 @media(max-width:680px){.work-tool-grid,.work-diff{grid-template-columns:1fr}.work-tool-inner{padding:9px}.work-tool-card{padding:10px}}
+
+/* Shared free video sources use the existing video selector and uploader. */
+#videoConfirmRow[hidden],#videoImageRow[hidden],#videoConnectKey[hidden]{display:none!important}
+.video-image-upload{display:flex;flex-direction:column;gap:7px;border:1px solid #dfe7f0;border-radius:12px;padding:12px;font-size:13px;color:#244459;background:#f8fbfe}
+.video-image-upload input{font-size:12px;width:100%;max-width:100%;min-height:34px;box-sizing:border-box}
+.video-image-upload small{color:#638095;line-height:1.45;overflow-wrap:anywhere}
+.video-model-card[data-video-provider^="free"].selected{border-color:#2c987a;background:#edfaf5;box-shadow:0 0 0 1px #2c987a}
