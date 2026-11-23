@@ -231,12 +231,13 @@ a{color:inherit}
 .attach-menu{position:absolute;bottom:calc(100% + 3px);left:24px;width:230px;border:1px solid #dfe5e8;border-radius:22px;padding:10px;display:flex;flex-direction:column;gap:3px;background:#fff;box-shadow:0 12px 35px rgba(17,32,40,.12);z-index:12}
 .attach-menu button{display:flex;align-items:center;gap:14px;text-align:left;padding:11px 13px;border-radius:12px;font-size:15px}
 .attach-menu button:hover{background:#f2f5f6}
-.tool-tray{display:flex;gap:3px;flex-wrap:nowrap;align-items:center;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:7px 3px 3px;border-top:1px solid #eff1f2;margin-top:8px}
+.tool-tray{display:flex;gap:5px;flex-wrap:nowrap;align-items:center;overflow-x:auto;overflow-y:hidden;white-space:nowrap;touch-action:pan-x;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:7px 3px 3px;border-top:1px solid #eff1f2;margin-top:8px}
 .tool-tray::-webkit-scrollbar{display:none}
 .subtle{display:inline-flex;align-items:center;gap:3px;padding:5px 4px;font-size:11px;color:#435a63;border-radius:8px}
 .tool-tray .subtle{flex:0 0 auto}
 .tool-tray .subtle .ui-icon,.tool-tray .subtle svg{width:14px;height:14px}
-.tool-tray .mini-tool{flex:0 0 auto;white-space:nowrap;padding:4px 3px;font-size:10px;line-height:18px;color:#64747e;font-weight:500;background:transparent;border:0;border-radius:6px;cursor:pointer}
+.tool-tray .mini-tool{display:inline-flex;align-items:center;justify-content:center;gap:3px;flex:0 0 auto;white-space:nowrap;padding:4px 3px;font-size:10px;line-height:18px;color:#64747e;font-weight:500;background:transparent;border:0;border-radius:6px;cursor:pointer}
+.tool-tray .mini-tool .ui-icon,.tool-tray .mini-tool .ui-icon svg{width:13px;height:13px;flex:none}
 .tool-tray .mini-tool:hover,.tool-tray .mini-tool.active{color:#235b88;background:#eaf3ff}
 .tool-tray .mini-tool:focus-visible{outline:2px solid #749ccb;outline-offset:1px}
 @media(max-width:420px){.tool-tray{gap:2px;padding:6px 1px 2px}.tool-tray .subtle{padding:4px 3px;font-size:10px;gap:2px}.tool-tray .mini-tool{font-size:9px;padding:4px 2px}.tool-tray .subtle .ui-icon,.tool-tray .subtle svg{width:13px;height:13px}}
@@ -850,10 +851,6 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .free-tools-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:106px;gap:8px}
 .free-tool-card{min-width:0;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:9px 6px;border:1px solid #e4e8ed;border-radius:12px;background:#fff;text-align:center;text-decoration:none;box-shadow:0 1px 2px rgba(19,34,54,.035);box-sizing:border-box;overflow:hidden}
 .free-tool-card:hover,.free-tool-card:active{border-color:#d8c2c4;background:#fffafa}
-.free-tool-internal{cursor:pointer;border-color:#bfded5;background:#f5fbf8}
-.free-tool-internal:hover,.free-tool-internal:active{background:#eaf6f0;border-color:#8dc7b5}
-.free-tool-internal .free-tool-icon{background:#e7f6f0;border-color:#d1eae0}
-.free-tool-internal .free-tool-name{color:#27664e}
 .free-tool-card:focus-visible{outline:2px solid #c63c43;outline-offset:2px}
 .free-tool-icon{position:relative;display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:10px;background:#f1f5fb;border:1px solid #e6edf6;overflow:hidden}
 .free-tool-icon .free-tool-icon-fallback{display:grid;place-items:center;width:25px;height:25px}
