@@ -35,6 +35,9 @@ const ICONS={
  settings:'<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m19.4 15 .6 1-2 2-1-.6a2 2 0 0 0-2 .1L14 20h-4l-.5-2.5a2 2 0 0 0-2-.1l-1 .6-2-2 .6-1a2 2 0 0 0-.1-2L2.5 12v-2l2.5-.5a2 2 0 0 0 .1-2l-.6-1 2-2 1 .6a2 2 0 0 0 2-.1L10 2.5h4l.5 2.5a2 2 0 0 0 2 .1l1-.6 2 2-.6 1a2 2 0 0 0 .1 2l2.5.5v2l-2.5.5a2 2 0 0 0-.1 2Z"/>',
  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
  languages:'<path d="M2 5h12M7 2h1M4 14l6-6 2-3M5 8l6 6"/><path d="m22 22-5-10-5 10M14 18h6"/>',
+ scan:'<path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="8" y="8" width="8" height="8" rx="1"/><circle cx="12" cy="12" r="1"/>',
+ film:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/><path d="m10 8 5 4-5 4z"/>',
+ clapperboard:'<rect x="3" y="10" width="18" height="11" rx="2"/><path d="M3 10V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4M7 4l4 6M15 4l4 6"/><path d="m10 13 5 3-5 3z"/>',
  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
  ellipsis:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
  palette:'<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8" cy="7" r="1"/><circle cx="6.5" cy="12" r="1"/><path d="M12 22a10 10 0 1 1 10-10c0 2-1 3-3 3h-3a2 2 0 0 0-2 2 2 2 0 0 1-2 5"/>',
@@ -66,7 +69,7 @@ const ICON_GRADIENTS={blue:["#4e78e6","#32b2c8"],teal:["#2498bd","#30c1a1"],viol
 const ICON_TONES={
  menu:"blue","panel-left":"blue",layers:"violet",zap:"amber","list-checks":"violet",x:"slate",plus:"teal",
  "square-pen":"blue",search:"teal","message-circle":"teal",compass:"teal",paperclip:"blue",link:"teal",
- "circle-user":"violet",settings:"slate",folder:"amber",languages:"blue","chevron-down":"slate",ellipsis:"slate",
+ "circle-user":"violet",settings:"slate",folder:"amber",languages:"blue",scan:"teal",film:"violet",clapperboard:"rose","chevron-down":"slate",ellipsis:"slate",
  palette:"rose",camera:"blue",image:"rose",blocks:"violet","arrow-up":"teal",mic:"teal",
  "brain-circuit":"violet",video:"rose","code-2":"blue","sliders-horizontal":"violet",pin:"amber",archive:"slate",trash:"rose",
  bookmark:"violet","refresh-cw":"blue","thumbs-up":"teal","thumbs-down":"rose","volume-2":"blue",share:"teal",download:"blue","file-text":"slate",info:"slate","log-out":"rose"
@@ -76,7 +79,7 @@ function renderIcons(scope=document){
  const icons=[...scope.querySelectorAll("[data-icon]")];
  if(scope.matches?.("[data-icon]"))icons.unshift(scope);
  for(const el of icons){
-  const name=el.dataset.icon,path=ICONS[name]||ICONS.folder;
+  const name=el.dataset.icon,path=ICONS[name]||ICONS.info;
   const [from,to]=ICON_GRADIENTS[ICON_TONES[name]||"blue"];
   const id="aigzt-icon-"+(++iconGradientSerial);
   el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#'+id+')" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+from+'"/><stop offset="100%" stop-color="'+to+'"/></linearGradient></defs>'+path+'</svg>';
@@ -1154,6 +1157,7 @@ async function toggleMessageTranslation(row,source,button){
  if(state&&state.source!==currentSource){
   state.panel.remove();messageTranslations.delete(row);state=null;
  }
+ if(state?.failed){state.panel.remove();messageTranslations.delete(row);state=null;}
  if(state){
   const open=state.panel.hidden;
   state.panel.hidden=!open;
@@ -1172,19 +1176,20 @@ async function toggleMessageTranslation(row,source,button){
  button.classList.add("is-active");
  button.setAttribute("aria-pressed","true");
  button.title="收起翻译";button.setAttribute("aria-label","收起翻译");
- if(currentSource.length>2800){
+ if(currentSource.length>8000){
   state.pending=false;
-  panel.textContent="这条消息超过单次 2800 字符的翻译上限，请分段翻译。";
+  panel.textContent="这条消息超过单次 8000 字符的翻译上限，请分段翻译。";
   return;
  }
  try{
   const result=await api("/api/message/translate",{text:currentSource,target:"zh-CN"});
   if(messageTranslations.get(row)!==state||!row.isConnected)return;
-  state.pending=false;panel.textContent=String(result.translation||"").trim()||"翻译未返回内容";
+  state.pending=false;const translated=String(result.translation||"").trim();if(!translated)throw Error("翻译服务没有返回译文");state.failed=false;panel.textContent=translated;
  }catch(error){
   if(messageTranslations.get(row)!==state||!row.isConnected)return;
-  state.pending=false;
-  panel.textContent="翻译失败："+humanError(error);
+  state.pending=false;state.failed=true;
+  panel.textContent="翻译暂不可用，请再次点击翻译图标重试";
+  button.title="重试翻译";button.setAttribute("aria-label","重试翻译");
  }
 }
 
