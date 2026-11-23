@@ -693,7 +693,7 @@ async function pollImageJob(bubble,id,manual){
    delete bubble.dataset.imageTask;
    if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
    const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
-   img.onload=()=>{if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);appendMessageCopy(bubble.closest(".message"),"")};
+   img.onload=()=>{if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);const row=bubble.closest(".message");if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}};
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片加载失败"))};
    img.src=r.image;return;
   }
@@ -1015,7 +1015,7 @@ function voiceWire(){
 }
 
 async function copyMessageText(value,button){
- const content=String(value||"");if(!content)return;
+ const content=String(value||"");if(!content)return false;
  let copied=false;
  try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(content);copied=true}}catch{}
  if(!copied){
@@ -1025,7 +1025,7 @@ async function copyMessageText(value,button){
   try{temp.focus();temp.select();copied=document.execCommand("copy")}catch{}
   finally{temp.remove()}
  }
- if(!copied){flashError("复制失败，请长按消息选择文字");return}
+ if(!copied){flashError("复制失败，请长按消息选择文字");return false}
  button.classList.add("is-copied");
  button.title="已复制";button.setAttribute("aria-label","已复制");
  if(button._copyLabelTimer)clearTimeout(button._copyLabelTimer);
@@ -1033,11 +1033,18 @@ async function copyMessageText(value,button){
   if(button.isConnected){button.classList.remove("is-copied");button.title=button.dataset.originalTitle||"复制";button.setAttribute("aria-label",button.dataset.originalTitle||"复制")}
   button._copyLabelTimer=null;
  },1300);
+ return true;
 }
 function messageTool(icon,label,action){
  const b=node("button","message-copy-btn");b.type="button";
  b.title=label;b.dataset.originalTitle=label;b.setAttribute("aria-label",label);
- b.append(iconSlot(icon));b.addEventListener("click",event=>{event.stopPropagation();void action(b)});
+ b.append(iconSlot(icon));b.addEventListener("click",event=>{
+  event.stopPropagation();
+  try{
+   const result=action(b);
+   if(result&&typeof result.catch==="function")void result.catch(e=>flashError(humanError(e)));
+  }catch(e){flashError(humanError(e))}
+ });
  renderIcons(b);return b;
 }
 function messageQuestion(row){
@@ -1057,45 +1064,104 @@ function messageDraft(content,send=false,mode="text"){
 function retryMessage(row){
  const text=messageQuestion(row);
  if(!text){flashError("找不到当前回复对应的问题");return}
- const image=!!row.querySelector("img.chat-generated-image");
+ const image=row.dataset.messageKind==="image"||!!row.querySelector("img.chat-generated-image");
  messageDraft(text,true,image?"image":"text");
+}
+/* File content is created on this device; image bytes are not stored online. */
+function messageIsIOS(){
+ return /iPhone|iPad|iPod/i.test(navigator.userAgent||"")||
+  (navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+}
+function messageTextFile(content,format="auto"){
+ const text=String(content||"");
+ const md=format==="md"||(format==="auto"&&/(^|\n)\s*(?:#{1,6}\s|[-*]\s|\d+\.\s|>\s|\|.+\|)|\*\*[^*]+\*\*|\x60{3}/m.test(text));
+ const extension=md?"md":"txt";
+ return new File([text],"AIGZT-message."+extension,{type:(md?"text/markdown":"text/plain")+";charset=utf-8"});
+}
+function messageImageFile(image){
+ const url=image?.currentSrc||image?.src||"";
+ const match=url.match(/^data:(image\/(?:png|jpeg|webp|gif|avif));base64,([A-Za-z0-9+/=\s]+)$/i);
+ if(!match)return null;
+ const base64=match[2].replace(/\s/g,"");
+ if(base64.length>16000000)throw Error("图片超出本机处理上限，请长按图片保存");
+ const binary=atob(base64),bytes=new Uint8Array(binary.length);
+ for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+ const mime=match[1].toLowerCase(),extension=mime==="image/jpeg"?"jpg":mime.slice(6);
+ return new File([bytes],"AIGZT-image."+extension,{type:mime});
+}
+function messageNativeFileShare(file,title){
+ if(!navigator.share||!navigator.canShare)return null;
+ try{if(navigator.canShare({files:[file]}))return navigator.share({files:[file],title})}catch{}
+ return null;
+}
+function messageSaveFile(file,remoteUrl=""){
+ const a=node("a");a.style.display="none";
+ const objectURL=file?URL.createObjectURL(file):null;
+ a.href=objectURL||remoteUrl;a.download=file?.name||"AIGZT-image";
+ document.body.append(a);a.click();a.remove();
+ if(objectURL)window.setTimeout(()=>URL.revokeObjectURL(objectURL),30000);
 }
 function messageDownload(row,content,format="auto"){
  const image=row.querySelector("img.chat-generated-image");
- const a=node("a");a.style.display="none";
- if(image){
-  const url=image.currentSrc||image.src;
-  const mime=url.match(/^data:image\/(png|jpeg|webp|gif|avif)(?:;|,)/i)?.[1]?.toLowerCase();
-  const ext=mime==="jpeg"?"jpg":mime||"png";
-  a.href=url;a.download="AIGZT-image."+ext;
- }else{
-  const text=String(content||"");
-  const markdown=format==="md"||(format==="auto"&&/(^|\n)\s*(?:#{1,6}\s|[-*]\s|\d+\.\s|>\s|\|.+\|)|\*\*[^*]+\*\*|\x60{3}/m.test(text));
-  const ext=markdown?"md":"txt";
-  const blob=new Blob([text],{type:markdown?"text/markdown;charset=utf-8":"text/plain;charset=utf-8"});
-  a.href=URL.createObjectURL(blob);a.download="AIGZT-message."+ext;
+ let file;
+ try{file=image?messageImageFile(image):messageTextFile(content,format)}
+ catch(e){flashError(humanError(e));return}
+ // On iOS/PWA, use the native share sheet's "Save to Files" target.
+ // Call navigator.share synchronously, before the user-activation window closes.
+ if(messageIsIOS()&&file){
+  const request=messageNativeFileShare(file,image?"保存 AIGZT 图片":"保存 AIGZT 消息");
+  if(request){
+   void request.catch(error=>{
+    if(error?.name==="AbortError")return;
+    try{messageSaveFile(file);flashError("系统文件菜单不可用，已尝试浏览器下载")}
+    catch(e){flashError(humanError(e))}
+   });
+   return;
+  }
  }
- document.body.append(a);a.click();a.remove();
- if(!image)setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+ try{
+  if(file)messageSaveFile(file);
+  else if(image){
+   const url=image.currentSrc||image.src;
+   if(!url)throw Error("图片内容尚未加载");
+   messageSaveFile(null,url);
+   if(messageIsIOS())flashError("若没有出现下载，请长按图片保存");
+  }else flashError("消息内容为空");
+ }catch(e){flashError(humanError(e))}
 }
 async function messageShare(row,content,button){
  const image=row.querySelector("img.chat-generated-image");
  if(image){
-  try{
-   const res=await fetch(image.currentSrc||image.src,{credentials:"same-origin"});
-   if(!res.ok)throw Error("图片读取失败");
-   const bytes=await res.blob(),extension=bytes.type==="image/webp"?"webp":bytes.type==="image/jpeg"?"jpg":"png";
-   const file=new File([bytes],"AIGZT-image."+extension,{type:bytes.type||"image/png"});
-   if(navigator.share&&navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:"AIGZT 图片"});return}
-   flashError("此设备暂不支持文件分享，请点击下载图标");
-  }catch(e){if(e?.name!=="AbortError")flashError(humanError(e))}
-  return;
+  let file;
+  try{file=messageImageFile(image)}catch(e){flashError(humanError(e));return}
+  // A fetch-before-share loses the mobile browser's user gesture. Decode the
+  // already loaded in-chat image synchronously instead.
+  if(file){
+   const request=messageNativeFileShare(file,"AIGZT 图片");
+   if(request){
+    try{await request;return}
+    catch(e){if(e?.name==="AbortError")return}
+   }
+   messageDownload(row,content);return;
+  }
+  const imageUrl=image.currentSrc||image.src;
+  if(navigator.share&&/^https?:/i.test(imageUrl)){
+   try{await navigator.share({title:"AIGZT 图片",url:new URL(imageUrl,location.href).href});return}
+   catch(e){if(e?.name==="AbortError")return}
+  }
+  messageDownload(row,content);return;
  }
+ const value=String(content||"");
+ if(!value.trim()){flashError("没有可以分享的消息");return}
  if(navigator.share){
-  try{await navigator.share({title:"AIGZT 消息",text:String(content||"")});return}
-  catch(e){if(e?.name==="AbortError")return}
+  try{
+   const file=value.length>1800?messageTextFile(value):null;
+   const request=file?messageNativeFileShare(file,"AIGZT 回复"):null;
+   if(request){await request;return}
+   await navigator.share({title:"AIGZT 回复",text:value});return;
+  }catch(e){if(e?.name==="AbortError")return}
  }
- await copyMessageText(content,button);
+ if(await copyMessageText(value,button))flashError("系统分享未能打开，已复制消息内容");
 }
 async function messageSetAction(row,type,value,button){
  const id=row?.dataset.messageId;
@@ -1133,7 +1199,7 @@ function appendMessageCopy(row,content){
  if(user)bar.append(messageTool("square-pen","编辑消息",()=>messageDraft(row.dataset.sourceText||text)));
  bar.append(messageTool("share","分享",b=>messageShare(row,text,b)));
  bar.append(messageTool("download","下载",()=>messageDownload(row,text)));
- if(!image){
+ if(!image&&row.dataset.messageId){
   const bm=messageTool("bookmark",row.dataset.saved==="1"?"取消收藏":"保存消息",b=>messageSetAction(row,"bookmark",row.dataset.saved!=="1",b));
   bm.dataset.action="bookmark";bm.classList.toggle("is-active",row.dataset.saved==="1");bar.append(bm);
  }
@@ -1155,7 +1221,7 @@ function appendMessageCopy(row,content){
   reported.title="仅展示服务商实际报告的 Token；未返回则不估算";
   panel.append(reported);
   const current=Number(row.dataset.feedback||0);
-  if(!image){
+  if(!image&&row.dataset.messageId){
    for(const [score,icon,name] of [[1,"thumbs-up","有帮助"],[-1,"thumbs-down","没有帮助"]]){
     const feedback=messageTool(icon,name,b=>{
      more.open=false;
@@ -1194,9 +1260,9 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  if(role==="assistant"){
   const icon=node("span","avatar-ai");icon.innerHTML="<svg viewBox=\"0 0 36 36\" width=\"34\" height=\"34\" aria-hidden=\"true\"><rect x=\"4\" y=\"6\" width=\"28\" height=\"27\" rx=\"12\" fill=\"#d6eef1\" stroke=\"#92c4ce\" stroke-width=\"1.2\"/><path d=\"M4 15C0 12 3 7 8 10M32 15c4-3 1-8-4-5\" fill=\"#b0d9e6\"/><circle cx=\"13\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><circle cx=\"23\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><path d=\"M14 26q4 3 8 0\" fill=\"none\" stroke=\"#496f77\" stroke-width=\"1.7\" stroke-linecap=\"round\"/><circle cx=\"8.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><circle cx=\"27.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><path d=\"M18 6V2\" stroke=\"#74aab6\" stroke-width=\"1.8\"/><circle cx=\"18\" cy=\"3\" r=\"2\" fill=\"#f7c975\"/></svg>";if(!existingRow)row.append(icon,bubble);
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
-  if(pending){bubble.replaceChildren();renderImageJob(bubble,pending[1])}
+  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
-  if(picture){bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
+  if(picture){row.dataset.messageKind="image";bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
   if(!pending&&!picture&&String(content||"").trim()){
    renderAssistantText(bubble,content);
    // Keep the answer clean; all actions are in the compact toolbar.
