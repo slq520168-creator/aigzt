@@ -600,11 +600,16 @@ function syncHomeAmbient(){
 function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient()}
 function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient()}
 
+function createImageWaitingFrame(){
+ const frame=node("div","image-loading-card");frame.setAttribute("role","img");frame.setAttribute("aria-label","七彩图片生成中");
+ frame.append(node("span","image-loading-glow"),node("span","image-loading-shimmer"));return frame;
+}
+function showChatImageWaiting(bubble,label){bubble.classList.add("chat-image-task");bubble.replaceChildren(label,createImageWaitingFrame())}
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
  const label=node("span","image-job-label","作图中 1秒");
  bubble.dataset.imageStart=String(Date.now());
- bubble.replaceChildren(label);
+ showChatImageWaiting(bubble,label);
  const interval=window.setInterval(()=>{
   if(!bubble.isConnected||bubble.dataset.imageTask!==id){window.clearInterval(interval);return}
   const elapsed=Math.max(1,Math.floor((Date.now()-Number(bubble.dataset.imageStart||Date.now()))/1000)+1);
@@ -624,9 +629,11 @@ async function pollImageJob(bubble,id,manual){
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
-   if(r.failed){bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
-   const img=node("img","chat-generated-image");img.src=r.image;img.alt="生成图片";img.loading="lazy";
-   bubble.replaceChildren(img);return;
+   if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
+   const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
+   img.onload=()=>{if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(img)};
+   img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片加载失败"))};
+   img.src=r.image;return;
   }
   delay=Math.max(7000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -636,6 +643,23 @@ async function pollImageJob(bubble,id,manual){
  }
 }
 
+/* Construct HTTP(S) chat links as DOM anchors; no model HTML is executed. */
+const CHAT_LINKS=/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<>"'\x60]+|www\.[^\s<>"'\x60]+|\b(?:[a-z0-9-]+\.)+(?:com|net|org|io|ai|cn|app|online|dev|site|co|me|info|xyz)(?::\d{2,5})?(?:\/[^\s<>"'\x60]*)?/gi;
+function appendChatLinks(target,value){
+ const input=String(value||"");CHAT_LINKS.lastIndex=0;let offset=0,match;
+ while((match=CHAT_LINKS.exec(input))){
+  if(match.index>offset)target.append(document.createTextNode(input.slice(offset,match.index)));
+  const isMd=Boolean(match[2]),raw=isMd?match[2]:match[0],tail=isMd?"":(raw.match(/[.,!?;:，。！？；：）)\]}]+$/)||[""])[0];
+  const cleaned=raw.slice(0,raw.length-tail.length),display=isMd?match[1]:cleaned;
+  let url;try{url=new URL(/^https?:\/\//i.test(cleaned)?cleaned:"https://"+cleaned)}catch{}
+  if(url&&["http:","https:"].includes(url.protocol)&&url.hostname){
+   const a=node("a","chat-inline-link",display);a.href=url.href;a.target="_blank";a.rel="noopener noreferrer";target.append(a);
+   if(tail)target.append(document.createTextNode(tail));
+  }else target.append(document.createTextNode(match[0]));
+  offset=CHAT_LINKS.lastIndex;
+ }
+ if(offset<input.length)target.append(document.createTextNode(input.slice(offset)));
+}
 /* Format AI output as a single conversational reply. No model-supplied HTML is executed. */
 function renderAssistantText(bubble,answer){
  const lines=String(answer||"").replace(/\r\n/g,"\n").split("\n");
@@ -644,12 +668,13 @@ function renderAssistantText(bubble,answer){
   const pattern=/(\*\*[^*]+\*\*|\x60[^\x60]+\x60)/g;
   let index=0,match;
   while((match=pattern.exec(value))){
-   if(match.index>index)target.append(document.createTextNode(value.slice(index,match.index)));
+   if(match.index>index)appendChatLinks(target,value.slice(index,match.index));
    const raw=match[0],bold=raw.startsWith("**");
-   target.append(node(bold?"strong":"code","",bold?raw.slice(2,-2):raw.slice(1,-1)));
+   if(bold){const strong=node("strong");appendChatLinks(strong,raw.slice(2,-2));target.append(strong)}
+   else target.append(node("code","",raw.slice(1,-1)));
    index=pattern.lastIndex;
   }
-  if(index<value.length)target.append(document.createTextNode(value.slice(index)));
+  if(index<value.length)appendChatLinks(target,value.slice(index));
  }
  function flush(){
   if(paragraph.length){const p=node("p");inline(p,paragraph.join("\n"));bubble.append(p);paragraph=[]}
@@ -659,7 +684,12 @@ function renderAssistantText(bubble,answer){
   if(/^\x60{3}/.test(trim)){
    flush();list=null;
    if(pre){pre=null;code=null}
-   else{pre=node("pre","chat-code");code=node("code");pre.append(code);bubble.append(pre)}
+   else{pre=node("pre","chat-code");code=node("code");
+    const codeNode=code,button=node("button","chat-code-copy");button.type="button";button.title="复制代码";button.setAttribute("aria-label","复制代码");
+    button.append(iconSlot("copy"),node("span","message-copy-label","复制代码"));
+    button.addEventListener("click",()=>{void copyMessageText(codeNode.textContent,button)});
+    pre.append(button,code);bubble.append(pre);renderIcons(button);
+   }
    continue;
   }
   if(pre){code.append(document.createTextNode(original+"\n"));continue}
@@ -918,6 +948,8 @@ function appendMessageCopy(bubble,content){
 
 function appendMessage(role,content,model,existingRow=null,incomplete=false){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
+ if(existingRow){row.querySelector(":scope > .message-copy-bar")?.remove();delete bubble.dataset.imageFinalizing}
+ bubble.classList.remove("chat-image-task");
  if(role==="user")row.dataset.sourceText=String(content||"");
  bubble.textContent=String(content||"");
  if(role==="assistant"){
@@ -969,18 +1001,19 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false){
    }
    if(actions.childNodes.length)bubble.append(actions);
   }
-  appendMessageCopy(bubble,content);
+  if(!pending&&!picture)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
+  bubble.replaceChildren();
   if(lines.length>1){
-   bubble.textContent=lines.shift();
+   appendChatLinks(bubble,lines.shift());
    for(const line of lines){
     const f=line.match(/^\[文件：([^\]]+)\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
     if(!f)continue;
     const a=node("a","chat-file",f[1]);a.href=f[2];a.target="_blank";a.rel="noopener";bubble.append(a);
     if(/\.(jpg|jpeg|png|webp|gif)$/i.test(f[1])){const img=node("img","chat-upload-image");img.src=f[2];img.alt=f[1];img.loading="lazy";bubble.append(img)}
    }
-  }
+  }else appendChatLinks(bubble,content);
   row.append(bubble);
   // Keep the sent-message copy action below its bubble, not inside the text background.
   appendMessageCopy(row,content);
@@ -1076,11 +1109,11 @@ function setModel(row){
 function resizePrompt(){
  const textarea=$("prompt");if(!textarea)return;
  const layout=$("chatForm"),value=textarea.value;
- const threshold=window.innerWidth<=900?24:72;
+ const threshold=window.innerWidth<=900?18:52;
  const multiline=value.includes("\n")||Array.from(value).length>=threshold;
  layout.classList.toggle("composer-multiline",multiline);
  textarea.style.height="32px";
- const needed=Math.max(32,textarea.scrollHeight),max=multiline?72:112;
+ const needed=Math.max(32,textarea.scrollHeight),max=multiline?76:104;
  textarea.style.height=Math.min(needed,max)+"px";
  textarea.style.overflowY=needed>max?"auto":"hidden";
 }
@@ -1821,11 +1854,13 @@ async function sendMessage(){
  const waitLabel=node("span","",isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
  const dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));
- dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);loadingBubble.replaceChildren(status);
+ dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);
+ if(isImageMessage)showChatImageWaiting(loadingBubble,waitLabel);
+ else loadingBubble.replaceChildren(status);
  const startedAt=Date.now();
  const imageTimer=isImageMessage?window.setInterval(()=>{
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
-  waitLabel.textContent="作图中 "+Math.max(1,Math.floor((Date.now()-startedAt)/1000)+1)+"秒";
+  waitLabel.textContent="正在创建您的图片 · "+Math.max(1,Math.floor((Date.now()-startedAt)/1000)+1)+"秒";
  },1000):null;
  try{
   let result;
@@ -2180,7 +2215,8 @@ function wireImageViewer(){
 }
 
 function drawTile(index,status="准备生成",shape="portrait"){
- const tile=node("article","draw-tile"),picture=node("div","draw-photo",status),caption=node("small","draw-caption","第 "+index+" 张 · "+status),clock=node("time","draw-tile-clock","00:00");
+ const tile=node("article","draw-tile"),picture=node("div","draw-photo"),caption=node("small","draw-caption","第 "+index+" 张 · "+status),clock=node("time","draw-tile-clock","00:00");
+ picture.append(createImageWaitingFrame());
  picture.dataset.shape=shape;clock.hidden=true;tile.append(picture,clock,caption);
  $("drawResults").append(tile);return {tile,picture,caption,clock};
 }
@@ -2197,8 +2233,11 @@ function paintDrawStopwatch(batch,tiles){
   tile.clock.textContent=drawElapsedText((tile.finishedAt||now)-tile.startedAt);
  }
 }
-function drawResult(tile,url){
- const img=node("img");img.src=url;img.alt="生成图片";img.loading="lazy";tile.picture.replaceChildren(img);
+async function drawResult(tile,url){
+ const img=node("img");img.alt="生成图片";img.loading="eager";img.className="draw-image-reveal";
+ const ok=await new Promise(resolve=>{img.onload=()=>resolve(true);img.onerror=()=>resolve(false);img.src=url});
+ if(!ok||!tile.picture.isConnected){tile.caption.textContent="图片加载失败";return false}
+ tile.picture.replaceChildren(img);
  tile.tile.querySelector(".draw-tile-actions")?.remove();
  const actions=node("div","draw-tile-actions"),download=node("a","","下载图片");
  download.href=url;download.download="aigzt-image.png";actions.append(download);
@@ -2214,6 +2253,7 @@ function drawResult(tile,url){
  duck.title="先下载这张图片，再到 Duck.ai 上传原图继续编辑";
  actions.append(revise,duck);tile.tile.append(actions);
  tile.caption.textContent="仅当前页面显示 · 网站不保存";
+ return true;
 }
 function drawSleep(ms,signal){
  return new Promise(resolve=>{
@@ -2232,7 +2272,7 @@ async function drawTrackJob(id,tile,batch){
    if(batch.cancelled)return false;
    if(r.done){
     if(r.failed){tile.picture.textContent="生成失败";tile.caption.textContent=r.error||"作图服务暂不可用";return false}
-    if(typeof r.image==="string"){drawResult(tile,r.image);return true}
+    if(typeof r.image==="string")return await drawResult(tile,r.image);
     tile.picture.textContent="结果为空";tile.caption.textContent="作图服务未返回图片";return false;
    }
    tile.caption.textContent="正在生成";
@@ -2250,6 +2290,7 @@ function stopDrawBatch(){
  if(!b)return;
  b.cancelled=true;b.controller.abort();clearInterval(b.clockTimer);S.drawBatch=null;
  $("drawCancel").hidden=true;$("createButton").disabled=false;
+ for(const el of $("drawResults").querySelectorAll(".draw-photo"))if(el.querySelector(".image-loading-card"))el.replaceChildren(node("span","draw-stopped","已停止查询"));
  $("createStatus").textContent="已停止查询；离开后无法恢复生成图片";
 }
 async function runFreeDraw(){
@@ -2276,12 +2317,12 @@ async function runFreeDraw(){
  let success=0,failed=0,finished=0;
  const task=async tile=>{
   if(batch.cancelled)return;
-  tile.startedAt=Date.now();tile.sourcePrompt=prompt;tile.clock.hidden=false;tile.picture.textContent="正在提交";
+  tile.startedAt=Date.now();tile.sourcePrompt=prompt;tile.clock.hidden=false;tile.caption.textContent="正在提交";
   try{
    const result=await api("/api/image",{prompt,style,shape});
    if(batch.cancelled)return;
    if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
-   tile.picture.textContent="生成中";tile.caption.textContent="正在等待结果";
+   tile.caption.textContent="正在生成图片";
    const ok=await drawTrackJob(result.jobId,tile,batch);
    if(batch.cancelled)return;
    if(ok)success++;else failed++;
