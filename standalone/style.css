@@ -843,6 +843,10 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .free-tools-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:106px;gap:8px}
 .free-tool-card{min-width:0;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:9px 6px;border:1px solid #e4e8ed;border-radius:12px;background:#fff;text-align:center;text-decoration:none;box-shadow:0 1px 2px rgba(19,34,54,.035);box-sizing:border-box;overflow:hidden}
 .free-tool-card:hover,.free-tool-card:active{border-color:#d8c2c4;background:#fffafa}
+.free-tool-internal{cursor:pointer;border-color:#bfded5;background:#f5fbf8}
+.free-tool-internal:hover,.free-tool-internal:active{background:#eaf6f0;border-color:#8dc7b5}
+.free-tool-internal .free-tool-icon{background:#e7f6f0;border-color:#d1eae0}
+.free-tool-internal .free-tool-name{color:#27664e}
 .free-tool-card:focus-visible{outline:2px solid #c63c43;outline-offset:2px}
 .free-tool-icon{position:relative;display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:10px;background:#f1f5fb;border:1px solid #e6edf6;overflow:hidden}
 .free-tool-icon .free-tool-icon-fallback{display:grid;place-items:center;width:25px;height:25px}
@@ -856,7 +860,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .free-tool-function{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;font-size:10px;font-weight:600;line-height:1.25;color:#bd313d;overflow-wrap:anywhere}
 .free-tools-empty{padding:25px 10px;text-align:center;color:#8996a1;font-size:12px}
 .free-tools-empty[hidden]{display:none}
-@media(max-width:650px){.free-tools-header{padding:6px 10px}.free-tools-results{padding:9px 10px 24px}.free-tools-list{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:106px;gap:8px}.free-tool-card{padding:8px 5px}}
+@media(max-width:650px){.free-tools-header{padding:6px 10px}.free-tools-results{padding:8px 8px 24px}.free-tools-list{grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:98px;gap:6px}.free-tool-card{padding:7px 3px;gap:4px}.free-tool-name{font-size:11px}.free-tool-function{font-size:9px}}
 
 @media(max-width:390px){.top-work{padding:7px 6px}}
 
