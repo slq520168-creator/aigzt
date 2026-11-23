@@ -796,10 +796,81 @@ function hordeBase64(bytes){
  for(let i=0;i<bytes.length;i+=32768)parts.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
  return btoa(parts.join(""));
 }
+/* First free image-edit route: the verified Qwen-Image-Edit-Fast Gradio API.
+ * Existing AI Horde img2img remains the fallback ONLY when Qwen definitively
+ * rejects a submission. Never double-submit an uncertain generation request. */
+const QWEN_EDIT_HOST="https://multimodalart-qwen-image-edit-fast.hf.space";
+const QWEN_EDIT_OFFICIAL="https://huggingface.co/spaces/multimodalart/Qwen-Image-Edit-Fast";
+async function submitQwenImageEdit(env,user,imageId,prompt){
+ const obj=await env.MEDIA?.get(user.id+"/"+imageId);
+ const mime=String(obj?.httpMetadata?.contentType||"").toLowerCase();
+ if(!obj||!["image/png","image/jpeg","image/webp"].includes(mime)||obj.size<200||obj.size>1600000)
+  throw Object.assign(Error("图生图需要不超过1.6MB的 JPG、PNG 或 WebP 参考图片"),{status:415});
+ const bytes=new Uint8Array(await obj.arrayBuffer());
+ if(detectImage(bytes)!==mime)throw Object.assign(Error("参考图片内容无效"),{status:415});
+ const ext={"image/png":"png","image/jpeg":"jpg","image/webp":"webp"}[mime];
+ const form=new FormData();
+ form.append("files",new Blob([bytes],{type:mime}),"reference."+ext);
+ let upload;
+ try{upload=await fetch(QWEN_EDIT_HOST+"/gradio_api/upload",{method:"POST",headers:{accept:"application/json",...hfHeaders(env)},body:form,redirect:"manual",signal:AbortSignal.timeout(11500)})}
+ catch{throw Object.assign(Error("图生图来源图片上传连接失败"),{status:503})}
+ if(!upload.ok||upload.status>=300)throw Object.assign(Error("Qwen 图片来源拒绝上传"),{status:503,definite:true});
+ const files=await upload.json().catch(()=>null),path=String(files?.[0]||"");
+ if(!/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)||path.includes(".."))
+  throw Object.assign(Error("图生图来源图片上传返回异常"),{status:502,definite:true});
+ const file={path,url:QWEN_EDIT_HOST+"/gradio_api/file="+path,orig_name:"reference."+ext,mime_type:mime,meta:{_type:"gradio.FileData"}};
+ const args=[file,prompt.slice(0,1100),Math.floor(Math.random()*2147483647),false,1,8,false];
+ let response;
+ try{response=await fetch(QWEN_EDIT_HOST+"/gradio_api/call/infer",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data:args}),redirect:"manual",signal:AbortSignal.timeout(13000)})}
+ catch{throw Object.assign(Error("图生图提交结果不确定，为避免重复生成已停止"),{status:503})}
+ if(!response.ok||response.status>=300){
+  throw Object.assign(Error("Qwen 图生图来源拒绝生成请求"),{status:503,definite:[400,401,403,404,422,429].includes(response.status)});
+ }
+ const data=await response.json().catch(()=>null),event=String(data?.event_id||"");
+ if(!/^[A-Za-z0-9_-]{8,128}$/.test(event))throw Object.assign(Error("图生图上游没有返回有效任务编号"),{status:502});
+ const id=crypto.randomUUID(),now=Date.now(),ref={v:8,p:"qwenedit",id:event};
+ await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-edit-free')",id,user.id,JSON.stringify(ref),now);
+ return {jobId:id,model:"免费图生图 · Qwen Image Edit",pending:true};
+}
+async function qwenEditStatus(env,user,job,ref){
+ const now=Date.now();
+ const pending=()=>response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
+ const failure=async reason=>{
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",reason,Date.now(),job.id,user.id);
+  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图生图失败："+reason,job.message_id,user.id).catch(()=>{});
+  return response({ok:true,done:true,failed:true,error:reason,officialUrl:QWEN_EDIT_OFFICIAL});
+ };
+ if(now-job.created_at>15*60000)return failure("免费图生图等待超时");
+ if(!/^[A-Za-z0-9_-]{8,128}$/.test(ref.id||""))return failure("图生图任务编号无效");
+ if(now-Number(job.checked_at||0)<9000)return pending();
+ const claim=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-8800);
+ if(!claim.meta?.changes)return pending();
+ const state=ref.deliveryUrl?{status:"complete",url:ref.deliveryUrl}:await queryGradioImageEvent(env,"qwen",ref.id);
+ if(state.status==="pending")return pending();
+ if(state.status==="failed")return failure("免费图生图上游生成失败");
+ if(state.status!=="complete"||!state.url)return failure("图生图生成后没有返回图片");
+ let image;
+ try{image=await saveKreaImage(env,user.id,state.url,true)}
+ catch{
+  const tries=(Number(ref.tries)||0)+1;
+  if(tries>=3)return failure("图生图已完成但图片无法下载");
+  await dbRun(env.DB,"UPDATE image_jobs SET external_id=? WHERE id=? AND user_id=? AND status='pending'",JSON.stringify({...ref,deliveryUrl:state.url,tries}),job.id,user.id);
+  return pending();
+ }
+ const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='pending'",job.id,user.id);
+ if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图生图结果已被领取"});
+ if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（仅当前会话展示，不保存图片文件）",job.message_id,user.id).catch(()=>{});
+ return response({ok:true,done:true,image,temporary:true,model:"免费图生图 · Qwen Image Edit"});
+}
 async function submitHordeImageEdit(env,user,imageId,prompt){
  if(!hordeUuid(imageId))throw Object.assign(Error("请选择一张 JPG、PNG 或 WebP 参考图"),{status:400});
  const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='image-edit-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-11*60000);
  if(active)throw Object.assign(Error("上一张图生图仍在生成，请先完成"),{status:409});
+ // Fast instruction-based source first. On a definitive HTTP rejection only,
+ // use the existing anonymous community generation path as fallback.
+ try{return await submitQwenImageEdit(env,user,imageId,prompt)}
+ catch(error){if(error?.definite!==true)throw error}
+
  const obj=await env.MEDIA?.get(user.id+"/"+imageId);
  const mime=String(obj?.httpMetadata?.contentType||"").toLowerCase();
  if(!obj||!["image/webp","image/jpeg","image/png"].includes(mime))throw Object.assign(Error("图生图只支持 JPG、PNG 或 WebP 参考图片"),{status:415});
@@ -1018,7 +1089,8 @@ async function failKreaJob(env,job,message){
  }
 }
 async function queryGradioImageEvent(env,provider,eid){
- const host=provider==="glm"?GLM_IMAGE:KREA,endpoint=provider==="glm"?"infer":"generate";
+ const host=provider==="glm"?GLM_IMAGE:provider==="qwen"?QWEN_EDIT_HOST:KREA,
+  endpoint=provider==="glm"||provider==="qwen"?"infer":"generate";
  let resp;
  try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
  catch{return {status:"pending"}}
@@ -1030,7 +1102,16 @@ async function queryGradioImageEvent(env,provider,eid){
   const value=chunk.split("\n").filter(x=>x.startsWith("data:")).map(x=>x.slice(5).trim()).join("\n");
   if(event==="error"||event==="failed"){error="上游作图失败";return}
   if(event==="complete"){
-   try{url=findImageUrl(JSON.parse(value));if(!url)error="未返回图片"}catch{error="图片结果无效"}
+   try{
+    const result=JSON.parse(value);
+    url=findImageUrl(result);
+    if(provider==="qwen"&&!url){
+     const path=String(result?.[0]?.path||"");
+     if(/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)&&!path.includes(".."))
+      url=QWEN_EDIT_HOST+"/gradio_api/file="+path;
+    }
+    if(!url)error="未返回图片";
+   }catch{error="图片结果无效"}
   }
  }
  try{
@@ -1230,6 +1311,7 @@ async function imageJobStatus(env,user,id){
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
  if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
   try{const ref=JSON.parse(job.external_id);
+   if(ref.v===8&&ref.p==="qwenedit")return qwenEditStatus(env,user,job,ref);
    if(ref.v===7&&ref.p==="horde")return hordeStatus(env,user,job,ref);
    if([4,5,6].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
   }catch(e){if(e?.status)throw e}
