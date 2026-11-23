@@ -2296,7 +2296,7 @@ async function sendMessage(){
   }
   else if(freeVideo){
    const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:S.videoProvider,model:S.videoModel,imageId:S.videoProvider==="freetext"?undefined:img?.id,ratio:S.videoRatio,prompt});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:S.videoProvider,model:S.videoModel,imageId:img?.id,ratio:S.videoRatio,prompt});
    if(result.requestId)rememberVideoTask(S.videoProvider,S.videoModel,result.requestId);
   }
   else{

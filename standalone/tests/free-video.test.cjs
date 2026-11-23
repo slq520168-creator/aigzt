@@ -24,3 +24,5 @@ test('All site free models remain separate from user BYOK models',()=>{
  for(const provider of ['grok','runway','luma','vidu'])assert.match(backend,new RegExp(provider+':'));
  assert.match(backend,/if\(Object\.hasOwn\(FREE_VIDEO,provider\)\)return fvCreate/);
 });
+
+test('Default free text-video source also accepts an uploaded source image',()=>{const client=read('client.js'),server=read('worker.js');assert.match(client,/imageId:img\?\.id/);assert.match(server,/if\(b\.imageId\)/);assert.match(server,/provider==="freetext"\?\[file,prompt/);});
