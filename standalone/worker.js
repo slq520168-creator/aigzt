@@ -312,7 +312,9 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  }else if(provider==="gigachat")headers.authorization="Bearer "+await getGigaChatAccessToken(key);
  else headers.authorization="Bearer "+key;
  let target="https://"+host.host+(host.path||"/"),body;
- const history=messages.map(m=>({role:m.role,content:truncate(m.body,3000)}));
+ const newestUserIndex=messages.findLastIndex(m=>m.role==="user");
+// Keep the current user request intact within the existing 8000-character input limit.
+const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newestUserIndex?8000:3000)}));
  if(provider==="gemini"){
   target="https://"+host.host+"/v1beta/models/"+model+":generateContent";
   body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}))};
@@ -363,7 +365,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
    }
   }
   }catch(error){if(!content.trim())throw error;}
-  if(!content.trim())throw Error("服务商没有返回有效文字");
+  if(!content.trim())throw Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字");
   return {content:content.trim(),actualModel:upstreamModel,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
  }
  const out=await res.json();
@@ -499,7 +501,9 @@ async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
  const replyLevel=["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
- const typed=truncate(body.message,8000).trim(),attachments=Array.isArray(body.attachments)?body.attachments:[];
+ const typed=typeof body.message==="string"?body.message.trim():"";
+if(typed.length>8000)throw Object.assign(new Error("消息超过 8000 字符，请分段发送；本次未截断"),{status:413});
+const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(attachments.length>4)throw Error("一次最多四个附件");
  const lines=[],context=[];
  for(const id of attachments){

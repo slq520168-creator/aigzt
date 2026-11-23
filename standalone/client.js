@@ -1849,7 +1849,7 @@ async function sendMessage(){
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
-  let receivedStreamingText=false;
+  let receivedStreamingText=false,streamedContent="";
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
  const waitLabel=node("span","",isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
  const dots=node("span","thinking-dots");
@@ -1870,6 +1870,7 @@ async function sendMessage(){
     const onDelta=token=>{
      if(!active||!loading.isConnected)return;
      receivedStreamingText=true;
+     streamedContent+=token;
      pending+=token;if(scheduled)return;scheduled=true;
      requestAnimationFrame(()=>{
       scheduled=false;if(!active||!loading.isConnected)return;
@@ -1906,10 +1907,14 @@ async function sendMessage(){
   await fetchChats();void fetchMe();
  }catch(e){
   if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
-  loading.remove();
-  // Preserve the failed question, not a fake assistant error. Never auto-repeat a paid request.
-  const bubble=sentRow.querySelector(".bubble"),status=node("span","message-send-pending");
-  const retry=node("button","message-resend",isImageMessage?"重新作图":"重新发送");retry.type="button";
+  // Never mutate a sent question or silently restart a paid request.
+  // Show status in the assistant reply; retain all streamed content.
+  const bubble=loadingBubble,status=node("span","message-send-pending");
+  if(streamedContent.trim()&&submittedMode==="text"){
+   renderAssistantText(bubble,streamedContent);
+   appendMessageCopy(loading,streamedContent);
+  }else bubble.replaceChildren();
+  const retry=node("button","message-resend",isImageMessage?"重新作图":"手动重试");retry.type="button";
   retry.setAttribute("aria-label","手动重试这条未完成的消息");
   retry.addEventListener("click",()=>{
    if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
@@ -1918,9 +1923,10 @@ async function sendMessage(){
    if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
    if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
-   sentRow.remove();settlePromptSize();void sendMessage();
+   loading.remove();sentRow.remove();settlePromptSize();void sendMessage();
   });
-  status.append(node("span","",isImageMessage?"本次作图未完成":"模型回复中断，可手动重试"),retry);
+  const detail=humanError(e);
+  status.append(node("span","",isImageMessage?"本次作图未完成":streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage){
    const alternate=node("button","message-resend","切换免费模型");alternate.type="button";
    alternate.addEventListener("click",()=>{
