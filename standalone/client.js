@@ -760,7 +760,7 @@ function renderImageJob(bubble,id){
 async function pollImageJob(bubble,id,manual){
  if(!bubble.isConnected||bubble.dataset.imageTask!==id||bubble.dataset.imageBusy==="1")return;
  const now=Date.now();
- if(!manual&&now-Number(bubble.dataset.lastImagePoll||0)<6500)return;
+ if(!manual&&now-Number(bubble.dataset.lastImagePoll||0)<900)return;
  bubble.dataset.imageBusy="1";bubble.dataset.lastImagePoll=String(now);
  let delay=10000;
  try{
@@ -784,7 +784,7 @@ async function pollImageJob(bubble,id,manual){
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片加载失败"))};
    img.src=r.image;return;
   }
-  delay=Math.max(7000,Math.min(18000,Number(r.waitSeconds||12)*1000));
+  delay=Math.max(1000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
  finally{
   bubble.dataset.imageBusy="0";if(!bubble.dataset.imageStart)bubble.dataset.imageStart=String(Date.now());

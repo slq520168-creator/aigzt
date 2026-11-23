@@ -832,6 +832,26 @@ async function submitQwenImageEdit(env,user,imageId,prompt){
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-edit-free')",id,user.id,JSON.stringify(ref),now);
  return {jobId:id,model:"免费图生图 · Qwen Image Edit",pending:true};
 }
+async function qwenFailoverToHorde(env,user,job,ref,now,reason){
+ const pending=()=>response({ok:true,done:false,pending:true,waitSeconds:8,startedAt:job.created_at});
+ if(!hordeUuid(ref.imageId)||!ref.prompt){
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=? WHERE id=? AND user_id=? AND status='pending'",reason,job.id,user.id);
+  return response({ok:true,done:true,failed:true,error:reason});
+ }
+ // A bounded single write-claim prevents concurrent replicas submitting twice.
+ const reserved=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",now,job.id,user.id);
+ if(!reserved.meta?.changes)return pending();
+ try{
+  const eventId=await submitHordeGeneration(env,user,ref.imageId,ref.prompt);
+  const next={v:7,p:"horde",id:eventId,startedAt:Date.now()};
+  await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",JSON.stringify(next),job.id,user.id);
+  return pending();
+ }catch{
+  const problem="图生图快速来源未完成，免费社区备用也不可用";
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",problem,Date.now(),job.id,user.id);
+  return response({ok:true,done:true,failed:true,error:problem});
+ }
+}
 async function qwenEditStatus(env,user,job,ref){
  const now=Date.now();
  const pending=()=>response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
@@ -840,7 +860,7 @@ async function qwenEditStatus(env,user,job,ref){
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图生图失败："+reason,job.message_id,user.id).catch(()=>{});
   return response({ok:true,done:true,failed:true,error:reason,officialUrl:QWEN_EDIT_OFFICIAL});
  };
- if(now-job.created_at>15*60000)return failure("免费图生图等待超时");
+ if(now-job.created_at>110000)return failure("图生图任务已超过总等待上限");
  if(job.status==="recovering"){
   if(now-Number(job.checked_at||0)>45000){
    await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='图生图备用请求中断' WHERE id=? AND user_id=? AND status='recovering'",job.id,user.id);
@@ -849,32 +869,22 @@ async function qwenEditStatus(env,user,job,ref){
   return pending();
  }
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(ref.id||""))return failure("图生图任务编号无效");
+ if(now-job.created_at>=50000)
+  return qwenFailoverToHorde(env,user,job,ref,now,"Qwen 免费图生图超过50秒");
  if(now-Number(job.checked_at||0)<9000)return pending();
  const claim=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-8800);
  if(!claim.meta?.changes)return pending();
  const state=ref.deliveryUrl?{status:"complete",url:ref.deliveryUrl}:await queryGradioImageEvent(env,"qwen",ref.id);
- if(state.status==="pending")return pending();
+ if(state.status==="pending")return now-job.created_at>=50000?qwenFailoverToHorde(env,user,job,ref,now,"Qwen 排队超过50秒"):pending();
  if(state.status==="failed"){
-  if(!hordeUuid(ref.imageId)||!ref.prompt)return failure("免费图生图上游生成失败");
-  // Explicit Qwen failure permits exactly one separate Horde request.
-  const reserved=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering' WHERE id=? AND user_id=? AND status='pending' AND checked_at=?",job.id,user.id,now);
-  if(!reserved.meta?.changes)return pending();
-  try{
-   const eventId=await submitHordeGeneration(env,user,ref.imageId,ref.prompt);
-   await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",JSON.stringify({v:7,p:"horde",id:eventId}),job.id,user.id);
-   return pending();
-  }catch(e){
-   const reason="Qwen 失败，免费社区备用也不可用";
-   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",reason,Date.now(),job.id,user.id);
-   return response({ok:true,done:true,failed:true,error:reason,officialUrl:QWEN_EDIT_OFFICIAL});
-  }
+  return qwenFailoverToHorde(env,user,job,ref,now,"免费图生图上游生成失败");
  }
  if(state.status!=="complete"||!state.url)return failure("图生图生成后没有返回图片");
  let image;
  try{image=await saveKreaImage(env,user.id,state.url,true)}
  catch{
   const tries=(Number(ref.tries)||0)+1;
-  if(tries>=3)return failure("图生图已完成但图片无法下载");
+  if(tries>=3)return now-job.created_at>=50000?qwenFailoverToHorde(env,user,job,ref,now,"图片结果无法获取"):failure("图生图已完成但图片无法下载");
   await dbRun(env.DB,"UPDATE image_jobs SET external_id=? WHERE id=? AND user_id=? AND status='pending'",JSON.stringify({...ref,deliveryUrl:state.url,tries}),job.id,user.id);
   return pending();
  }
@@ -917,7 +927,7 @@ async function submitHordeImageEdit(env,user,imageId,prompt){
  catch(error){if(error?.definite!==true)throw error}
 
  const requestId=await submitHordeGeneration(env,user,imageId,prompt);
- const id=crypto.randomUUID(),now=Date.now(),ref={v:7,p:"horde",id:requestId};
+ const id=crypto.randomUUID(),now=Date.now(),ref={v:7,p:"horde",id:requestId,startedAt:now};
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-edit-free')",id,user.id,JSON.stringify(ref),now);
  return {jobId:id,model:"免费图生图 · AI Horde",pending:true};
 }
@@ -946,7 +956,7 @@ function hordeImageResult(raw){
 async function hordeStatus(env,user,job,ref){
  const now=Date.now();
  if(!hordeUuid(ref.id))return response({ok:true,done:true,failed:true,error:"免费图生图任务号无效"});
- if(now-job.created_at>11*60000){
+ if(now-(Number(ref.startedAt)||job.created_at)>=50000){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=? WHERE id=? AND user_id=? AND status='pending'","免费社区排队超时",job.id,user.id);
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图生图排队超时",job.message_id,user.id).catch(()=>{});
   return response({ok:true,done:true,failed:true,error:"免费社区排队超时，请稍后再试"});
@@ -1166,7 +1176,17 @@ async function queryGradioImageEvent(env,provider,eid){
 }
 
 function imageRefV4(ref){return JSON.stringify(ref)}
-function imagePending(job){return response({ok:true,done:false,pending:true,waitSeconds:typeof job.external_id==="string"&&(job.external_id.startsWith('{"v":6,')||job.external_id.startsWith('{"v":9,'))?7:12,startedAt:job.created_at})}
+function imagePending(job){
+ let delay=12;
+ try{
+  const ref=JSON.parse(job.external_id||"{}");
+  if([4,5,6,9].includes(ref.v)&&Number.isFinite(ref.stageAt)){
+   // End a source at its 50-second boundary, without high-frequency polling.
+   delay=Math.max(1,Math.min(7,Math.ceil((ref.stageAt+50000-Date.now())/1000)));
+  }
+ }catch{}
+ return response({ok:true,done:false,pending:true,waitSeconds:delay,startedAt:job.created_at});
+}
 function imageRioFindTask(value){
  if(Array.isArray(value)){for(const v of value){const found=imageRioFindTask(v);if(found)return found}return null}
  if(typeof value==="string"){try{return imageRioFindTask(JSON.parse(value))}catch{return null}}
@@ -1271,7 +1291,7 @@ async function imageV4Complete(env,job,mediaId){
 }
 async function imageV4Status(env,user,job,ref){
  const now=Date.now();
- if(now-job.created_at>(ref.v===9?75000:30*60000)){
+ if(now-job.created_at>(ref.v===9?215000:30*60000)){
   await failKreaJob(env,job,ref.v===9?"免费快速作图超时，请稍后重试":"作图超时");
   return response({ok:true,done:true,failed:true,error:ref.v===9?"免费来源排队过久，本次已停止等待":"作图超时"});
  }
@@ -1282,21 +1302,23 @@ async function imageV4Status(env,user,job,ref){
   }
   return imagePending(job);
  }
+ // Deadline transition has priority over the normal 7-second status throttle.
+ // This atomic claim guarantees one Worker advances each 50-second stage.
+ if(now-(ref.stageAt||now)>=50000){
+  const next=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",now,job.id,user.id);
+  return next.meta?.changes?imageV4Move(env,job,ref,ref.stage+1):imagePending(job);
+ }
  if(now-(job.checked_at||0)<6800)return imagePending(job);
  const claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-6700);
  if(!claim.meta?.changes)return imagePending(job);
  const stage=(ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES)[ref.stage];
  if(!stage){await failKreaJob(env,job,"作图任务阶段无效");return response({ok:true,done:true,failed:true,error:"作图任务状态异常"})}
  try{
-  if(now-(ref.stageAt||now)>(ref.v===9?(stage==="zimage"?45000:stage==="vexa"?18000:30000):(stage==="rio"?155000:stage==="glm"?160000:stage==="krea"?140000:35000))){
-   // Once a Gradio event was accepted, an unknown queue state must not cause
-   // a second paid/GPU task on a different model.
-   if(ref.v===9&&ref.phase!=="new"&&stage!=="vexa"){
-    await failKreaJob(env,job,"免费GPU排队超时，未重复生成");
-    return response({ok:true,done:true,failed:true,error:"免费来源排队过久，本次停止等待"});
-   }
+  // Every source gets at most 50 seconds. Advance to another verified
+  // FREE source instead of waiting 140+ seconds on Krea or GLM.
+  // The durable claim above serializes stage transitions across Workers.
+  if(now-(ref.stageAt||now)>=50000)
    return imageV4Move(env,job,ref,ref.stage+1);
-  }
   if(stage==="vexa"){
    try{
     const result=await imageVexaRender(env,user.id,ref,ref.v>=5);
@@ -1305,6 +1327,7 @@ async function imageV4Status(env,user,job,ref){
   }
   if(ref.phase==="deliver"&&typeof ref.url==="string")
    return imageV4Deliver(env,user,job,ref,ref.url);
+  if(ref.phase==="unknown")return imageV4Pending(env,job,ref);
   if(ref.phase==="new"){
    if(stage==="zimage"){
     const eventId=await submitZImageFast(env,ref);
@@ -1342,13 +1365,16 @@ async function imageV4Status(env,user,job,ref){
    if(!task||["complete","completed","success","succeeded","done"].includes(status))return imageV4Move(env,job,ref,ref.stage+1);
    return imageV4Pending(env,job,{...rioRef,phase:"rio-poll",id:"",taskId:task.task_id});
   }
-  // Official Krea and GLM both use their confirmed Gradio generation endpoints.
+  // Krea, GLM and Z-Image use their verified Gradio generation endpoints.
   const state=await queryGradioImageEvent(env,stage,ref.id);
   if(state.status==="pending")return imageV4Pending(env,job,ref);
   if(state.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
   return imageV4Deliver(env,user,job,ref,state.url);
  }catch(error){
-  // No hidden loop, no parallel submits. A finished/failed stage advances once in IM order.
+  // Unknown submit outcomes must not be submitted again while the original
+  // source could still be running. Wait only until its 50-second boundary.
+  if(error?.uncertain&&ref.phase==="new")
+   return imageV4Pending(env,job,{...ref,phase:"unknown"});
   return imageV4Move(env,job,ref,ref.stage+1);
  }
 }
