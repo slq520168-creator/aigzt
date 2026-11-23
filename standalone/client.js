@@ -1772,72 +1772,36 @@ const FREE_TOOL_CATEGORIES=["全部","综合","聊天","作图","图生图","视
 const FREE_ACCESS_LABELS={free:"基础免费",daily:"定期免费额度",trial:"免费试用",community:"社区免费"};
 
 function freeToolsFilters(){
- const container=$("freeToolFilters");container.replaceChildren();
+ const list=$("freeToolFilters"),x=list.scrollLeft;list.replaceChildren();
  for(const label of FREE_TOOL_CATEGORIES){
-  const b=node("button","free-filter"+(label===S.freeToolsCategory?" active":""));b.type="button";
-  b.textContent=label;b.setAttribute("aria-pressed",String(label===S.freeToolsCategory));
-  b.addEventListener("click",()=>{S.freeToolsCategory=label;S.freeToolsShown=24;renderFreeTools()});container.append(b);
+  const b=node("button","free-filter"+(label===S.freeToolsCategory?" active":""));
+  b.type="button";b.textContent=label;b.setAttribute("aria-pressed",String(label===S.freeToolsCategory));
+  b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools();list.querySelector(".free-filter.active")?.scrollIntoView({block:"nearest",inline:"nearest"})});
+  list.append(b);
  }
+ list.scrollLeft=x;
 }
 function renderFreeTools(){
  freeToolsFilters();
- const search=$("freeToolsSearch").value.trim().toLowerCase(),category=S.freeToolsCategory,access=$("freeToolAccessFilter").value||"all";
- const seen=new Set();
- const items=EXTERNAL_FREE_TOOLS.filter(item=>{
+ const search=$("freeToolsSearch").value.trim().toLowerCase(),category=S.freeToolsCategory,seen=new Set(),list=$("freeToolsList");
+ list.replaceChildren();
+ const hits=EXTERNAL_FREE_TOOLS.filter(item=>{
   const categories=Array.isArray(item.categories)?item.categories:[item.category];
-  const terms=[item.name,item.provider,item.category,...categories,...(item.features||[]),item.note||"",item.policy||""];
-  const matchesAccess=access==="all"||
-   (access==="no-signup"&&item.login==="可直接体验")||
-   (access==="daily"&&item.access==="daily")||
-   (access==="trial"&&item.access==="trial")||
-   (access==="community"&&item.access==="community");
-  if(!matchesAccess||(category!=="全部"&&!categories.includes(category))||(search&&!terms.some(x=>String(x).toLowerCase().includes(search))))return false;
+  if(category!=="全部"&&!categories.includes(category))return false;
+  if(search&&![item.name,item.provider,item.category,...categories,...(item.features||[])].some(x=>String(x||"").toLowerCase().includes(search)))return false;
   if(seen.has(item.url))return false;
   seen.add(item.url);return true;
  });
- const total=EXTERNAL_FREE_TOOLS.reduce((set,item)=>set.add(item.url),new Set()).size;
- $("freeToolsCount").textContent=items.length+" 个工具";
- $("freeToolVerifiedCount").textContent=CURATED_FREE_TOOLS.length+" 个新核实入口";
- $("freeToolTotalCount").textContent=total+" 个不同入口";
- const showHighlights=!search&&category==="全部"&&access==="all";
- const highlighted=showHighlights?items.filter(x=>x.featured).slice(0,5):[];
- const featuredArea=$("freeToolsFeatured");featuredArea.hidden=highlighted.length===0;
- const featuredList=$("freeToolsFeaturedList"),list=$("freeToolsList");
- featuredList.replaceChildren();list.replaceChildren();
- const icons={综合:"blocks",聊天:"message-circle",作图:"image",图生图:"palette",视频:"video",修图:"palette",角色:"circle-user",写作:"square-pen",互动:"compass",编程:"code-2",音频:"mic",目录:"layers"};
- function createTool(item,highlight){
-  const a=node("a","free-tool-card"+(highlight?" free-tool-featured":""));
-  a.href=item.url;a.target="_blank";a.rel="noopener noreferrer";
-  a.dataset.category=item.category;
-  a.setAttribute("aria-label",item.name+" · 打开外部网站");
-  const image=node("span","free-tool-symbol");image.append(iconSlot(icons[item.category]||"blocks"));
-  const content=node("span","free-tool-copy"),nameRow=node("span","free-tool-name-row");
-  nameRow.append(node("strong","free-tool-name",item.name));
-  if(item.policy==="开放创作")nameRow.append(node("span","free-tool-policy","开放创作"));
-  content.append(nameRow,node("span","free-tool-provider",item.provider));
-  const meta=node("span","free-tool-meta");
-  meta.append(node("span","free-tool-access"+(item.verified?" verified":""),item.access?FREE_ACCESS_LABELS[item.access]:"免费条件未核实"));
-  if(item.login)meta.append(node("span","free-tool-login",item.login));
-  content.append(meta);
-  if(item.features?.length){
-   const tags=node("span","free-tool-feature-tags");
-   for(const label of item.features.slice(0,highlight?5:3))tags.append(node("span","free-tool-feature",label));
-   content.append(tags);
-  }
-  if(item.note&&item.verified)content.append(node("span","free-tool-note",item.note));
-  a.append(image,content,iconSlot("arrow-up"));renderIcons(a);return a;
+ hits.sort((a,b)=>Number(Boolean(b.verified))-Number(Boolean(a.verified)));
+ for(const item of hits){
+  const a=node("a","free-tool-card");a.href=item.url;a.target="_blank";a.rel="noopener noreferrer";
+  const functions=Array.isArray(item.features)&&item.features.length?item.features:[item.category];
+  a.title=item.name+" · "+functions.join(" · ");
+  a.setAttribute("aria-label",item.name+"，"+functions.join("、")+"，打开外部网站");
+  a.append(node("strong","free-tool-name",item.name),node("small","free-tool-function",functions.slice(0,2).join(" · ")));
+  list.append(a);
  }
- for(const item of highlighted)featuredList.append(createTool(item,true));
- const featuredURLs=new Set(highlighted.map(x=>x.url));
- const remainder=items.filter(x=>!featuredURLs.has(x.url));
- remainder.sort((a,b)=>Number(Boolean(b.verified))-Number(Boolean(a.verified)));
- const shown=Number.isSafeInteger(S.freeToolsShown)&&S.freeToolsShown>0?S.freeToolsShown:24;
- for(const item of remainder.slice(0,shown))list.append(createTool(item,false));
- const more=$("freeToolsMore"),remaining=Math.max(0,remainder.length-shown);
- more.hidden=remaining===0;
- more.textContent="显示更多工具 · 还剩 "+remaining+" 个";
- $("freeToolResultsTitle").textContent=highlighted.length?"发现更多":"匹配工具";
- $("freeToolEmpty").hidden=items.length>0;
+ $("freeToolEmpty").hidden=hits.length>0;
 }
 function syncWorkspaceRoute(name){
  const hash=name?"#"+name:"";
@@ -2943,12 +2907,7 @@ function wire(){
  $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
  $("navDraw").addEventListener("click",openCreate);
  $("freeToolsClose").addEventListener("click",()=>setFreeToolsMode(false));
- $("freeToolsSearch").addEventListener("input",()=>{S.freeToolsShown=24;renderFreeTools()});
- $("freeToolAccessFilter").addEventListener("change",()=>{S.freeToolsShown=24;renderFreeTools()});
- $("freeToolsMore").addEventListener("click",()=>{S.freeToolsShown=(S.freeToolsShown||24)+24;renderFreeTools()});
- $("freeToolsClear").addEventListener("click",()=>{
-  $("freeToolsSearch").value="";$("freeToolAccessFilter").value="all";S.freeToolsCategory="全部";S.freeToolsShown=24;renderFreeTools();$("freeToolsSearch").focus();
- });
+ $("freeToolsSearch").addEventListener("input",renderFreeTools);
  $("navWork").addEventListener("click",()=>setWorkMode(true));
  $("navCode").addEventListener("click",startCoding);
  

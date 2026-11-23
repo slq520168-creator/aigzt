@@ -136,37 +136,15 @@
     </div>
     <details class="work-history"><summary>历史任务</summary><div id="workTaskList" class="work-task-list"></div></details>
    </section>
-   <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费 AI 工具中心">
+   <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
     <header class="free-tools-header">
-     <div class="free-tools-heading"><span class="free-tools-eyebrow">AIGZT · TOOL DISCOVERY</span><h2>免费 AI 工具</h2><p>聊天、作图、图生图与视频创作，一处查找真实服务</p></div>
-     <button type="button" class="icon-btn free-tools-close" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button>
-    </header>
-    <div class="free-tools-content">
-     <div class="free-tools-intro">
-      <div><span class="free-tools-intro-kicker">精选真实入口</span><h3>找到适合你的免费创作工具</h3><p>优先展示已核实的官方服务。外部网站自行提供免费额度和内容规则，AIGZT 不代收费用，也不会自动代你注册。</p></div>
-      <div class="free-tools-stats"><span id="freeToolVerifiedCount">精选工具</span><span id="freeToolTotalCount">收录入口</span></div>
-     </div>
+     <div class="free-tools-title"><h2>免费工具</h2><button type="button" class="icon-btn free-tools-close" id="freeToolsClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
      <div class="free-tools-controls">
-      <label class="free-tools-search"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><input id="freeToolsSearch" type="search" placeholder="搜索工具、功能或提供方" aria-label="搜索免费工具" autocomplete="off"></label>
-      <div class="free-tools-filter-heading"><strong>按用途筛选</strong><button type="button" id="freeToolsClear" class="free-tools-clear">清除筛选</button></div>
-      <div id="freeToolFilters" class="free-tool-filters" aria-label="工具分类"></div>
-      <div class="free-tools-refine">
-       <label class="free-tools-access-control">免费方式 <select id="freeToolAccessFilter" aria-label="按照免费使用方式筛选"><option value="all">全部免费方式</option><option value="no-signup">免注册 / 可直接体验</option><option value="daily">定期免费额度</option><option value="trial">免费试用 / 初始积分</option><option value="community">免费社区演示</option></select></label>
-       <span id="freeToolsCount" class="free-tools-count" aria-live="polite">加载工具…</span>
-      </div>
+      <label class="free-tools-search"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><input id="freeToolsSearch" type="search" placeholder="搜索工具" aria-label="搜索免费工具" autocomplete="off"></label>
+      <div id="freeToolFilters" class="free-tool-filters" aria-label="按功能筛选"></div>
      </div>
-     <section class="free-tools-featured-area" id="freeToolsFeatured" aria-label="精选推荐">
-      <div class="free-tools-section-title"><div><span>EDITOR'S PICKS</span><h3>优先体验</h3></div><small>有免费使用方式的真实外部服务</small></div>
-      <div id="freeToolsFeaturedList" class="free-tools-featured-list"></div>
-     </section>
-     <section class="free-tools-all-area" aria-label="工具列表">
-      <div class="free-tools-section-title"><div><span>EXPLORE MORE</span><h3 id="freeToolResultsTitle">全部工具</h3></div><small>新窗口打开原站</small></div>
-      <div id="freeToolsList" class="free-tools-list"></div>
-      <button type="button" id="freeToolsMore" class="free-tools-more" hidden>显示更多工具</button>
-      <p id="freeToolEmpty" class="free-tools-empty" hidden>没有匹配的工具</p>
-     </section>
-     <p class="free-tools-disclaimer">说明：免费额度、模型限制及内容审核规则可能随第三方服务更新；“免费条件未核实”仅代表历史收录入口，不保证能直接免费生成。页面不会在后台自动访问这些网站。</p>
-    </div>
+    </header>
+    <div class="free-tools-results"><div id="freeToolsList" class="free-tools-list"></div><p id="freeToolEmpty" class="free-tools-empty" hidden>没有匹配的工具</p></div>
    </section>
    <div class="conversation empty-chat" id="conversation" aria-live="polite"><div class="welcome" id="welcome"><h1>有什么可以帮你？</h1></div><div class="messages" id="messageList"></div></div>
    <div class="composer-area" id="composerArea">
