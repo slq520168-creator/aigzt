@@ -2494,6 +2494,8 @@ function wireImageViewer(){
   if(!(e.target instanceof Element))return;
   const img=e.target.closest("img");
   if(!img||img.closest("#imageViewer,.sidebar,.brand-lockup")||!img.src||!img.getClientRects().length)return;
+  // Images inside navigation or controls belong to those actions, not the media viewer.
+  if(img.closest("a[href],button,[role='button']"))return;
   e.preventDefault();e.stopPropagation();ivOpen(img);
  },true);
  $("ivClose").addEventListener("click",ivClose);
