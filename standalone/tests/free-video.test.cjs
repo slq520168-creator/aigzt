@@ -25,4 +25,10 @@ test('All site free models remain separate from user BYOK models',()=>{
  assert.match(backend,/if\(Object\.hasOwn\(FREE_VIDEO,provider\)\)return fvCreate/);
 });
 
-test('Default free text-video source also accepts an uploaded source image',()=>{const client=read('client.js'),server=read('worker.js');assert.match(client,/imageId:img\?\.id/);assert.match(server,/if\(b\.imageId\)/);assert.match(server,/provider==="freetext"\?\[file,prompt/);});
+test("Text-video ignores stale references, frame-video uses two different references",()=>{
+ const client=read("client.js"),worker=read("worker.js");
+ assert.ok(client.includes('imageId:free&&provider!=="freetext"?S.videoImageId:undefined'));
+ assert.ok(client.includes('endImageId:S.videoProvider==="freeloop"?videoImages[1]?.id:undefined'));
+ assert.ok(worker.includes('[file,endFile,prompt,FV_BAD,2.1,8,1,1,42,true]'));
+ assert.ok(worker.includes('provider==="freetext"&&(b.imageId||b.endImageId)'));
+});

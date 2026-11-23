@@ -733,11 +733,12 @@ async function mediaChat(req,env,user){
   const provider=String(b.provider),model=String(b.model||"");
   const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
   if(!exists&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Object.assign(Error("项目不存在"),{status:404});
-  const task=await fvCreate(env,user,{imageId:b.imageId,ratio:b.ratio},provider,model,prompt);
+  const task=await fvCreate(env,user,{imageId:b.imageId,endImageId:b.endImageId,ratio:b.ratio},provider,model,prompt);
   const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),userMessageId=crypto.randomUUID(),assistantMessageId=crypto.randomUUID();
   const reply="[[aigzt:video-job:"+task.requestId+"]]";
   const pic=typeof b.imageId==="string"&&fvId(b.imageId)?b.imageId:null;
-  const message=prompt+(pic?"\n[文件：参考图](/api/files/"+pic+")":"");
+  const endPic=provider==="freeloop"&&typeof b.endImageId==="string"&&fvId(b.endImageId)?b.endImageId:null;
+  const message=prompt+(pic?"\n[文件：首帧或参考图](/api/files/"+pic+")":"")+(endPic?"\n[文件：尾帧](/api/files/"+endPic+")":"");
   const writes=[];
   if(!exists)writes.push(env.DB.prepare("INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)").bind(chatId,user.id,prompt.slice(0,36),"free",model,now,now,projectId));
   writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(userMessageId,chatId,user.id,"user",message,"免费视频",now));
@@ -866,22 +867,32 @@ async function hordeStatus(env,user,job,ref){
  if(!check.ok||check.status>=300)return response({ok:true,done:false,pending:true,waitSeconds:24,startedAt:job.created_at});
  const status=await check.json().catch(()=>null);
  if(!status)return response({ok:true,done:false,pending:true,waitSeconds:24,startedAt:job.created_at});
- if(status.faulted===true){
-  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='免费算力任务失败' WHERE id=? AND user_id=?",job.id,user.id);
-  return response({ok:true,done:true,failed:true,error:"免费社区生成失败"});
+ if(status.faulted===true||status.is_possible===false){
+  const reason=status.is_possible===false?"没有可用的免费图生图算力":"免费算力任务失败";
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=? WHERE id=? AND user_id=? AND status='pending'",reason,job.id,user.id);
+  return response({ok:true,done:true,failed:true,error:reason});
  }
  if(status.done!==true)return response({ok:true,done:false,pending:true,waitSeconds:Math.max(16,Math.min(45,Number(status.wait_time||17))),startedAt:job.created_at});
  let output;
  try{output=await fetch(HORDE_URL+"/generate/status/"+encodeURIComponent(ref.id),{headers:HORDE_REQUEST_HEADERS,redirect:"manual",signal:AbortSignal.timeout(12000)})}
  catch{return response({ok:true,done:false,pending:true,waitSeconds:25,startedAt:job.created_at})}
  if(!output.ok||output.status>=300)return response({ok:true,done:false,pending:true,waitSeconds:25,startedAt:job.created_at});
- if(Number(output.headers.get("content-length")||0)>8200000)return response({ok:true,done:true,failed:true,error:"免费来源图片过大"});
+ if(Number(output.headers.get("content-length")||0)>8200000){
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='免费来源图片过大' WHERE id=? AND user_id=? AND status='pending'",job.id,user.id);
+  return response({ok:true,done:true,failed:true,error:"免费来源图片过大"});
+ }
  const text=await output.text();
- if(text.length>8200000)return response({ok:true,done:true,failed:true,error:"免费来源图片过大"});
+ if(text.length>8200000){
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='免费来源图片过大' WHERE id=? AND user_id=? AND status='pending'",job.id,user.id);
+  return response({ok:true,done:true,failed:true,error:"免费来源图片过大"});
+ }
  let answer;try{answer=JSON.parse(text)}catch{return response({ok:true,done:false,pending:true,waitSeconds:25,startedAt:job.created_at})}
  const raw=String(answer?.generations?.[0]?.img||"");
  const image=hordeImageResult(raw);
- if(!image)return response({ok:true,done:true,failed:true,error:"免费来源未返回可预览的图片"});
+ if(!image){
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='免费来源未返回图片' WHERE id=? AND user_id=? AND status='pending'",job.id,user.id);
+  return response({ok:true,done:true,failed:true,error:"免费来源未返回可预览的图片"});
+ }
  const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='pending'",job.id,user.id);
  if(!deleted.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:18,startedAt:job.created_at});
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（仅本次会话展示，图片未保存）",job.message_id,user.id).catch(()=>{});
@@ -1301,9 +1312,9 @@ function videoStatus(provider,data){
 /* Shared free upstreams: never fall back to charged providers. Both require
  * the user's own uploaded image. One task at a time, two daily per account. */
 const FREE_VIDEO=Object.freeze({
- freetext:{url:"https://upsampler-wan-2-2-14b-text-to-video.hf.space",model:"wan2.2-ti2v"},
- freewan:{url:"https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",model:"wan2.2-i2v-fast"},
- freeloop:{url:"https://mcp-tools-wan-2-2-first-last-frame.hf.space",model:"wan2.2-firstlast"}
+ freetext:{url:"https://upsampler-wan-2-2-14b-text-to-video.hf.space",model:"wan2.2-ti2v",official:"https://huggingface.co/spaces/Upsampler/wan-2-2-14b-text-to-video"},
+ freewan:{url:"https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",model:"wan2.2-i2v-fast",official:"https://huggingface.co/spaces/zerogpu-aoti/wan2-2-fp8da-aoti-faster"},
+ freeloop:{url:"https://mcp-tools-wan-2-2-first-last-frame.hf.space",model:"wan2.2-firstlast",official:"https://huggingface.co/spaces/mcp-tools/wan-2-2-first-last-frame"}
 });
 const FV_BAD="face morphing, identity drift, blurry eyes, unstable features, flicker, watermark, subtitles";
 const fvId=s=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s||""));
@@ -1312,29 +1323,34 @@ async function fvCreate(env,user,b,provider,model,prompt){
  const cfg=FREE_VIDEO[provider];
  if(!cfg||model!==cfg.model)throw fvError("免费视频模型参数无效",400);
  if(!prompt||(provider!=="freetext"&&!fvId(b.imageId)))throw fvError(provider==="freetext"?"请输入视频描述":"请上传图片并填写视频动作描述",400);
- if(provider==="freetext"&&b.imageId)throw fvError("文生视频仅使用文字；请改选图生视频",400);
+ if(provider==="freetext"&&(b.imageId||b.endImageId))throw fvError("文生视频仅使用文字；请改选图生视频",400);
+ if(provider==="freeloop"&&(!fvId(b.endImageId)||b.endImageId===b.imageId))throw fvError("首尾帧必须分别上传两张不同的图片",400);
+ if(provider!=="freeloop"&&b.endImageId)throw fvError("只有首尾帧视频可以使用结束画面",400);
  if(!env.DB||!env.MEDIA)throw fvError("站点存储暂时不可用",503);
  const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-2100000);
  if(active)throw fvError("已有免费视频任务正在生成，请先查询上一条",409);
- let file=null;
- if(b.imageId){
-  if(!fvId(b.imageId))throw fvError("参考图编号无效",400);
-  const obj=await env.MEDIA.get(user.id+"/"+b.imageId);
-  const type=obj?.httpMetadata?.contentType;
-  if(!obj||!["image/jpeg","image/png","image/webp"].includes(type)||obj.size>7500000||obj.size<200)throw fvError("请选择7.5MB以内的 JPG、PNG 或 WebP 图片",415);
-  const image=await obj.arrayBuffer(),form=new FormData();
-  form.append("files",new Blob([image],{type}),"source."+({"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[type]));
-  let uploaded;
-  try{uploaded=await fetch(cfg.url+"/gradio_api/upload",{method:"POST",headers:{...hfHeaders(env),accept:"application/json"},body:form,redirect:"manual",signal:AbortSignal.timeout(14000)})}
-  catch{throw fvError("免费来源暂时无法连接",503)}
-  if([401,403,429].includes(uploaded.status))throw fvError("免费额度繁忙或用完，稍后再试",429);
-  if(!uploaded.ok||uploaded.status>=300)throw fvError("参考图上传失败",503);
-  const result=await uploaded.json().catch(()=>null),path=String(result?.[0]||"");
-  if(!/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)||path.includes(".."))throw fvError("免费来源图片凭据无效",502);
-  file={path,meta:{_type:"gradio.FileData"},orig_name:"source.jpg"};
- }
+ // Validate the user's own R2 file before uploading each frame to Gradio.
+ const uploadImage=async imageId=>{
+  if(!fvId(imageId))throw fvError("参考图编号无效",400);
+  const obj=await env.MEDIA.get(user.id+"/"+imageId);
+  const type=String(obj?.httpMetadata?.contentType||"").toLowerCase();
+  if(!obj||!["image/jpeg","image/png","image/webp"].includes(type)||obj.size>7500000||obj.size<200)
+   throw fvError("请选择7.5MB以内的 JPG、PNG 或 WebP 图片",415);
+  const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[type],form=new FormData();
+  form.append("files",new Blob([await obj.arrayBuffer()],{type}),"source."+ext);
+  let res;
+  try{res=await fetch(cfg.url+"/gradio_api/upload",{method:"POST",headers:{...hfHeaders(env),accept:"application/json"},body:form,redirect:"manual",signal:AbortSignal.timeout(14000)})}
+  catch{throw fvError("免费来源图片上传连接失败",503)}
+  if([401,403,429].includes(res.status))throw fvError("免费来源暂时限制图片上传",429);
+  if(!res.ok||res.status>=300)throw fvError("免费来源拒绝了图片上传",503);
+  const result=await res.json().catch(()=>null),path=String(result?.[0]||"");
+  if(!/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)||path.includes(".."))throw fvError("免费来源未返回有效图片路径",502);
+  return {path,url:cfg.url+"/gradio_api/file="+path,meta:{_type:"gradio.FileData"},orig_name:"source."+ext,mime_type:type};
+ };
+ const file=b.imageId?await uploadImage(b.imageId):null;
+ const endFile=provider==="freeloop"?await uploadImage(b.endImageId):null;
  const data=provider==="freetext"?[prompt,b.ratio==="9:16"?"9:16 (480x832)":"16:9 (832x480)",4,FV_BAD,3.5,1,1,42,true]:
-  provider==="freewan"?[file,prompt,4,FV_BAD,3,1,1,42,true]:[file,file,prompt,FV_BAD,2.1,8,1,1,42,true];
+  provider==="freewan"?[file,prompt,4,FV_BAD,3,1,1,42,true]:[file,endFile,prompt,FV_BAD,2.1,8,1,1,42,true];
  let submit;
  try{submit=await fetch(cfg.url+"/gradio_api/call/generate_video",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data}),redirect:"manual",signal:AbortSignal.timeout(14000)})}
  catch{throw fvError("提交状态不确定，请不要重复点击",503)}
@@ -1399,22 +1415,34 @@ async function fvStatus(env,user,id){
  const ref=JSON.parse(job.external_id||"{}"),cfg=FREE_VIDEO[ref.p];
  if(!cfg||!/^[a-z0-9_-]{8,128}$/i.test(ref.e||""))throw fvError("视频任务记录无效",422);
  if(job.status==="complete"&&fvId(job.media_id))return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+job.media_id,temporaryUrl:false};
- if(job.status==="failed")return {ok:true,status:"failed",provider:ref.p,error:job.error||"免费视频生成失败"};
+ if(job.status==="complete"&&ref.url&&fvOutput(ref.url,cfg)===ref.url)return {ok:true,status:"completed",provider:ref.p,url:ref.url,temporaryUrl:true};
+ if(job.status==="failed")return {ok:true,status:"failed",provider:ref.p,error:job.error||"免费视频生成失败",officialUrl:cfg.official};
  if(Date.now()-job.created_at>2100000){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='免费任务超时' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频任务超时",job.message_id,user.id).catch(()=>{});
-  return {ok:true,status:"failed",error:"免费任务超时"};
+  return {ok:true,status:"failed",error:"免费任务超时",officialUrl:cfg.official};
  }
  if(Date.now()-(job.checked_at||0)<14000)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",Date.now(),id,user.id,Date.now()-13000);
  if(!claimed.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  const state=await fvPoll(env,cfg,ref.e);
  if(state.status==="pending")return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
- if(state.status==="failed"){await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游生成失败' WHERE id=? AND user_id=? AND status='pending'",id,user.id);if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频生成失败，请重新尝试",job.message_id,user.id).catch(()=>{});return {ok:true,status:"failed",error:"免费来源生成失败"}}
+ if(state.status==="failed"){await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游生成失败' WHERE id=? AND user_id=? AND status='pending'",id,user.id);if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频生成失败，请重新尝试",job.message_id,user.id).catch(()=>{});return {ok:true,status:"failed",error:"免费来源生成失败",officialUrl:cfg.official}}
  const url=fvOutput(state.data,cfg);
- if(!url)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
+ if(!url){
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游视频结果格式不兼容' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
+  return {ok:true,status:"failed",error:"生成完成但没有返回可播放的视频",officialUrl:cfg.official};
+ }
  let media;
- try{media=await fvSave(env,user,url,cfg)}catch{return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at}}
+ try{media=await fvSave(env,user,url,cfg)}
+ catch{
+  // A completed source video must never turn into endless "pending" just
+  // because this account cannot save an MP4 larger than the R2 policy.
+  const external=JSON.stringify({...ref,url});
+  const mark=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',external_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",external,Date.now(),id,user.id);
+  if(!mark.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
+  return {ok:true,status:"completed",provider:ref.p,url,temporaryUrl:true};
+ }
  const done=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='pending'",media,Date.now(),id,user.id);
  if(!done.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","[[aigzt:video:"+media+"]]",job.message_id,user.id).catch(()=>{});
@@ -1471,6 +1499,7 @@ async function createVideo(req,env,user){
 async function queryVideo(req,env,user){
  requireUser(user);
  const b=await parseJSON(req),provider=String(b.provider||"grok"),id=String(b.requestId||"");
+ if(provider==="free"&&fvId(id))return fvStatus(env,user,id);
  if(Object.hasOwn(FREE_VIDEO,provider))return fvStatus(env,user,id);
  if(!Object.hasOwn(VIDEO_MODELS,provider))throw Object.assign(new Error("不支持此视频服务商"),{status:400});
  if(!/^[A-Za-z0-9_-]{4,160}$/.test(id))throw Object.assign(new Error("无效的视频任务编号"),{status:400});

@@ -1,29 +1,21 @@
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
-const client=fs.readFileSync('standalone/client.js','utf8'),server=fs.readFileSync('standalone/worker.js','utf8');
-const start=client.indexOf('async function optimizeImageReference('),end=client.indexOf('async function uploadSelected(',start),optimizer=client.slice(start,end);
-test('Client converts JPEG/PNG/HEIC references into the WebP required by Horde',()=>{
- assert.match(optimizer,/canvas\.toBlob\(/);
- assert.match(optimizer,/blob\.type!=="image\/webp"/);
- assert.match(optimizer,/new File\(\[blob\]/);
- assert.match(optimizer,/type:"image\/webp"/);
- assert.match(optimizer,/if\(S\.composerMode!=="image"\)return file/);
- assert.match(optimizer,/if\(type==="image\/webp"&&file\.size<=1450000\)return file/);
- assert.match(optimizer,/bitmap=await createImageBitmap\(file\)/);
- assert.match(optimizer,/new Image\(\)/);
+const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
+const c=fs.readFileSync("standalone/client.js","utf8"),w=fs.readFileSync("standalone/worker.js","utf8");
+test("Image editing sends real reference bytes with verified MIME",()=>{
+ assert.ok(c.includes('S.miniToolChoice==="image-edit"&&!S.attachments.length'));
+ assert.ok(c.includes('imageId:reference?.id'));
+ assert.ok(w.includes('source_image:hordeBase64(bytes)'));
+ assert.ok(w.includes('source_processing:"img2img"'));
+ assert.ok(w.includes('detectImage(bytes)!==mime'));
 });
-test('Server enforces WebP and does not send incompatible JPG/PNG bytes',()=>{
- assert.match(server,/mime!=="image\/webp"/);
- assert.match(server,/source_processing:"img2img",r2:true,nsfw:false/);
- assert.doesNotMatch(server,/source_processing:"img2img",r2:false,shared:false/);
+test("iPhone reference conversion preserves actual PNG JPEG and WebP content type",()=>{
+ const start=c.indexOf("async function optimizeImageReference("),end=c.indexOf("async function uploadSelected(",start),fn=c.slice(start,end);
+ assert.ok(fn.includes('canvas.toBlob('));
+ assert.ok(fn.includes('type:blob.type'));
+ assert.ok(fn.includes('blob.type==="image/png"'));
 });
-test('Image-edit can never silently turn into text-only generation',()=>{
- assert.match(client,/S\.miniToolChoice==="image-edit"&&!S\.attachments\.length/);
- assert.match(client,/S\.miniToolChoice==="image-edit"&&S\.attachments\.length===1/);
- assert.match(client,/图生图一次仅允许一张参考图片/);
-});
-test('Original image generation and video paths remain unchanged',()=>{
- assert.match(server,/imgId\?await submitHordeImageEdit\(env,user,imgId,prompt\):await submitKrea\(mediaReq,env,user\)/);
- assert.match(server,/const KREA=/);
- assert.match(server,/const FREE_VIDEO=Object\.freeze/);
- assert.doesNotThrow(()=>new Function(client));
+test("Horde conclusively failed task is persisted terminally",()=>{
+ const s=w.slice(w.indexOf("async function hordeStatus("),w.indexOf("const KREA="));
+ assert.ok(s.includes('status.is_possible===false'));
+ assert.ok(s.includes("UPDATE image_jobs SET status='failed'"));
+ assert.ok(s.includes("免费来源未返回可预览的图片"));
 });
