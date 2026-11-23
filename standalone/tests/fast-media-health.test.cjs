@@ -10,8 +10,9 @@ test("New image jobs start at fast source, never at a 140-second Krea queue",()=
  assert.ok(submit.includes('INSERT INTO image_jobs'));
  const status=span("async function imageV4Status(","async function imageJobStatus(");
  assert.ok(status.includes('ref.v===9?IM_IMAGE_STAGES_QUICK'));
- assert.ok(status.includes('ref.v===9?75000'));
- assert.ok(status.includes('ref.phase!=="new"'));
+ assert.ok(status.includes('ref.v===9?215000'));
+ assert.ok(status.includes('now-(ref.stageAt||now)>=50000'));
+ assert.ok(status.includes('error?.uncertain&&ref.phase==="new"'));
  assert.ok(worker.includes('if([4,5,6,9].includes(ref.v)'));
 });
 test("Z-Image uses exact official six input arguments and a real Gradio event",async()=>{
@@ -29,7 +30,7 @@ test("Z-Image uses exact official six input arguments and a real Gradio event",a
  assert.deepEqual(calls[0].body.data,["cat under a tree",1024,768,9,7,false]);
 });
 test("Confirmed Qwen generation failure transitions the SAME job to one Horde fallback",async()=>{
- const source=span("async function qwenEditStatus(","async function submitHordeGeneration("),updates=[];
+ const source=span("async function qwenFailoverToHorde(","async function submitHordeGeneration("),updates=[];
  let submissions=0;
  const run=new Function("hordeUuid","dbRun","response","queryGradioImageEvent","submitHordeGeneration","QWEN_EDIT_OFFICIAL","saveKreaImage",source+"return qwenEditStatus;")(
   v=>/^[0-9a-f-]{36}$/.test(v),async(db,sql,...args)=>{updates.push({sql,args});return {meta:{changes:1}}},
@@ -42,7 +43,10 @@ test("Confirmed Qwen generation failure transitions the SAME job to one Horde fa
  assert.ok(updates.some(x=>x.sql.includes("status='recovering'")));
  const persisted=updates.find(x=>x.sql.includes("status='pending',checked_at=0"));
  assert.ok(persisted);
- assert.deepEqual(JSON.parse(persisted.args[0]),{v:7,p:"horde",id:"12345678-1234-1234-1234-123456789012"});
+ const next=JSON.parse(persisted.args[0]);
+ assert.equal(next.v,7);assert.equal(next.p,"horde");
+ assert.equal(next.id,"12345678-1234-1234-1234-123456789012");
+ assert.ok(Number.isFinite(next.startedAt));
 });
 test("Video terminal SSE quota failure is visible, sanitized and releases task",async()=>{
  const source=span("function freeVideoFailure(","async function fvSave(");
