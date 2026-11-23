@@ -13,7 +13,8 @@ test("Image, video, attachment-only, and fenced-code-only messages are excluded"
  const text=js.slice(begin,end);
  assert.match(text,/messageKind==="image"\|\|row\.dataset\.messageKind==="video"/);
  assert.match(text,/img\.chat-generated-image,video\.chat-generated-video/);
- assert.match(text,/\\[文件：/);
+ assert.ok(text.includes('文件：'));
+
  assert.match(text,/source/);
 });
 test("Translations toggle in place, are cached per message, and don't edit message bodies",()=>{
