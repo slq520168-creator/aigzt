@@ -56,7 +56,9 @@ const ICONS={
  'volume-2':'<path d="M11 5 6 9H3v6h3l5 4V5ZM15 9a5 5 0 0 1 0 6m3-9a9 9 0 0 1 0 12"/>',
  share:'<path d="M12 16V3m-5 5 5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
  download:'<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>',
- 'file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>'
+ 'file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
+ info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+ 'log-out':'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'
 };
 /* Local two-tone professional vector icons, rendered consistently on all pages. */
 const ICON_GRADIENTS={blue:["#4e78e6","#32b2c8"],teal:["#2498bd","#30c1a1"],violet:["#7662dc","#b374d9"],rose:["#b86dd8","#e47d9f"],amber:["#eaa143","#ee775c"],slate:["#6481bf","#619fc9"]};
@@ -66,7 +68,7 @@ const ICON_TONES={
  "circle-user":"violet",settings:"slate",folder:"amber","chevron-down":"slate",ellipsis:"slate",
  palette:"rose",camera:"blue",image:"rose",blocks:"violet","arrow-up":"teal",mic:"teal",
  "brain-circuit":"violet",video:"rose","code-2":"blue","sliders-horizontal":"violet",pin:"amber",archive:"slate",trash:"rose",
- bookmark:"violet","refresh-cw":"blue","thumbs-up":"teal","thumbs-down":"rose","volume-2":"blue",share:"teal",download:"blue","file-text":"slate"
+ bookmark:"violet","refresh-cw":"blue","thumbs-up":"teal","thumbs-down":"rose","volume-2":"blue",share:"teal",download:"blue","file-text":"slate",info:"slate","log-out":"rose"
 };
 let iconGradientSerial=0;
 function renderIcons(scope=document){
@@ -576,7 +578,16 @@ async function persistPrefs(){
 async function openSettings(){
  if(!S.user){show("authDialog");return}
  show("settingsDialog");closeMenu();$("settingsEmail").textContent=S.user.email;
- updateTokenSettingsSummary();void loadModelInstruction();
+ for(const item of $("settingsDialog").querySelectorAll(".settings-entry,.settings-about"))item.open=false;
+ $("settingsDialog").querySelector(".settings-scroll").scrollTop=0;
+ $("savedMessagesList").hidden=true;
+ $("settingsExportChat").disabled=!S.chatId;
+ const quota=S.quota;
+ $("settingsQuotaSummary").textContent=quota&&Number.isFinite(quota.remaining)&&Number.isFinite(quota.limit)?
+  "免费请求保护配额：剩余 "+quota.remaining+" / "+quota.limit+(Number.isFinite(quota.siteRemaining)?" · 全站剩余 "+quota.siteRemaining:""):
+  "外部免费模型的额度由相应服务商提供，当前没有可确认的配额统计。";
+ $("settingsDictationLang").value=settingsDictationLanguage();
+ updateTokenSettingsSummary();
  try{
   const d=await api("/api/memory");S.notes=d.notes||[];S.memoryEnabled=d.enabled;applyTheme(d.theme);
   $("settingMemory").checked=S.memoryEnabled;renderNotes();
@@ -869,13 +880,17 @@ function stopDictation(abort=false){
  rec._stopping=true;
  try{rec.stop()}catch{finishDictation(rec)}
 }
+function settingsDictationLanguage(){
+ try{const value=localStorage.getItem("aigzt:dictation-language")||"auto";return ["auto","zh-CN","zh-TW","en-US","ja-JP"].includes(value)?value:"auto"}catch{return "auto"}
+}
 function startDictation(){
  if(dictationRecognition){stopDictation();return}
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
  if(!Speech){flashError("当前浏览器不支持网页语音识别，可使用系统键盘的语音听写");return}
  const input=$("prompt"),button=$("voiceInput"),rec=new Speech();
  dictationRecognition=rec;
- rec.lang=/^zh/i.test(navigator.language)?navigator.language:"zh-CN";
+ const chosenLanguage=settingsDictationLanguage();
+ rec.lang=chosenLanguage==="auto"?( /^zh/i.test(navigator.language)?navigator.language:"zh-CN" ):chosenLanguage;
  rec.interimResults=false;
  rec.continuous=false;
  rec.onresult=event=>{
@@ -2938,6 +2953,23 @@ function wire(){
  $("accountBtn").addEventListener("click",()=>{if(!S.user)show("authDialog");else void openSettings()});
  $("accountAvatar").addEventListener("click",()=>{if(!S.user)show("authDialog")});
  $("settingsBtn").addEventListener("click",()=>void openSettings());
+ $("settingsCustom").addEventListener("toggle",event=>{if(event.currentTarget.open)void loadModelInstruction()});
+ $("settingsDictationLang").addEventListener("change",event=>{
+  const lang=event.target.value;
+  if(!["auto","zh-CN","zh-TW","en-US","ja-JP"].includes(lang))return;
+  try{localStorage.setItem("aigzt:dictation-language",lang)}catch{flashError("语音语言设置未保存，请检查浏览器权限")}
+ });
+ $("settingsOpenConnections").addEventListener("click",()=>{hide("settingsDialog");openKeyPanel()});
+ $("settingsOpenFiles").addEventListener("click",()=>{hide("settingsDialog");void openFiles()});
+ $("settingsOpenCoding").addEventListener("click",()=>{
+  if($("prompt").value.trim()&&!confirm("进入编程助手会替换当前未发送的草稿，继续吗？"))return;
+  hide("settingsDialog");startCoding();
+ });
+ $("settingsExportChat").addEventListener("click",()=>{
+  if(!S.chatId)return;
+  const btn=$("settingsExportChat");btn.disabled=true;
+  void exportChat(S.chatId).catch(e=>flashError(humanError(e))).finally(()=>{btn.disabled=false});
+ });
  /* Photo input is physically over the labeled control; native click opens the iOS picker. */
  for(const id of ["avatarInput","avatarQuickInput"]){$(id).addEventListener("change",e=>{
   const file=e.target.files?.[0];e.target.value="";
