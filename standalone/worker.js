@@ -295,6 +295,17 @@ async function exchangeOpenRouter(body){
  if(typeof payload?.key!=="string"||!payload.key)throw Error("OpenRouter 没有返回授权密钥");
  return {ok:true,key:payload.key,provider:"openrouter"};
 }
+function verifiedTokenUsage(payload){
+ const source=payload?.usage||payload?.x_groq?.usage||payload?.usageMetadata;
+ if(!source||typeof source!=="object")return null;
+ const number=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+ const input=number(source.prompt_tokens??source.input_tokens??source.promptTokenCount);
+ const output=number(source.completion_tokens??source.output_tokens??source.candidatesTokenCount);
+ const total=number(source.total_tokens??source.totalTokenCount);
+ const reasoning=number(source.completion_tokens_details?.reasoning_tokens??source.output_tokens_details?.reasoning_tokens??source.thoughtsTokenCount);
+ if(input===null&&output===null&&total===null)return null;
+ return {input,output,total:total??(input!==null&&output!==null?input+output:null),reasoning};
+}
 async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
@@ -331,7 +342,7 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
  const streaming=typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
- if(streaming){body.stream=true;headers.accept="text/event-stream"}
+ if(streaming){body.stream=true;headers.accept="text/event-stream";if(provider==="groq")body.stream_options={include_usage:true}}
  let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.min(60000,Math.max(streaming?45000:30000,timeoutMs)))})}
  catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
  if(res.status>=300&&res.status<400)throw Error("上游跳转已拦截");
@@ -339,7 +350,7 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
  if(streaming){
   if(!res.body)throw Error("上游没有返回流式数据");
   const reader=res.body.getReader(),decoder=new TextDecoder();
-  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null;
+  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null,usage=null;
   try{
   while(!complete){
    const {done,value}=await reader.read();
@@ -355,6 +366,7 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
     let event;try{event=JSON.parse(data)}catch{continue}
     if(event.error)throw Error("模型流式回复中断");
     if(typeof event.model==="string")upstreamModel=event.model;
+    const measured=verifiedTokenUsage(event);if(measured)usage=measured;
     if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
     const delta=event.choices?.[0]?.delta?.content;
     const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
@@ -366,7 +378,7 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
   }
   }catch(error){if(!content.trim())throw error;}
   if(!content.trim())throw Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字");
-  return {content:content.trim(),actualModel:upstreamModel,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
+  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
  }
  const out=await res.json();
  const text=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("\n"):
@@ -375,7 +387,7 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
  out.choices?.[0]?.message?.content;
  if(typeof text!=="string"||!text.trim())throw Error("服务商没有返回有效文字");
  const reason=out?.choices?.[0]?.finish_reason||out?.stop_reason||out?.candidates?.[0]?.finishReason||"";
- return {content:truncate(text,40000),actualModel:out.model||model,incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
+ return {content:truncate(text,40000),actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
 }
 // Storage uploads retain bounded protection; ordinary free text and work do not use daily quotas.
 async function uploadQuota(env,userId){
@@ -491,7 +503,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // When the upstream confirms almost no remaining budget, protect it until a later request.
   if(source.id==="vireonix"&&Number.isFinite(percent)&&percent<=1)
    await freeRouteFailure(env,source.id,429,{failures:0},null);
-  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),source:source.id,incomplete:out?.choices?.[0]?.finish_reason==="length"||answer.length>40000};
+  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:out?.choices?.[0]?.finish_reason==="length"||answer.length>40000};
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
  throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
@@ -566,14 +578,16 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。不要虚构执行状态。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。"});
  const levelInstruction={short:"简短回复：先回答核心问题，只保留必要的要点，不冗长。",standard:"标准回复：自然对话，说明关键原因、步骤和必要细节。",long:"详细回复：全面回答，包含充分的解释、可执行步骤和必要边界条件，不随意省略关键内容。"}[replyLevel];
  messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
+ const custom=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
+ const selectedMessages=custom?.instruction?[{role:"system",body:"此用户为当前所选模型保存的自定义回复要求：\n"+truncate(custom.instruction,1600)},...messages]:messages;
  let result,effectiveProvider=provider;
  try{
   if(provider==="free"){
-   result=await freeText(env,messages,mode,model,40000,false,replyLevel);
+   result=await freeText(env,selectedMessages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=replyLevel==="short"?600:replyLevel==="long"?2600:1200;
-    try{result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,outputLimit,onDelta)}
+    try{result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta)}
     catch(error){
      if(![404,429].includes(error?.upstreamStatus))throw error;
      // An explicit HTTP rejection is safe to reroute; never duplicate an uncertain paid request.
@@ -587,10 +601,10 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   if(!body.chatId)await dbRun(env.DB,"DELETE FROM chats WHERE id=? AND user_id=?",chatId,user.id).catch(()=>{});
   throw e;
  }
- const stamp=Date.now();
- await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",crypto.randomUUID(),chatId,user.id,"assistant",result.content,result.actualModel,stamp);
+ const stamp=Date.now(),assistantMessageId=crypto.randomUUID();
+ await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",result.content,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",effectiveProvider,effectiveProvider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,reply:result.content,model:effectiveProvider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider:effectiveProvider,incomplete:Boolean(result.incomplete)};
+ return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:result.content,model:effectiveProvider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider:effectiveProvider,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -601,7 +615,7 @@ function chatStream(req,env,user){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
-    send({type:"done",chatId:result.chatId,reply:result.reply,model:result.model,usedModel:result.usedModel,provider:result.provider,incomplete:result.incomplete});
+    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,model:result.model,usedModel:result.usedModel,provider:result.provider,usage:result.usage||null,incomplete:result.incomplete});
    }catch(e){send({type:"error",error:e?.message||"回复未完成"})}
    finally{controller.close()}
   }
@@ -678,16 +692,16 @@ async function mediaChat(req,env,user){
   const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
   if(!exists&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Object.assign(new Error("项目不存在"),{status:404});
   const result=await submitKrea(mediaReq,env,user);
-  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),messageId=crypto.randomUUID();
+  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),messageId=crypto.randomUUID(),userMessageId=crypto.randomUUID();
   const reply="[[aigzt:image-job:"+result.jobId+"]]";
   const writes=[];
   if(!exists)writes.push(env.DB.prepare("INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)").bind(chatId,user.id,prompt.slice(0,36),"free","free:auto",now,now,projectId));
-  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(crypto.randomUUID(),chatId,user.id,"user",prompt,"免费作图",now));
+  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(userMessageId,chatId,user.id,"user",prompt,"免费作图",now));
   writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(messageId,chatId,user.id,"assistant",reply,"免费作图",now+1));
   writes.push(env.DB.prepare("UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=?").bind(chatId,messageId,result.jobId,user.id));
   writes.push(env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id));
   await env.DB.batch(writes);
-  return {ok:true,chatId,reply,model:"免费作图",pending:true,jobId:result.jobId};
+  return {ok:true,chatId,userMessageId,assistantMessageId:messageId,reply,model:"免费作图",pending:true,jobId:result.jobId};
  }
  const result=await createVideo(mediaReq,env,user);
  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply="视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
@@ -701,7 +715,7 @@ async function mediaChat(req,env,user){
   env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id)
  ]);
  if(result.pending)await dbRun(env.DB,"UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=?",chatId,assistantMessageId,result.jobId,user.id);
- return {ok:true,chatId,reply,model:result.model||mode,...(result.pending?{pending:true,jobId:result.jobId}:{}),...(result.requestId?{requestId:result.requestId}:{})};
+ return {ok:true,chatId,userMessageId,assistantMessageId,reply,model:result.model||mode,...(result.pending?{pending:true,jobId:result.jobId}:{}),...(result.requestId?{requestId:result.requestId}:{})};
 }
 
 
@@ -1748,6 +1762,44 @@ async function main(req,env){
   const listing=await env.MEDIA.list({prefix:user.id+"/",limit:80,include:["customMetadata","httpMetadata"]});
   return response({ok:true,files:listing.objects.filter(x=>x.key!==user.id+"/profile/avatar").map(x=>({id:x.key.slice(user.id.length+1),name:x.customMetadata?.name||"附件",type:x.httpMetadata?.contentType||"",size:x.size,url:"/api/files/"+x.key.slice(user.id.length+1)}))});
  }
+ if(path==="/api/model-directive"&&req.method==="GET"){
+  const provider=String(url.searchParams.get("provider")||""),model=String(url.searchParams.get("model")||"");
+  if(!/^[a-z0-9_-]{2,35}$/.test(provider)||model.length>180||!model)return fail("模型参数无效",400);
+  if(provider!=="free"&&!HOSTS[provider])return fail("服务商无效",400);
+  const saved=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
+  return response({ok:true,provider,model,instruction:saved?.instruction||""});
+ }
+ if(path==="/api/model-directive"&&req.method==="POST"){
+  const body=await parseJSON(req),provider=String(body?.provider||""),model=String(body?.model||""),instruction=String(body?.instruction||"").trim();
+  if(!/^[a-z0-9_-]{2,35}$/.test(provider)||model.length>180||!model||instruction.length>1600)return fail("自定义指令长度或模型参数无效",400);
+  if(provider==="free"){if(!FREE_MODELS.some(m=>m.id===model))return fail("免费模型无效",400)}
+  else{if(!HOSTS[provider])return fail("服务商无效",400);requireModelId(model)}
+  if(instruction)await dbRun(env.DB,"INSERT INTO model_directives(user_id,provider,model_id,instruction,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(user_id,provider,model_id) DO UPDATE SET instruction=excluded.instruction,updated_at=excluded.updated_at",user.id,provider,model,instruction,Date.now());
+  else await dbRun(env.DB,"DELETE FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
+  return response({ok:true,provider,model,instruction});
+ }
+ if(path==="/api/saved-messages"&&req.method==="GET"){
+  // Only saved references; no generated image data or public sharing endpoints.
+  const r=await env.DB.prepare("SELECT a.message_id,a.chat_id,a.updated_at,m.role,SUBSTR(m.body,1,240) AS preview,c.title FROM message_actions a JOIN messages m ON m.id=a.message_id AND m.user_id=a.user_id JOIN chats c ON c.id=a.chat_id AND c.user_id=a.user_id WHERE a.user_id=? AND a.bookmarked=1 ORDER BY a.updated_at DESC LIMIT 100").bind(user.id).all();
+  return response({ok:true,items:r.results||[]});
+ }
+ const messageAction=path.match(/^\/api\/messages\/([0-9a-f-]{36})\/action$/i);
+ if(messageAction&&req.method==="POST"){
+  const id=messageAction[1],body=await parseJSON(req);
+  const m=await dbGet(env.DB,"SELECT id,chat_id,role FROM messages WHERE id=? AND user_id=?",id,user.id);
+  if(!m)return fail("消息不存在或没有权限",404);
+  const now=Date.now();
+  if(body?.type==="bookmark"&&typeof body.value==="boolean"){
+   const saved=body.value?1:0;
+   await dbRun(env.DB,"INSERT INTO message_actions(user_id,message_id,chat_id,bookmarked,feedback,updated_at) VALUES(?,?,?,?,0,?) ON CONFLICT(user_id,message_id) DO UPDATE SET bookmarked=excluded.bookmarked,updated_at=excluded.updated_at",user.id,id,m.chat_id,saved,now);
+   return response({ok:true,messageId:id,saved:!!saved});
+  }
+  if(body?.type==="feedback"&&m.role==="assistant"&&[1,-1,0].includes(body.value)){
+   await dbRun(env.DB,"INSERT INTO message_actions(user_id,message_id,chat_id,bookmarked,feedback,updated_at) VALUES(?,?,?,0,?,?) ON CONFLICT(user_id,message_id) DO UPDATE SET feedback=excluded.feedback,updated_at=excluded.updated_at",user.id,id,m.chat_id,body.value,now);
+   return response({ok:true,messageId:id,feedback:body.value});
+  }
+  return fail("消息操作参数无效",400);
+ }
  if(path==="/api/chats/search"&&req.method==="GET"){
   const query=truncate(url.searchParams.get("q"),60).trim();
   if(!query)return response({ok:true,chats:[]});
@@ -1769,11 +1821,12 @@ async function main(req,env){
   const c=await dbGet(env.DB,"SELECT id,title,pinned_at,archived_at,project_id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
   if(!c)return fail("聊天不存在",404);
   if(!cmd&&req.method==="GET"){
-   const r=await env.DB.prepare("SELECT id,role,body,model,created_at FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at ASC LIMIT 150").bind(chatId,user.id).all();
+   const r=await env.DB.prepare("SELECT m.id,m.role,m.body,m.model,m.created_at,m.usage_json,COALESCE(a.bookmarked,0) AS saved,COALESCE(a.feedback,0) AS feedback FROM messages m LEFT JOIN message_actions a ON a.message_id=m.id AND a.user_id=m.user_id WHERE m.chat_id=? AND m.user_id=? ORDER BY m.created_at ASC LIMIT 150").bind(chatId,user.id).all();
    return response({ok:true,chat:c,messages:r.results||[]});
   }
   if(req.method==="POST"&&cmd==="delete"){
    await env.DB.batch([
+    env.DB.prepare("DELETE FROM message_actions WHERE chat_id=? AND user_id=?").bind(chatId,user.id),
     env.DB.prepare("DELETE FROM messages WHERE chat_id=? AND user_id=?").bind(chatId,user.id),
     env.DB.prepare("DELETE FROM chats WHERE id=? AND user_id=?").bind(chatId,user.id)
    ]);

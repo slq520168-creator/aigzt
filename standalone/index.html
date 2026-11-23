@@ -216,7 +216,23 @@
    <form id="memoryForm" class="memory-form"><input id="memoryInput" maxlength="450" placeholder="保存需要长期记住的内容" required><button class="primary" type="submit">保存</button></form>
    <div id="memoryList" class="result-list"></div>
   </div>
-  <div class="settings-group"><h3>聊天管理</h3><button class="outline full" id="archivedChats">查看归档聊天</button></div>
+  <div class="settings-group"><h3>模型受控指令</h3>
+   <p class="small-note">对当前选中的聊天模型单独生效，不影响其他模型。不得覆盖服务商权限和安全规则。</p>
+   <strong class="instruction-model-name" id="instructionModelName">免费自动</strong>
+   <label class="model-instruction-label" for="modelInstruction">自定义回复要求</label>
+   <textarea id="modelInstruction" rows="5" maxlength="1600" placeholder="例如：优先使用简体中文；保留完整表格和代码；先给结论再说明操作步骤。"></textarea>
+   <button type="button" class="outline full" id="modelInstructionSave">保存当前模型指令</button>
+   <p class="small-note" id="modelInstructionStatus" role="status"></p>
+  </div>
+  <div class="settings-group"><h3>Token 消耗</h3>
+   <p id="settingsTokenSummary" class="small-note">仅统计服务商实际返回用量的回复。</p>
+   <p class="small-note">此处只统计当前已加载聊天；各条回复下方「更多」可查看单条用量。不估算价格，不额外查询模型余额。</p>
+  </div>
+  <div class="settings-group"><h3>聊天管理</h3>
+   <button class="outline full" id="archivedChats">查看归档聊天</button>
+   <button type="button" class="outline full" id="savedMessagesBtn">查看已保存的消息</button>
+   <div id="savedMessagesList" class="saved-messages-list" hidden></div>
+  </div>
  </dialog>
  <dialog id="authDialog" class="modal" aria-labelledby="authTitle">
   <div class="modal-head"><h2 id="authTitle">登录</h2><button type="button" class="close-modal" data-close="authDialog" aria-label="关闭"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
