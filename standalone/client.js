@@ -1983,22 +1983,30 @@ const VERIFIED_FREE_MEDIA_TOOLS=[
  {provider:"Upsampler",name:"Upsampler · Qwen 图像编辑",category:"图生图",categories:["图生图","修图"],url:"https://upsampler.com/free-image-editing-model-no-signup",features:["Qwen Image Edit","参考图重绘"],access:"community",login:"按来源要求",note:"使用公共 GPU 可能排队或耗尽免费额度",verified:true},
  {provider:"Clipaist",name:"Clipaist · 免费图生图",category:"图生图",categories:["图生图","修图"],url:"https://www.clipaist.com/image-to-image/",features:["上传照片","提示词改图"],access:"daily",login:"无需登录",note:"公开页面标示每网络每日约15次，以实际为准",verified:true},
  {provider:"Free.ai",name:"Free.ai · AI 编辑图片",category:"图生图",categories:["图生图","修图"],url:"https://free.ai/image/edit/",features:["图片编辑","图生图"],access:"free",login:"网站规则",note:"免费池可能排队，部分模型需另购额度",verified:true},
- {provider:"AI Horde",name:"AI Horde · 社区免费绘图",category:"作图",categories:["作图","图生图"],url:"https://horde.tazlin.net/",features:["文生图","参考图 img2img"],access:"community",login:"匿名可试",note:"志愿者算力，匿名优先级低并可能限流",verified:true},
+ {provider:"ArtBot / AI Horde",name:"ArtBot · 社区免费绘图",category:"作图",categories:["作图","图生图"],url:"https://artbot.site/create",features:["文生图","参考图 img2img"],access:"community",login:"匿名可试",note:"志愿者算力，匿名优先级低并可能限流",verified:true},
  {provider:"Wan2.Video",name:"Wan2.Video · 免费视频",category:"视频",categories:["视频"],url:"https://wan2.video/free-ai-video-generator",features:["文生视频","图生视频"],access:"community",login:"无需登录",note:"公共 Hugging Face Space 可能排队或限额",verified:true},
  {provider:"Raphael",name:"Raphael · 免费 AI 视频",category:"视频",categories:["视频"],url:"https://raphael.app/ai-video-generator",features:["文生视频","图生视频"],access:"daily",login:"无需登录可体验",note:"免费生成受每日额度限制",verified:true},
  {provider:"Magic Hour",name:"Magic Hour · 图生视频",category:"视频",categories:["视频"],url:"https://magichour.ai/products/image-to-video",features:["图片动画","短视频"],access:"daily",login:"无需登录可体验",note:"官网提供有限免费生成次数",verified:true},
- {provider:"Free.ai",name:"Free.ai · 图生视频",category:"视频",categories:["视频"],url:"https://free.ai/video/image-to-video/",features:["上传图片","短视频"],access:"community",login:"按官网要求",note:"免费模型及排队情况可能变化",verified:true}
+ {provider:"Free.ai",name:"Free.ai · 图生视频",category:"视频",categories:["视频"],url:"https://free.ai/video/image-to-video/",features:["上传图片","短视频"],access:"community",login:"按官网要求",note:"免费模型及排队情况可能变化",verified:true},
+ {provider:"Magic Hour",name:"Magic Hour · 图生视频",category:"视频",categories:["视频"],url:"https://magichour.ai/products/image-to-video",features:["图生视频","短视频"],access:"daily",login:"按官网要求",note:"官方免费体验受每日生成次数和模型限制",verified:true}
 ];
 function launchInternalFreeTool(action){
  if(S.busy)return;
  setFreeToolsMode(false);
- if(action==="chat"){setComposerMode("text");setFreeDefault(false)}
- else if(action==="text-image"||action==="image-edit"){setComposerMode("image")}
- else {
+ if(action==="chat"){
+  setComposerMode("text");
+  setFreeDefault(true);
+  rememberChatModelSelection();
+ }else if(action==="text-image"||action==="image-edit"){
+  setComposerMode("image");
+  if(action==="image-edit")$("prompt").placeholder="上传一张参考图片，输入想怎样修改…";
+ }else{
   const provider=action==="text-video"?"freetext":action==="image-video"?"freewan":action==="frame-video"?"freeloop":null;
   if(!provider)return;
-  S.videoProvider=provider;S.videoModel=VIDEO_OPTIONS[provider][0];
+  // Use the canonical video selector so provider, label and saved choice stay in sync.
+  selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
   setComposerMode("video");
+  if(action==="image-video"||action==="frame-video")$("prompt").placeholder="先添加参考图片，再描述想生成的视频…";
  }
  const prompt=$("prompt");prompt.focus({preventScroll:true});
  if(action==="image-edit"||action==="image-video"||action==="frame-video"){
@@ -2029,7 +2037,7 @@ function renderFreeTools(){
   const categories=Array.isArray(item.categories)?item.categories:[item.category];
   if(category!=="全部"&&!categories.includes(category))return false;
   if(search&&![item.name,item.provider,item.category,...categories,...(item.features||[])].some(x=>String(x||"").toLowerCase().includes(search)))return false;
-  const key=item.action?"internal:"+item.action:item.url;
+  const key=item.action?"internal:"+item.action:item.url+"|"+item.name;
   if(!key||seen.has(key))return false;
   seen.add(key);return true;
  });
