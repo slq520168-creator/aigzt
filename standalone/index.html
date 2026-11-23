@@ -274,6 +274,19 @@
       <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></span><span class="settings-row-text"><strong>常规与外观</strong></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
       <div class="settings-entry-body"><label class="setting-switch">七彩呼吸背景<input type="checkbox" id="settingRainbow"></label><p class="settings-hint">仅调整 AIGZT 的显示效果，不改变聊天或作图数据。</p></div>
      </details>
+     <details class="settings-entry" id="settingsTextSize">
+      <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="sliders-horizontal" aria-hidden="true"></span></span><span class="settings-row-text"><strong>文字大小</strong><small>超小 · 正常 · 超大</small></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
+      <div class="settings-entry-body">
+       <div class="chat-text-size-options" role="radiogroup" aria-label="聊天文字大小">
+        <label><input type="radio" name="chatTextSize" value="small"><span>超小</span></label>
+        <label><input type="radio" name="chatTextSize" value="normal" checked><span>正常</span></label>
+        <label><input type="radio" name="chatTextSize" value="large"><span>超大</span></label>
+       </div>
+       <div id="chatTextSizePreview" class="chat-text-size-preview" data-size="normal"><strong>文字预览</strong><p>这是一段 AI 回复示例，保存后会应用到聊天消息。</p></div>
+       <button type="button" class="outline full" id="chatTextSizeSave">保存并应用</button>
+       <p class="settings-hint" id="chatTextSizeStatus" role="status" aria-live="polite"></p>
+      </div>
+     </details>
      <details class="settings-entry" id="settingsUsage">
       <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span></span><span class="settings-row-text"><strong>用量与限额</strong></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
       <div class="settings-entry-body"><p id="settingsQuotaSummary" class="small-note"></p><p id="settingsTokenSummary" class="small-note">仅统计服务商实际返回的用量。</p><p class="settings-hint">Token 只统计当前已加载对话的真实报告；不估算费用，也不额外查询上游余额。</p></div>

@@ -568,6 +568,28 @@ async function openFiles(){
   for(const f of d.files||[]){const a=document.createElement("a");a.className="file-link";a.href=f.url;a.target="_blank";a.rel="noopener";a.append(iconSlot("paperclip"),node("span","",f.name));box.append(a);renderIcons(a)}
  }catch(e){box.replaceChildren(node("div","hint",humanError(e)))}
 }
+const CHAT_TEXT_SIZE_KEY="aigzt:chat-text-size";
+const CHAT_TEXT_SIZES=Object.freeze({small:"12px",normal:"14px",large:"18px"});
+function savedChatTextSize(){
+ try{const value=localStorage.getItem(CHAT_TEXT_SIZE_KEY);return Object.hasOwn(CHAT_TEXT_SIZES,value)?value:"normal"}
+ catch{return "normal"}
+}
+function applyChatTextSize(value){
+ const size=Object.hasOwn(CHAT_TEXT_SIZES,value)?value:"normal";
+ document.documentElement.style.setProperty("--aigzt-chat-text-size",CHAT_TEXT_SIZES[size]);
+ document.documentElement.dataset.chatTextSize=size;
+}
+function previewChatTextSize(value){
+ const preview=$("chatTextSizePreview");
+ if(preview)preview.dataset.size=Object.hasOwn(CHAT_TEXT_SIZES,value)?value:"normal";
+}
+function syncChatTextSizeSettings(){
+ const size=savedChatTextSize();
+ const radio=$('settingsTextSize')?.querySelector('input[value="'+size+'"]');
+ if(radio)radio.checked=true;
+ previewChatTextSize(size);
+ $("chatTextSizeStatus").textContent="";
+}
 function applyTheme(mode){
  S.currentTheme=mode;const enabled=mode==="rainbow";
  document.body.classList.toggle("rainbow-enabled",enabled);
@@ -581,6 +603,7 @@ async function persistPrefs(){
 async function openSettings(){
  if(!S.user){show("authDialog");return}
  show("settingsDialog");closeMenu();$("settingsEmail").textContent=S.user.email;
+ syncChatTextSizeSettings();
  for(const item of $("settingsDialog").querySelectorAll(".settings-entry,.settings-about"))item.open=false;
  $("settingsDialog").querySelector(".settings-scroll").scrollTop=0;
  $("savedMessagesList").hidden=true;
@@ -1372,13 +1395,21 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   bubble.replaceChildren();
-  if(lines.length>1){
-   appendChatLinks(bubble,lines.shift());
-   for(const line of lines){
-    const f=line.match(/^\[文件：([^\]]+)\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
-    if(!f)continue;
-    const a=node("a","chat-file",f[1]);a.href=f[2];a.target="_blank";a.rel="noopener";bubble.append(a);
-    if(/\.(jpg|jpeg|png|webp|gif)$/i.test(f[1])){const img=node("img","chat-upload-image");img.src=f[2];img.alt=f[1];img.loading="lazy";bubble.append(img)}
+  const marker=/^\[文件：([^\]]+)\]\((\/api\/files\/[0-9a-f-]{36})\)$/i;
+  const parts=lines.map(line=>({line,file:line.match(marker)}));
+  if(parts.some(part=>part.file)){
+   for(const part of parts){
+    if(!part.file){if(part.line.trim())appendChatLinks(bubble,part.line);continue;}
+    const [,name,url]=part.file;
+    const isImage=/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(name)||name==="参考图";
+    if(isImage){
+     const frame=node("div","chat-user-image-attachment");
+     const img=node("img","chat-upload-image");img.src=url;img.alt=name;img.loading="lazy";
+     img.addEventListener("error",()=>{frame.replaceChildren();const link=node("a","chat-file",name);link.href=url;link.target="_blank";link.rel="noopener";frame.append(link)},{once:true});
+     frame.append(img,node("span","chat-file-caption",name));bubble.append(frame);
+    }else{
+     const link=node("a","chat-file",name);link.href=url;link.target="_blank";link.rel="noopener";bubble.append(link);
+    }
    }
   }else appendChatLinks(bubble,content);
   row.append(bubble);
@@ -1523,6 +1554,11 @@ function renderAttachments(){
   const badge=node("span","attachment-item"),title=node("span","",item.name),del=node("button");del.append(iconSlot("x"));del.setAttribute("aria-label","移除附件");renderIcons(del);
   del.type="button";del.title="取消附件";
   del.addEventListener("click",()=>{S.attachments=S.attachments.filter(x=>x.id!==item.id);renderAttachments()});
+  if(item.type?.startsWith("image/")&&/^\/api\/files\/[0-9a-f-]{36}$/i.test(item.url||"")){
+   const thumb=node("img","attachment-thumb");thumb.src=item.url;thumb.alt="已上传："+item.name;thumb.loading="lazy";
+   thumb.addEventListener("error",()=>thumb.remove(),{once:true});
+   badge.append(thumb);
+  }
   badge.append(title,del);el.append(badge);
  }
 }
@@ -3094,6 +3130,17 @@ function wire(){
  $("accountAvatar").addEventListener("click",()=>{if(!S.user)show("authDialog")});
  $("settingsBtn").addEventListener("click",()=>void openSettings());
  $("settingsCustom").addEventListener("toggle",event=>{if(event.currentTarget.open)void loadModelInstruction()});
+ for(const radio of els('input[name="chatTextSize"]')){
+  radio.addEventListener("change",()=>{if(radio.checked){previewChatTextSize(radio.value);$("chatTextSizeStatus").textContent=""}});
+ }
+ $("chatTextSizeSave").addEventListener("click",()=>{
+  const selected=$('settingsTextSize').querySelector('input[name="chatTextSize"]:checked')?.value||"normal";
+  if(!Object.hasOwn(CHAT_TEXT_SIZES,selected))return;
+  try{localStorage.setItem(CHAT_TEXT_SIZE_KEY,selected)}
+  catch{$("chatTextSizeStatus").textContent="保存失败，请检查浏览器存储权限";return;}
+  applyChatTextSize(selected);
+  $("chatTextSizeStatus").textContent="已保存，聊天文字大小已应用";
+ });
  $("settingsDictationLang").addEventListener("change",event=>{
   const lang=event.target.value;
   if(!["auto","zh-CN","zh-TW","en-US","ja-JP"].includes(lang))return;
@@ -3208,7 +3255,7 @@ function wire(){
 function hideAttachMenu(){$("attachMenu").hidden=true}
 
 document.addEventListener("DOMContentLoaded",async()=>{
- wire();renderIcons();let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
+ wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
  applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
  restoreWorkspaceRoute();updateModelTitle();
 });
