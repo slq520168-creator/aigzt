@@ -1147,50 +1147,82 @@ function messageTranslationSource(row,content){
  let source=String(content||"").trim();
  if(!source||/^\[\[aigzt:(?:image|video)/i.test(source))return "";
  source=source.replace(/(?:^|\n)\[文件：[^\]]+\]\(\/api\/files\/[0-9a-f-]{36}\)/gi,"").trim();
- if(!source||/^```[\s\S]*```$/.test(source))return "";
+ if(!source)return "";
  return source;
+}
+
+/* User text has no whole-message length limit. Split only for provider context;
+ * preserve original whitespace and source order without censoring any words. */
+function splitMessageForTranslation(value){
+ const source=String(value||""),result=[];
+ let from=0;
+ while(from<source.length){
+  let to=Math.min(source.length,from+2000);
+  if(to<source.length){
+   const part=source.slice(from,to);
+   const breakAt=Math.max(part.lastIndexOf("\n\n"),part.lastIndexOf("\n"),part.lastIndexOf("。"),part.lastIndexOf("！"),part.lastIndexOf("？"),part.lastIndexOf(". "),part.lastIndexOf("? "),part.lastIndexOf("! "));
+   if(breakAt>1200)to=from+breakAt+1;
+   if(to<source.length&&to>from&&source.charCodeAt(to-1)>=0xD800&&source.charCodeAt(to-1)<=0xDBFF)to--;
+  }
+  if(to<=from)to=from+1;
+  result.push(source.slice(from,to));from=to;
+ }
+ return result;
+}
+async function continueMessageTranslation(row,state,button){
+ if(state.pending)return;
+ state.pending=true;state.failed=false;
+ try{
+  for(let i=state.nextIndex;i<state.chunks.length;i++){
+   if(messageTranslations.get(row)!==state||!row.isConnected)return;
+   const part=state.chunks[i],leading=(part.match(/^\s*/)||[""])[0],trailing=(part.match(/\s*$/)||[""])[0];
+   const source=part.slice(leading.length,part.length-trailing.length);
+   state.panel.textContent=state.chunks.length>1?"正在翻译 "+(i+1)+"/"+state.chunks.length+"…":"正在翻译…";
+   if(!source){state.parts[i]=part;state.nextIndex=i+1;continue}
+   const result=await api("/api/message/translate",{text:source,target:state.target});
+   if(messageTranslations.get(row)!==state||!row.isConnected)return;
+   const translated=typeof result?.translation==="string"?result.translation:"";
+   if(!translated.trim())throw Error("翻译来源未返回完整译文");
+   state.parts[i]=leading+translated+trailing;
+   state.nextIndex=i+1;
+  }
+  if(messageTranslations.get(row)!==state||!row.isConnected)return;
+  state.panel.textContent=state.parts.join("");
+  state.failed=false;button.title="收起翻译";button.setAttribute("aria-label","收起翻译");
+ }catch(error){
+  if(messageTranslations.get(row)!==state||!row.isConnected)return;
+  state.failed=true;
+  state.panel.textContent="翻译中断（已完成 "+state.nextIndex+"/"+state.chunks.length+" 段），再次点击可接着翻译。";
+  button.title="继续翻译";button.setAttribute("aria-label","继续翻译");
+ }finally{state.pending=false}
 }
 async function toggleMessageTranslation(row,source,button){
  let state=messageTranslations.get(row);
  const currentSource=messageTranslationSource(row,source);
  if(!currentSource||!row.isConnected)return;
- if(state&&state.source!==currentSource){
-  state.panel.remove();messageTranslations.delete(row);state=null;
+ if(state&&state.source!==currentSource){state.panel.remove();messageTranslations.delete(row);state=null}
+ if(state?.failed){
+  state.panel.hidden=false;
+  button.classList.add("is-active");button.setAttribute("aria-pressed","true");
+  await continueMessageTranslation(row,state,button);
+  return;
  }
- if(state?.failed){state.panel.remove();messageTranslations.delete(row);state=null;}
  if(state){
   const open=state.panel.hidden;
   state.panel.hidden=!open;
   button.classList.toggle("is-active",open);
   button.setAttribute("aria-pressed",String(open));
-  button.title=open?"收起翻译":"翻译";
-  button.setAttribute("aria-label",button.title);
+  button.title=open?"收起翻译":"翻译";button.setAttribute("aria-label",button.title);
   return;
  }
  const panel=node("div","message-translation");
  panel.setAttribute("role","status");panel.setAttribute("aria-live","polite");
- panel.textContent="正在翻译…";
- row.append(panel);
- state={source:currentSource,panel,pending:true};
+ panel.textContent="正在翻译…";row.append(panel);
+ state={source:currentSource,panel,pending:false,failed:false,chunks:splitMessageForTranslation(currentSource),parts:[],nextIndex:0,target:"zh-CN"};
  messageTranslations.set(row,state);
- button.classList.add("is-active");
- button.setAttribute("aria-pressed","true");
+ button.classList.add("is-active");button.setAttribute("aria-pressed","true");
  button.title="收起翻译";button.setAttribute("aria-label","收起翻译");
- if(currentSource.length>8000){
-  state.pending=false;
-  panel.textContent="这条消息超过单次 8000 字符的翻译上限，请分段翻译。";
-  return;
- }
- try{
-  const result=await api("/api/message/translate",{text:currentSource,target:"zh-CN"});
-  if(messageTranslations.get(row)!==state||!row.isConnected)return;
-  state.pending=false;const translated=String(result.translation||"").trim();if(!translated)throw Error("翻译服务没有返回译文");state.failed=false;panel.textContent=translated;
- }catch(error){
-  if(messageTranslations.get(row)!==state||!row.isConnected)return;
-  state.pending=false;state.failed=true;
-  panel.textContent="翻译暂不可用，请再次点击翻译图标重试";
-  button.title="重试翻译";button.setAttribute("aria-label","重试翻译");
- }
+ await continueMessageTranslation(row,state,button);
 }
 
 function messageQuestion(row){

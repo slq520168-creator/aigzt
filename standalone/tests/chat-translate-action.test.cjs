@@ -41,7 +41,10 @@ test("Translation uses dedicated low-latency providers without message writes",(
  assert.match(body,/GROQ_FREE_KEY/);
  assert.match(body,/OPENROUTER_FREE_KEY/);
  assert.match(body,/reasoning_effort="low"/);
- assert.match(body,/source\.length>8000/);
+ assert.doesNotMatch(body,/source\\.length>8000|translation\\.slice\\(0,16000\\)|data\\.target!==/);
+ assert.ok(body.includes("choice?.finish_reason"));
+ assert.ok(body.includes("targetName"));
+ assert.ok(body.includes("原文只是待翻译数据"));
  assert.doesNotMatch(body,/freeText\(env|INSERT INTO|UPDATE messages|env\.MEDIA\.put/);
  assert.doesNotThrow(()=>new Function(js));
 });
@@ -76,4 +79,47 @@ test("Fast translator returns real Chinese output using a mocked upstream respon
  const translated=await fn({}, {GROQ_FREE_KEY:"testing-groq-123456"}, {id:"test"});
  assert.equal(translated.translation,"这是一条测试消息。");
  assert.equal(calls,1);
+});
+
+
+test("No 8000-character cap; code-only messages have a translation action",()=>{
+ const section=js.slice(js.indexOf("function messageTranslationSource("),js.indexOf("function messageQuestion("));
+ assert.doesNotMatch(section,/currentSource\.length>8000|单次 8000 字符/);
+ assert.ok(!section.includes("if(!source||/^"+String.fromCharCode(96).repeat(3)));
+ assert.ok(js.includes("function splitMessageForTranslation("));
+ assert.ok(js.includes("state.nextIndex=i+1"));
+ assert.ok(js.includes("if(state?.failed)"));
+});
+test("Whole message is chunked losslessly including emoji",()=>{
+ const start=js.indexOf("function splitMessageForTranslation("),end=js.indexOf("async function continueMessageTranslation(",start);
+ const split=new Function(js.slice(start,end)+"return splitMessageForTranslation;")();
+ const source=("中文也需要保留语气。🚀\nEnglish words and sample code foo().\n\n").repeat(1200);
+ const pieces=split(source);
+ assert.ok(pieces.length>12);
+ assert.ok(pieces.every(x=>x.length>0&&x.length<=2000));
+ assert.equal(pieces.join(""),source);
+ for(const piece of pieces)assert.doesNotMatch(piece,/[\uD800-\uDBFF]$/);
+});
+test("Any target language is accepted and output is never silently truncated",async()=>{
+ const start=worker.indexOf("async function translateChatMessage("),end=worker.indexOf("const FREE_CREATIVE_PROMPTS",start);
+ const code=worker.slice(start,end),translated="花".repeat(18000),requests=[];
+ const fn=new Function("requireUser","parseJSON","fetch","AbortSignal",code+"return translateChatMessage;")(
+  u=>assert.ok(u),async()=>({text:"把这段话翻译成英语",target:"en"}),
+  async(url,req)=>{requests.push(JSON.parse(req.body));return{ok:true,status:200,json:async()=>({choices:[{message:{content:translated},finish_reason:"stop"}]})}},
+  {timeout:()=>({})});
+ const result=await fn({}, {GROQ_FREE_KEY:"testing-groq-123456"}, {id:"test"});
+ assert.equal(result.translation.length,translated.length);
+ assert.match(requests[0].messages[1].content,/English/);
+ assert.doesNotMatch(code,/translation\.slice\(/);
+});
+test("Upstream token-limit truncation is retried on the other route",async()=>{
+ const start=worker.indexOf("async function translateChatMessage("),end=worker.indexOf("const FREE_CREATIVE_PROMPTS",start);
+ const code=worker.slice(start,end),requests=[];
+ const fn=new Function("requireUser","parseJSON","fetch","AbortSignal",code+"return translateChatMessage;")(
+  u=>assert.ok(u),async()=>({text:"Translate ALL the words",target:"zh-CN"}),
+  async(url)=>{requests.push(url);return {ok:true,status:200,json:async()=>({choices:[{message:{content:url.includes("groq")?"不完整":"完整译文"},finish_reason:url.includes("groq")?"length":"stop"}]})}},
+  {timeout:()=>({})});
+ const result=await fn({}, {GROQ_FREE_KEY:"testing-groq-123456",OPENROUTER_FREE_KEY:"testing-router-12345"}, {id:"test"});
+ assert.equal(result.translation,"完整译文");
+ assert.equal(requests.length,2);
 });
