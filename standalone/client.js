@@ -4,7 +4,7 @@ const S={
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",workModelRegion:"推荐",busy:false,code:false,
- authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"freewan",videoModel:"wan2.2-i2v-fast",videoTaskProvider:"freewan",videoImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
+ authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"freetext",videoModel:"wan2.2-ti2v",videoTaskProvider:"freetext",videoImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
 const $=id=>document.getElementById(id);
 const els=id=>document.querySelectorAll(id);
@@ -243,6 +243,7 @@ const KEY_SITES={
 };
 const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu"]);
 const VIDEO_OPTIONS=Object.freeze({
+ freetext:["wan2.2-ti2v"],
  freewan:["wan2.2-i2v-fast"],
  freeloop:["wan2.2-firstlast"],
  grok:["grok-imagine-video-1.5"],
@@ -250,7 +251,7 @@ const VIDEO_OPTIONS=Object.freeze({
  luma:["ray-2","ray-flash-2"],
  vidu:["viduq3-turbo","viduq3-pro","viduq2"]
 });
-const VIDEO_PROVIDER_NAMES={freewan:"免费 Wan 2.2 图生视频",freeloop:"免费 Wan 2.2 首尾帧",grok:"xAI Grok",runway:"Runway",luma:"Luma",vidu:"Vidu"};
+const VIDEO_PROVIDER_NAMES={freetext:"免费 Wan 文字视频",freewan:"免费 Wan 2.2 图生视频",freeloop:"免费 Wan 2.2 首尾帧",grok:"xAI Grok",runway:"Runway",luma:"Luma",vidu:"Vidu"};
 function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
 function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
@@ -2767,7 +2768,7 @@ function openCreate(){
  setCreationMode("image");show("createDialog");closeMenu();
 }
 function videoKeyPermitted(provider){
- if(provider==="freewan"||provider==="freeloop")return true;
+ if(provider==="freetext"||provider==="freewan"||provider==="freeloop")return true;
  const record=S.savedProviders[provider];return Boolean(record&&record.consent);
 }
 function videoStorageKey(provider){return "aigzt:video-task:"+S.user.id+":"+provider}
@@ -2797,21 +2798,21 @@ function syncVideoSelector(){
   const active=el.dataset.videoProvider===S.videoProvider&&el.dataset.videoModel===S.videoModel;
   el.classList.toggle("selected",active);el.setAttribute("aria-pressed",String(active));
   const badge=el.querySelector(".video-card-status"),provider=el.dataset.videoProvider;
-  if(badge)badge.textContent=provider==="freewan"||provider==="freeloop"?"免费额度":videoKeyPermitted(provider)?"已授权":connected(provider)?"未授权":"需绑定";
+  if(badge)badge.textContent=provider==="freetext"||provider==="freewan"||provider==="freeloop"?"免费额度":videoKeyPermitted(provider)?"已授权":connected(provider)?"未授权":"需绑定";
  }
  for(const el of els("#videoRatio [data-ratio]")){
   const active=el.dataset.ratio===S.videoRatio;
   el.classList.toggle("active",active);el.setAttribute("aria-pressed",String(active));
   el.disabled=S.videoProvider==="grok"||S.videoProvider==="freewan"||S.videoProvider==="freeloop";
  }
- const provider=S.videoProvider,free=provider==="freewan"||provider==="freeloop",connectedKey=free||connected(provider),allowed=videoKeyPermitted(provider);
+ const provider=S.videoProvider,free=provider==="freetext"||provider==="freewan"||provider==="freeloop",connectedKey=free||connected(provider),allowed=videoKeyPermitted(provider);
  $("videoConnectedStatus").textContent=free?"共享免费 ZeroGPU：额度随上游变化，已用完时不会转付费":
   allowed?"已授权 "+VIDEO_PROVIDER_NAMES[provider]+" API（提交才可能计费）":
   connectedKey?"已保存 "+VIDEO_PROVIDER_NAMES[provider]+" 密钥，但未授权调用":"未连接 "+VIDEO_PROVIDER_NAMES[provider]+" API Key";
  $("videoConnectKey").hidden=free;
  $("videoConfirmRow").hidden=free;
  $("videoImageRow").hidden=!free;
- $("videoModelInfo").textContent=free?(provider==="freewan"?"图生视频约 3 秒。上传一张图片，生成后保存在本人账号媒体中。":"首尾帧约 2 秒。默认使用同一张图片作为首尾帧。"):
+ $("videoModelInfo").textContent=free?(provider==="freetext"?"文字生成约 3 秒视频，也可以选择上传参考图。":provider==="freewan"?"图生视频约 3 秒。上传一张图片，生成后保存在本人账号媒体中。":"首尾帧约 2 秒。默认使用同一张图片作为首尾帧。"):
   provider==="grok"?"Grok Imagine：固定 6 秒、720p；以 xAI 账号实际计费为准。":
   provider==="runway"?"Runway 多模型 API：按照所选视频模型和时长计费。":
   provider==="luma"?"Luma Dream Machine：画质、时长由服务商支持的参数和额度决定。":
@@ -2840,7 +2841,7 @@ function openVideoCreate(){
  restoreVideoTask();setCreationMode("video");syncVideoSelector();show("createDialog");closeMenu();
  if(S.videoTask)$("createStatus").textContent="上一条视频任务可继续查询状态。";
  if(!S.videoImageId){const attached=S.attachments.find(x=>x.type?.startsWith("image/"));if(attached)S.videoImageId=attached.id;}
- $("videoImageName").textContent=S.videoImageId?"已选择图片":"请选择一张 JPG、PNG 或 WebP 图片";
+ $("videoImageName").textContent=S.videoImageId?"已选择参考图片":"文字生成可不上传；图生视频需要 JPG、PNG 或 WebP 图片";
 }
 async function generateMedia(){
  if(!S.user){show("authDialog");return}
@@ -2849,8 +2850,8 @@ async function generateMedia(){
  if(!prompt){$("createStatus").textContent="请填写视频画面描述";return}
  const provider=S.videoProvider,model=S.videoModel;
  if(!VIDEO_OPTIONS[provider]?.includes(model)){$("createStatus").textContent="请选择有效的视频模型";return}
- const free=provider==="freewan"||provider==="freeloop";
- if(free&&!S.videoImageId){$("createStatus").textContent="请先上传一张人物或场景图片";return}
+ const free=provider==="freetext"||provider==="freewan"||provider==="freeloop";
+ if(free&&provider!=="freetext"&&!S.videoImageId){$("createStatus").textContent="请先上传一张人物或场景图片";return}
  if(!free&&!videoKeyPermitted(provider)){
   $("createStatus").textContent="需要先保存并授权 "+VIDEO_PROVIDER_NAMES[provider]+" 个人 API 额度";
   S.videoPendingKeyReturn=true;hide("createDialog");openKeyPanel(provider);return;
