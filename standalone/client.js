@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
- allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:true,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",workModelRegion:"推荐",busy:false,code:false,
  authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"grok",videoModel:"grok-imagine-video-1.5",videoTaskProvider:"grok",videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -407,14 +407,34 @@ function renderProjects(){
  const box=$("projectsList");box.replaceChildren();box.hidden=!S.projectsExpanded;
  $("projectsToggle").setAttribute("aria-expanded",String(S.projectsExpanded));
  $("projectsToggle").classList.toggle("expanded",S.projectsExpanded);
- if(!S.user){if(S.projectsExpanded)box.append(node("div","hint","登录后创建项目"));return}
+ if(!S.projectsExpanded)return;
+ if(!S.user){box.append(node("div","hint","登录后查看个人项目"));return}
+ const tasks=S.workTasks||[],known=new Set(S.projects.map(p=>p.id));
+ const taskRow=t=>{
+  const b=node("button","project-task-row"+(S.workTaskId===t.id?" active":""));
+  b.type="button";b.title=t.title||"工作任务";
+  b.append(iconSlot("list-checks"),node("span","project-task-name",t.title||"工作任务"),node("small","project-task-status",workStatus(t)));
+  b.addEventListener("click",()=>{
+   if(S.workBusy&&S.workTaskId!==t.id){flashError("当前任务执行中，暂不能切换任务");return}
+   S.workTaskId=t.id;setWorkMode(true);void selectWorkTask(t.id);
+  });
+  renderIcons(b);return b;
+ };
  for(const p of S.projects){
   const row=node("div","project-row"+(S.activeProjectId===p.id?" active":""));
   const b=node("button","project-select");b.append(iconSlot("folder"),node("span","project-name",p.name));b.title=p.name;
   b.addEventListener("click",()=>{S.activeProjectId=p.id;S.archivedView=false;newChat();void fetchChats();renderProjects()});
   const edit=node("button","project-edit");edit.title="项目设置";edit.setAttribute("aria-label","编辑项目");
   edit.append(iconSlot("ellipsis"));edit.addEventListener("click",()=>openProject(p));row.append(b,edit);box.append(row);renderIcons(row);
+  const belong=tasks.filter(t=>t.projectId===p.id);
+  if(belong.length){const group=node("div","project-task-group");for(const t of belong)group.append(taskRow(t));box.append(group)}
  }
+ const unassigned=tasks.filter(t=>!t.projectId||!known.has(t.projectId));
+ if(unassigned.length){
+  box.append(node("div","project-task-section-title","未分类任务"));
+  for(const t of unassigned)box.append(taskRow(t));
+ }
+ if(!S.projects.length&&!tasks.length)box.append(node("div","hint","暂无个人项目"));
 }
 async function fetchProjects(){
  if(!S.user){S.projects=[];renderProjects();return}
@@ -1314,7 +1334,7 @@ function renderWorkEditor(){
 }
 function newWorkDraft(){
  if(S.workBusy)return;
- S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderWorkEditor();if(S.workMode)renderWorkAgentCatalog();
+ S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderProjects();renderWorkEditor();if(S.workMode)renderWorkAgentCatalog();
  $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=false;$("workBoard").scrollTop=0;
 }
 function loadWorkEditor(task){
@@ -1585,9 +1605,9 @@ function renderWorkDetail(){
  if(S.workMode){renderWorkEditor();renderWorkAgentCatalog()}
 }
 async function fetchWorkTasks(){
- if(!S.user){S.workTasks=[];renderWorkTasks();return}
+ if(!S.user){S.workTasks=[];renderWorkTasks();renderProjects();return}
  try{
-  const data=await api("/api/work/tasks");S.workTasks=data.tasks||[];renderWorkTasks();
+  const data=await api("/api/work/tasks");S.workTasks=data.tasks||[];renderWorkTasks();renderProjects();
   if(!S.workDetail&&S.workTasks.length&&!S.workTaskId&&S.workMode)void selectWorkTask(S.workTasks[0].id);
  }catch(e){$("workState").textContent="任务列表读取失败："+humanError(e)}
 }
@@ -1595,7 +1615,7 @@ async function selectWorkTask(id){
  if(S.workBusy&&S.workTaskId!==id)return;
  try{
   const d=await api("/api/work/tasks/"+id);S.workTaskId=id;S.workDetail=d;
-  loadWorkEditor(d.task);$("workConfig").open=false;renderWorkDetail();renderWorkTasks();
+  loadWorkEditor(d.task);$("workConfig").open=false;renderWorkDetail();renderWorkTasks();renderProjects();
   void wkLoadProposal();
  }catch(e){$("workState").textContent=humanError(e)}
 }

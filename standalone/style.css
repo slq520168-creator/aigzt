@@ -36,7 +36,17 @@ a{color:inherit}
 .side-caption-action{font-size:11px;color:#68777b;border-radius:6px;padding:2px 6px}
 .side-caption-action:hover{background:#eef1f2}
 .chat-count{display:none}
-.project-list{display:flex;flex-direction:column;gap:1px;max-height:190px;overflow-y:auto;min-height:0}
+.project-list{display:flex;flex-direction:column;gap:1px;flex:0 1 auto;max-height:min(24dvh,210px);overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.project-list[hidden]{display:none}
+.sidebar-projects .project-list>.hint{min-height:31px;padding:6px 10px}
+.project-task-group{display:flex;flex-direction:column;gap:1px;margin-left:13px;padding-left:7px;border-left:1px solid #e4eaf0}
+.project-task-row{display:flex;align-items:center;gap:7px;width:100%;min-width:0;min-height:31px;padding:5px 8px;border-radius:8px;text-align:left;color:#4c6875;font-size:12px}
+.project-task-row:hover,.project-task-row.active{background:#edf3f8}
+.project-task-row>.ui-icon{width:15px;height:15px;flex:none}
+.project-task-row>.ui-icon svg{width:15px;height:15px}
+.project-task-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-task-status{flex:none;color:#82919a;font-size:10px}
+.project-task-section-title{padding:8px 10px 3px;color:#859098;font-size:11px;font-weight:600}
 .project-collapse-toggle{display:flex;align-items:center;gap:8px;text-align:left;color:inherit;font-size:12px;font-weight:650;padding:4px 0}
 .project-collapse-toggle .ui-icon{width:14px;height:14px;transition:transform .2s}
 .project-collapse-toggle .ui-icon svg{width:14px;height:14px}
@@ -52,12 +62,13 @@ a{color:inherit}
 .project-edit:hover,.history-more:hover{opacity:1;background:#ecf0f2}
 .project-edit svg,.history-more svg{width:17px;height:17px}
 .hint{padding:10px;color:#879498;font-size:12px}
-.sidebar-lower{flex:1;min-height:0;border-top:1px solid #eef0f1;padding-top:7px;margin-top:7px;max-height:none;overflow-y:auto}
+.sidebar-lower{flex:1;min-height:0;border-top:1px solid #eef0f1;padding-top:7px;margin-top:7px;max-height:none;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
+.sidebar-projects{display:flex;flex:0 1 auto;flex-direction:column;min-height:0;margin-top:auto}
 .sidebar-lower .side-heading{margin-top:0}
 .sidebar-lower .project-list:empty{display:none}
-.sidebar-lower .sidebar-links{margin-top:7px}
+.sidebar-lower .sidebar-links{flex:none;margin-top:0;padding-top:5px;border-top:1px solid #eef0f1}
 .sidebar-lower .nav-row{min-height:37px;padding:8px 10px;font-size:13px}
-.side-bottom{flex:none;display:flex;align-items:center;gap:4px;border-top:1px solid #eceff1;padding-top:9px;margin-top:8px}
+.side-bottom{flex:none;display:flex;align-items:center;gap:4px;border-top:1px solid #eceff1;padding-top:9px;margin-top:0}
 .account-btn{flex:1;min-width:0;padding-left:7px;gap:7px;overflow:hidden;text-overflow:ellipsis}
 .account-btn #accountName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account-avatar{width:29px;height:29px;display:grid;place-items:center;flex:none;border-radius:50%;font-size:13px;font-weight:700;background:linear-gradient(140deg,#e5f0ff,#e5fcf4);color:#3c867a;overflow:hidden}
