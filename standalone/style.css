@@ -131,6 +131,12 @@ a{color:inherit}
 .message-resend{font-size:11px;line-height:1.4;border:1px solid #cedce6;border-radius:7px;color:#356e93;background:#fff;padding:4px 8px;cursor:pointer}
 .message-speak{font-size:11px;line-height:1.4;border:1px solid #cedce6;border-radius:7px;color:#356e93;background:#fff;padding:4px 8px;cursor:pointer}
 .message-speak[aria-pressed="true"]{background:#e7f4fc;border-color:#73accb;color:#135f87}
+.message-copy-bar{display:flex;justify-content:flex-end;align-items:center;min-height:23px;margin-top:5px}
+.message-copy-btn{display:inline-flex;align-items:center;gap:4px;justify-content:center;border-radius:7px;padding:3px 5px;font-size:11px;line-height:18px;color:#63727e;background:transparent;cursor:pointer}
+.message-copy-btn:hover,.message-copy-btn:focus-visible{background:#e9eef1;color:#24495f}
+.message-copy-btn>.ui-icon,.message-copy-btn>.ui-icon svg{display:block;width:14px;height:14px;flex:none}
+.message-copy-btn svg{stroke:#63727e!important}
+.message.user .message-copy-btn{color:#697681}
 .draw-previous-section{margin-top:12px;padding-top:10px;border-top:1px solid #e3eaed}
 .message.assistant .bubble p{margin:0 0 12px;white-space:pre-wrap}
 .message.assistant .bubble p:last-child{margin-bottom:0}
@@ -157,6 +163,15 @@ a{color:inherit}
 .voice-chat-entry{display:inline-flex;align-items:center;justify-content:center;gap:2px;width:46px;height:32px;min-width:46px;padding:2px;color:#2b7199;border-radius:12px;font-size:11px;font-weight:650}.voice-chat-entry .ui-icon,.voice-chat-entry .ui-icon svg{width:14px;height:14px}
 .voice-chat-entry:hover,.voice-chat-entry:focus-visible{background:#eaf5fa}
 .composer-inner{display:flex;align-items:flex-end;gap:6px;min-height:32px;min-width:0;max-width:100%}
+/* Short drafts retain the existing input size. Long drafts use the original max height,
+   with full-width text above the controls rather than squeezed between them. */
+.composer.composer-multiline .composer-inner{display:grid;grid-template-columns:34px minmax(0,1fr) auto 34px 34px;grid-template-rows:minmax(32px,auto) 32px;gap:3px 5px;max-height:112px;align-items:end}
+.composer.composer-multiline #prompt{grid-column:1/-1;grid-row:1;width:100%;max-height:72px;min-height:32px}
+.composer.composer-multiline #attachButton{grid-column:1;grid-row:2}
+.composer.composer-multiline #replyLevelTrigger{grid-column:3;grid-row:2}
+.composer.composer-multiline #voiceInput{grid-column:4;grid-row:2}
+.composer.composer-multiline #sendBtn{grid-column:5;grid-row:2}
+@media(max-width:600px){.composer.composer-multiline .composer-inner{grid-template-columns:32px minmax(0,1fr) auto 32px 32px}}
 .composer textarea{background:transparent;outline:0;border:0;resize:none;flex:1 1 0%;min-width:0;width:1px;max-width:100%;height:32px;min-height:32px;max-height:132px;padding:5px 3px;line-height:22px;font-size:16px;overflow-y:hidden;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word}
 .composer textarea::placeholder{color:#9ba5a9}
 .plus-tool{width:34px;height:34px;min-width:34px;border:1px solid #e6eaec;border-radius:50%;color:#293e46}

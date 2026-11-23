@@ -26,6 +26,7 @@ const ICONS={
  'square-pen':'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.37 3.63a1 1 0 0 1 3 3L12 16l-4 1 1-4Z"/>',
  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
  'audio-lines':'<path d="M2 10v4m4-8v12m4-15v18m4-13v8m4-11v14m4-11v6"/>',
+ 'copy':'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
  'message-circle':'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>',
  compass:'<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/>',
  paperclip:'<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66L9.4 17.41a2 2 0 0 1-2.83-2.83l8.48-8.49"/>',
@@ -887,6 +888,30 @@ function voiceWire(){
  document.addEventListener("visibilitychange",()=>{if(document.hidden&&voiceSession.active)voiceStop()});
 }
 
+async function copyMessageText(value,button){
+ const content=String(value||"");if(!content)return;
+ let copied=false;
+ try{if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(content);copied=true}}catch{}
+ if(!copied){
+  const temp=document.createElement("textarea");
+  temp.value=content;temp.setAttribute("readonly","");temp.style.cssText="position:fixed;left:-9999px;top:0;opacity:0";
+  document.body.append(temp);
+  try{temp.focus();temp.select();copied=document.execCommand("copy")}catch{}
+  finally{temp.remove()}
+ }
+ if(!copied){flashError("复制失败，请长按消息选择文字");return}
+ const label=button.querySelector(".message-copy-label");
+ if(label)label.textContent="已复制";
+}
+function appendMessageCopy(bubble,content){
+ const text=String(content||"");if(!text.trim())return;
+ const bar=node("div","message-copy-bar"),button=node("button","message-copy-btn");
+ button.type="button";button.title="复制整条消息";button.setAttribute("aria-label","复制整条消息");
+ button.append(iconSlot("copy"),node("span","message-copy-label","复制"));
+ button.addEventListener("click",()=>{void copyMessageText(text,button)});
+ bar.append(button);bubble.append(bar);renderIcons(button);
+}
+
 function appendMessage(role,content,model,existingRow=null,incomplete=false){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
  if(role==="user")row.dataset.sourceText=String(content||"");
@@ -940,7 +965,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false){
    }
    if(actions.childNodes.length)bubble.append(actions);
   }
-
+  appendMessageCopy(bubble,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   if(lines.length>1){
@@ -952,6 +977,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false){
     if(/\.(jpg|jpeg|png|webp|gif)$/i.test(f[1])){const img=node("img","chat-upload-image");img.src=f[2];img.alt=f[1];img.loading="lazy";bubble.append(img)}
    }
   }
+  appendMessageCopy(bubble,content);
   row.append(bubble);
  }
  if(!existingRow)$("messageList").append(row);
@@ -1044,8 +1070,12 @@ function setModel(row){
 
 function resizePrompt(){
  const textarea=$("prompt");if(!textarea)return;
+ const layout=$("chatForm"),value=textarea.value;
+ const threshold=window.innerWidth<=900?24:72;
+ const multiline=value.includes("\n")||Array.from(value).length>=threshold;
+ layout.classList.toggle("composer-multiline",multiline);
  textarea.style.height="32px";
- const needed=Math.max(32,textarea.scrollHeight),max=112;
+ const needed=Math.max(32,textarea.scrollHeight),max=multiline?72:112;
  textarea.style.height=Math.min(needed,max)+"px";
  textarea.style.overflowY=needed>max?"auto":"hidden";
 }
