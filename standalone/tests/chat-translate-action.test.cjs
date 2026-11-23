@@ -2,6 +2,14 @@ const test=require("node:test"),assert=require("node:assert/strict"),fs=require(
 const js=fs.readFileSync("standalone/client.js","utf8");
 const worker=fs.readFileSync("standalone/worker.js","utf8");
 const css=fs.readFileSync("standalone/style.css","utf8");
+test("Translate icon has its own SVG glyph instead of the folder fallback",()=>{
+ const begin=js.indexOf("const ICONS={"),end=js.indexOf("/* Local two-tone",begin);
+ assert.ok(begin>=0&&end>begin);
+ const icons=new Function("return "+js.slice(begin+"const ICONS=".length,end).trim().replace(/;$/,""))();
+ assert.ok(icons.languages?.includes("<path"));
+ assert.notEqual(icons.languages,icons.folder);
+ assert.match(js,/languages:"blue"/);
+});
 test("Translate is an icon-only action in the original message toolbar",()=>{
  assert.match(js,/messageTool\("languages","翻译"/);
  assert.match(js,/toggle\.dataset\.action="translate"/);
