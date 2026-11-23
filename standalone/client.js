@@ -1798,7 +1798,7 @@ function renderFreeTools(){
   const functions=Array.isArray(item.features)&&item.features.length?item.features:[item.category];
   a.title=item.name+" · "+functions.join(" · ");
   a.setAttribute("aria-label",item.name+"，"+functions.join("、")+"，打开外部网站");
-  a.append(node("strong","free-tool-name",item.name),node("small","free-tool-function",functions.slice(0,2).join(" · ")));
+  a.append(node("strong","free-tool-name",item.name),node("small","free-tool-function",item.category||functions[0]));
   list.append(a);
  }
  $("freeToolEmpty").hidden=hits.length>0;
