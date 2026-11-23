@@ -223,6 +223,11 @@ a{color:inherit}
 .attachment-item>span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .attachment-item .attachment-thumb{display:block;width:46px;height:46px;flex:0 0 46px;object-fit:cover;border-radius:8px;background:#e3eaf0}
 .attachment-item button{font-size:18px;color:#63747a;padding:0 4px}
+.attachment-image-item{position:relative;flex:0 0 auto;max-width:none;padding:4px;border-radius:12px}
+.attachment-image-item .attachment-thumb{width:58px;height:58px;flex:0 0 58px;object-fit:cover;border-radius:8px}
+.attachment-image-item button{position:absolute;right:-6px;top:-6px;width:24px;height:24px;display:grid;place-items:center;background:#fff;border:1px solid #dfe6ec;border-radius:50%;box-shadow:0 2px 5px rgba(12,24,36,.1);padding:2px}
+.attachment-image-item button .ui-icon,.attachment-image-item button svg{width:15px;height:15px}
+.attachment-image-error{font-size:11px;max-width:90px;color:#657583}
 .attach-menu{position:absolute;bottom:calc(100% + 3px);left:24px;width:230px;border:1px solid #dfe5e8;border-radius:22px;padding:10px;display:flex;flex-direction:column;gap:3px;background:#fff;box-shadow:0 12px 35px rgba(17,32,40,.12);z-index:12}
 .attach-menu button{display:flex;align-items:center;gap:14px;text-align:left;padding:11px 13px;border-radius:12px;font-size:15px}
 .attach-menu button:hover{background:#f2f5f6}
@@ -1140,4 +1145,12 @@ html.aigzt-ios-pwa #workModelDialog[open]{
 .chat-video-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
 .chat-video-save,.video-job-check{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border-radius:9px;border:1px solid #53627c;background:#263a57;color:#fff;font-size:12px;text-decoration:none;cursor:pointer}
 .video-job-label{display:block;font-size:13px;line-height:1.5;margin-bottom:9px}
+.chat-video-task{width:min(100%,440px);max-width:100%}
+.chat-video-task .video-job-label{color:#3e535d;font-weight:600}
+.video-loading-card{aspect-ratio:16/9;max-width:440px;border-radius:16px}
+.video-loading-card .video-loading-mark{position:absolute;z-index:2;inset:0;display:grid;place-items:center;pointer-events:none}
+.video-loading-card .video-loading-mark .ui-icon,.video-loading-card .video-loading-mark svg{width:38px;height:38px;filter:drop-shadow(0 1px 4px rgba(255,255,255,.7))}
+.video-job-hint{display:block;font-size:12px;color:#647887;line-height:1.5;margin-top:8px}
+.video-loading-card.video-job-failed{filter:grayscale(.75);opacity:.65}
+@media(prefers-reduced-motion:reduce){.video-loading-card::before,.video-loading-card::after,.video-loading-card>span{animation:none!important}}
 .video-job-check:disabled{opacity:.55;cursor:default}

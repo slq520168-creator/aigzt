@@ -1256,18 +1256,18 @@ async function fvStatus(env,user,id){
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频任务超时",job.message_id,user.id).catch(()=>{});
   return {ok:true,status:"failed",error:"免费任务超时"};
  }
- if(Date.now()-(job.checked_at||0)<14000)return {ok:true,status:"pending",waitSeconds:15};
+ if(Date.now()-(job.checked_at||0)<14000)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",Date.now(),id,user.id,Date.now()-13000);
- if(!claimed.meta?.changes)return {ok:true,status:"pending",waitSeconds:15};
+ if(!claimed.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  const state=await fvPoll(env,cfg,ref.e);
- if(state.status==="pending")return {ok:true,status:"pending",waitSeconds:15};
+ if(state.status==="pending")return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  if(state.status==="failed"){await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游生成失败' WHERE id=? AND user_id=? AND status='pending'",id,user.id);if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频生成失败，请重新尝试",job.message_id,user.id).catch(()=>{});return {ok:true,status:"failed",error:"免费来源生成失败"}}
  const url=fvOutput(state.data,cfg);
- if(!url)return {ok:true,status:"pending",waitSeconds:15};
+ if(!url)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  let media;
- try{media=await fvSave(env,user,url,cfg)}catch{return {ok:true,status:"pending",waitSeconds:15}}
+ try{media=await fvSave(env,user,url,cfg)}catch{return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at}}
  const done=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='pending'",media,Date.now(),id,user.id);
- if(!done.meta?.changes)return {ok:true,status:"pending",waitSeconds:15};
+ if(!done.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","[[aigzt:video:"+media+"]]",job.message_id,user.id).catch(()=>{});
  return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+media,temporaryUrl:false};
 }

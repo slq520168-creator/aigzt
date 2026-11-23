@@ -1342,26 +1342,84 @@ function inlineVideo(bubble,id){
  link.href=url;link.download="aigzt-"+id+".mp4";actions.append(link);
  bubble.replaceChildren(video,actions);
 }
+/* Local elapsed clock with bounded automatic server status checks.
+ * Only the existing free job is queried; this never resubmits generation. */
 function inlineVideoJob(bubble,id){
- const info=node("span","video-job-label","视频已提交，点击查询进度");
- const button=node("button","video-job-check","查询进度");button.type="button";
- bubble.replaceChildren(info,button);
- button.addEventListener("click",async()=>{
-  if(button.disabled||!bubble.isConnected)return;
-  button.disabled=true;info.textContent="正在查询...";
+ bubble.dataset.videoTask=id;
+ bubble.dataset.videoStarted=String(Date.now());
+ const label=node("span","video-job-label","视频生成中 · 0:00");
+ const frame=createImageWaitingFrame();
+ frame.classList.add("video-loading-card");
+ frame.setAttribute("aria-label","视频生成中");
+ const mark=node("div","video-loading-mark");
+ mark.append(iconSlot("video"));renderIcons(mark);frame.append(mark);
+ const hint=node("span","video-job-hint","正在等待免费来源生成视频");
+ bubble.classList.add("chat-video-task");
+ bubble.replaceChildren(label,frame,hint);
+ if(S.busy)followLatestImage(bubble);
+ const active=()=>bubble.isConnected&&bubble.dataset.videoTask===id;
+ let taskTimer=0,errors=0,polling=false;
+ const clock=window.setInterval(()=>{
+  if(!active()){cleanup();return}
+  if(!document.hidden){
+   const elapsed=Math.max(0,Math.floor((Date.now()-Number(bubble.dataset.videoStarted||Date.now()))/1000));
+   label.textContent="视频生成中 · "+Math.floor(elapsed/60)+":"+String(elapsed%60).padStart(2,"0");
+  }
+ },1000);
+ function cleanup(){
+  window.clearInterval(clock);window.clearTimeout(taskTimer);taskTimer=0;
+  document.removeEventListener("visibilitychange",onReturn);
+  window.removeEventListener("online",onReturn);
+  delete bubble.dataset.videoTask;delete bubble.dataset.videoStarted;
+  bubble.classList.remove("chat-video-task");
+ }
+ function schedule(delay){
+  if(!active()||document.hidden)return;
+  if(taskTimer)window.clearTimeout(taskTimer);
+  taskTimer=window.setTimeout(()=>{taskTimer=0;void poll()},delay);
+ }
+ function onReturn(){
+  if(!active()){cleanup();return}
+  if(document.hidden){hint.textContent="已暂停查询，返回页面后继续";window.clearTimeout(taskTimer);taskTimer=0;return}
+  if(!polling)schedule(800);
+ }
+ async function poll(){
+  if(!active()||polling)return;
+  if(document.hidden){hint.textContent="已暂停查询，返回页面后继续";return}
+  polling=true;hint.textContent="正在确认视频状态…";
+  let delay=17000;
   try{
    const r=await api("/api/video/status",{provider:"freewan",requestId:id});
-   if(!bubble.isConnected)return;
+   if(!active())return;
+   errors=0;
+   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.videoStarted=String(r.startedAt);
    if(r.status==="completed"&&/^\/api\/video\/media\/[0-9a-f-]{36}$/i.test(r.url||"")){
-    const row=bubble.closest(".message");
-    const mediaId=r.url.split("/").pop();
-    if(row)appendMessage("assistant","[[aigzt:video:"+mediaId+"]]","免费视频",row,false,row.dataset.messageId);
+    const row=bubble.closest(".message"),mediaId=r.url.split("/").pop();
+    cleanup();
+    if(row){appendMessage("assistant","[[aigzt:video:"+mediaId+"]]","免费视频",row,false,row.dataset.messageId);setPortraitState(row,"finished")}
     else inlineVideo(bubble,mediaId);
-   }else if(r.status==="failed"){info.textContent=r.error||"生成未完成";button.remove()}
-   else info.textContent="仍在生成，请稍后手动查询";
-  }catch(e){info.textContent="暂时无法查询："+humanError(e)}
-  finally{button.disabled=false}
- });
+    return;
+   }
+   if(r.status==="failed"){
+    cleanup();frame.classList.add("video-job-failed");
+    label.textContent="视频生成失败";hint.textContent=r.error||"免费来源暂不可用";
+    setPortraitState(bubble.closest(".message"),"error");
+    return;
+   }
+   hint.textContent="等待免费来源返回视频…";
+   delay=Math.max(15000,Math.min(60000,Number(r.waitSeconds||17)*1000));
+  }catch(error){
+   if(!active())return;
+   errors++;delay=Math.min(60000,17000*2**Math.min(errors,2));
+   hint.textContent=navigator.onLine===false?"网络离线，连接恢复后继续":"查询遇到网络问题，将自动重试";
+  }finally{
+   polling=false;
+   if(active())schedule(delay);
+  }
+ }
+ document.addEventListener("visibilitychange",onReturn);
+ window.addEventListener("online",onReturn);
+ schedule(0);
 }
 
 function appendMessage(role,content,model,existingRow=null,incomplete=false,messageId=null,saved=false,feedback=0,usage=null){
@@ -1405,8 +1463,8 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
     if(isImage){
      const frame=node("div","chat-user-image-attachment");
      const img=node("img","chat-upload-image");img.src=url;img.alt=name;img.loading="lazy";
-     img.addEventListener("error",()=>{frame.replaceChildren();const link=node("a","chat-file",name);link.href=url;link.target="_blank";link.rel="noopener";frame.append(link)},{once:true});
-     frame.append(img,node("span","chat-file-caption",name));bubble.append(frame);
+     img.addEventListener("error",()=>{frame.replaceChildren();const link=node("a","chat-file","图片无法预览 · 点击打开");link.href=url;link.target="_blank";link.rel="noopener";frame.append(link)},{once:true});
+     frame.append(img);bubble.append(frame);
     }else{
      const link=node("a","chat-file",name);link.href=url;link.target="_blank";link.rel="noopener";bubble.append(link);
     }
@@ -1551,15 +1609,17 @@ function setComposerMode(mode){
 function renderAttachments(){
  const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
  for(const item of S.attachments){
-  const badge=node("span","attachment-item"),title=node("span","",item.name),del=node("button");del.append(iconSlot("x"));del.setAttribute("aria-label","移除附件");renderIcons(del);
+  const badge=node("span","attachment-item"),title=node("span","",item.name),del=node("button");del.append(iconSlot("x"));del.setAttribute("aria-label","移除附件："+item.name);renderIcons(del);
   del.type="button";del.title="取消附件";
   del.addEventListener("click",()=>{S.attachments=S.attachments.filter(x=>x.id!==item.id);renderAttachments()});
   if(item.type?.startsWith("image/")&&/^\/api\/files\/[0-9a-f-]{36}$/i.test(item.url||"")){
-   const thumb=node("img","attachment-thumb");thumb.src=item.url;thumb.alt="已上传："+item.name;thumb.loading="lazy";
-   thumb.addEventListener("error",()=>thumb.remove(),{once:true});
-   badge.append(thumb);
-  }
-  badge.append(title,del);el.append(badge);
+   badge.classList.add("attachment-image-item");
+   const thumb=node("img","attachment-thumb");thumb.src=item.url;thumb.alt="";thumb.loading="lazy";
+   thumb.addEventListener("error",()=>thumb.replaceWith(node("span","attachment-image-error","图片不可预览")),{once:true});
+   badge.append(thumb,del);
+  }else badge.append(title,del);
+  el.append(badge);
+
  }
 }
 async function uploadSelected(files){
