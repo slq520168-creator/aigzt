@@ -673,6 +673,66 @@ function syncHomeAmbient(){
 function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient()}
 function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient()}
 
+
+
+/* The assistant's expression follows actual response progress; older rows do not animate. */
+let aiPortraitSerial=0;
+function makeAssistantPortrait(){
+ const el=node("span","avatar-ai");el.dataset.state="idle";
+ el.setAttribute("role","img");el.setAttribute("aria-label","AI 助手");
+ const id="aigzt-portrait-"+(++aiPortraitSerial);
+ el.innerHTML="<svg viewBox=\"0 0 64 64\" width=\"36\" height=\"36\" aria-hidden=\"true\" focusable=\"false\">\n<defs><radialGradient id=\"AVID-halo\" cx=\"25%\" cy=\"16%\" r=\"90%\"><stop stop-color=\"#fcffff\"/><stop offset=\".46\" stop-color=\"#b4e7f5\"/><stop offset=\"1\" stop-color=\"#7493df\"/></radialGradient>\n<linearGradient id=\"AVID-shell\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop stop-color=\"#ffffff\"/><stop offset=\".48\" stop-color=\"#e1ecf8\"/><stop offset=\"1\" stop-color=\"#94b7d5\"/></linearGradient>\n<linearGradient id=\"AVID-screen\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop stop-color=\"#285f78\"/><stop offset=\"1\" stop-color=\"#152d4a\"/></linearGradient>\n<linearGradient id=\"AVID-eye\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop stop-color=\"#5bf8e5\"/><stop offset=\"1\" stop-color=\"#99bbff\"/></linearGradient></defs>\n<circle class=\"ai-avatar-halo\" cx=\"32\" cy=\"32\" r=\"30\" fill=\"url(#AVID-halo)\"/><circle cx=\"32\" cy=\"32\" r=\"29.2\" stroke=\"#fff\" stroke-opacity=\".85\" stroke-width=\"1.4\" fill=\"none\"/>\n<g class=\"ai-avatar-core\">\n<path d=\"M32 14V9\" fill=\"none\" stroke=\"#367b97\" stroke-linecap=\"round\" stroke-width=\"2.1\"/><circle class=\"ai-avatar-beacon\" cx=\"32\" cy=\"7.6\" r=\"3.1\" fill=\"#69e9df\" stroke=\"#fff\" stroke-width=\"1.3\"/>\n<rect x=\"7\" y=\"29\" width=\"8\" height=\"15\" rx=\"4\" fill=\"#c5e0ef\" stroke=\"#7ca6c2\"/><rect x=\"49\" y=\"29\" width=\"8\" height=\"15\" rx=\"4\" fill=\"#c5e0ef\" stroke=\"#7ca6c2\"/>\n<rect x=\"11\" y=\"15\" width=\"42\" height=\"42\" rx=\"17\" fill=\"url(#AVID-shell)\" stroke=\"#83a4bd\" stroke-width=\"1.2\"/>\n<path d=\"M17 24c3-5 7.5-7 13.5-7h9\" fill=\"none\" stroke=\"#fff\" stroke-opacity=\".85\" stroke-width=\"2\" stroke-linecap=\"round\"/>\n<rect x=\"15.5\" y=\"25.5\" width=\"33\" height=\"23\" rx=\"11.5\" fill=\"url(#AVID-screen)\" stroke=\"#719fb9\"/><path d=\"M19 29c5.5-3.7 17-4.6 26 0\" fill=\"none\" stroke=\"#d2ffff\" stroke-opacity=\".19\" stroke-width=\"1.7\"/>\n<ellipse class=\"ai-avatar-eye\" cx=\"25\" cy=\"35\" rx=\"3.2\" ry=\"3.9\" fill=\"url(#AVID-eye)\"/><ellipse class=\"ai-avatar-eye\" cx=\"39\" cy=\"35\" rx=\"3.2\" ry=\"3.9\" fill=\"url(#AVID-eye)\"/>\n<circle cx=\"26\" cy=\"33.8\" r=\".95\" fill=\"#fff\"/><circle cx=\"40\" cy=\"33.8\" r=\".95\" fill=\"#fff\"/>\n<path class=\"ai-avatar-smile\" d=\"M27 42q5 4 10 0\" fill=\"none\" stroke=\"#a9edf8\" stroke-width=\"1.9\" stroke-linecap=\"round\"/>\n<ellipse class=\"ai-avatar-mouth\" cx=\"32\" cy=\"43\" rx=\"3.7\" ry=\"2.3\" fill=\"#8ee7f5\"/>\n<circle cx=\"17.5\" cy=\"43\" r=\"2.2\" fill=\"#f4a7c1\" opacity=\".68\"/><circle cx=\"46.5\" cy=\"43\" r=\"2.2\" fill=\"#f4a7c1\" opacity=\".68\"/>\n<path d=\"M26 52q6 3 12 0\" fill=\"none\" stroke=\"#95abc5\" stroke-width=\"1.1\" stroke-linecap=\"round\"/>\n</g></svg>".replaceAll("AVID",id);
+ return el;
+}
+function setPortraitState(row,state){
+ const avatar=row?.querySelector(":scope > .avatar-ai");
+ if(!avatar||avatar.dataset.state===state)return;
+ avatar.dataset.state=state;
+ if(state==="finished")window.setTimeout(()=>{
+  if(avatar.isConnected&&avatar.dataset.state==="finished")avatar.dataset.state="idle";
+ },750);
+}
+/* In-memory only: a few recent generated pictures survive chat switching in this tab. */
+const recentImagePreviews=new Map();
+function cacheRecentImage(messageId,url){
+ if(!messageId||typeof url!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,/.test(url)||url.length>8500000)return;
+ recentImagePreviews.delete(messageId);recentImagePreviews.set(messageId,url);
+ let bytes=0;for(const value of recentImagePreviews.values())bytes+=value.length;
+ while(recentImagePreviews.size>3||bytes>16500000){
+  const key=recentImagePreviews.keys().next().value;
+  if(key===undefined)break;
+  bytes-=recentImagePreviews.get(key).length;recentImagePreviews.delete(key);
+ }
+}
+function showInlineChatImage(bubble,url,opts={}){
+ const row=bubble?.closest(".message");
+ if(!row||typeof url!=="string"||!/^(data:image\/(?:png|jpeg|webp);base64,|\/api\/files\/[0-9a-f-]{36}$)/i.test(url))return false;
+ const preview=node("figure","chat-image-preview"),img=node("img","chat-generated-image");
+ img.alt="AI生成图片";img.loading="eager";img.decoding="async";preview.append(img);
+ const renderId=opts.jobId||"image-"+String(row.dataset.messageId||"");
+ bubble.dataset.imageFinalizing=renderId;
+ img.onload=()=>{
+  if(!row.isConnected||bubble.dataset.imageFinalizing!==renderId)return;
+  delete bubble.dataset.imageFinalizing;
+  bubble.classList.remove("chat-image-task");preview.classList.add("is-ready");
+  row.dataset.messageKind="image";
+  if(opts.temporary)cacheRecentImage(row.dataset.messageId,url);
+  appendMessageCopy(row,"");setPortraitState(row,"finished");
+  const viewport=$("conversation");
+  if(viewport&&!viewport.hidden&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<450)
+   viewport.scrollTop=viewport.scrollHeight;
+ };
+ img.onerror=()=>{
+  if(!bubble.isConnected||bubble.dataset.imageFinalizing!==renderId)return;
+  delete bubble.dataset.imageFinalizing;
+  preview.replaceChildren(node("span","image-job-error","图片加载失败"));
+  setPortraitState(row,"error");
+ };
+ bubble.replaceChildren(preview);
+ img.src=url;
+ return true;
+}
+
 function createImageWaitingFrame(){
  const frame=node("div","image-loading-card");frame.setAttribute("role","img");frame.setAttribute("aria-label","七彩图片生成中");
  frame.append(node("span","image-loading-glow"),node("span","image-loading-shimmer"));return frame;
@@ -680,6 +740,7 @@ function createImageWaitingFrame(){
 function showChatImageWaiting(bubble,label){bubble.classList.add("chat-image-task");bubble.replaceChildren(label,createImageWaitingFrame())}
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
+ setPortraitState(bubble.closest(".message"),"creating");
  const label=node("span","image-job-label","作图中 1秒");
  bubble.dataset.imageStart=String(Date.now());
  showChatImageWaiting(bubble,label);
@@ -702,11 +763,12 @@ async function pollImageJob(bubble,id,manual){
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
-   if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
-   const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
-   img.onload=()=>{if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);const row=bubble.closest(".message");if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}};
-   img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片加载失败"))};
-   img.src=r.image;return;
+   if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));setPortraitState(bubble.closest(".message"),"error");return}
+    if(!showInlineChatImage(bubble,r.image,{jobId:id,temporary:Boolean(r.temporary)})){
+     bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片预览不可用"));
+     setPortraitState(bubble.closest(".message"),"error");
+    }
+    return;
   }
   delay=Math.max(7000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -1273,18 +1335,20 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  if(role==="user")row.dataset.sourceText=String(content||"");
  bubble.textContent=String(content||"");
  if(role==="assistant"){
-  const icon=node("span","avatar-ai");icon.innerHTML="<svg viewBox=\"0 0 36 36\" width=\"34\" height=\"34\" aria-hidden=\"true\"><rect x=\"4\" y=\"6\" width=\"28\" height=\"27\" rx=\"12\" fill=\"#d6eef1\" stroke=\"#92c4ce\" stroke-width=\"1.2\"/><path d=\"M4 15C0 12 3 7 8 10M32 15c4-3 1-8-4-5\" fill=\"#b0d9e6\"/><circle cx=\"13\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><circle cx=\"23\" cy=\"19\" r=\"2.3\" fill=\"#395e6c\"/><path d=\"M14 26q4 3 8 0\" fill=\"none\" stroke=\"#496f77\" stroke-width=\"1.7\" stroke-linecap=\"round\"/><circle cx=\"8.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><circle cx=\"27.5\" cy=\"25\" r=\"2.3\" fill=\"#f6b6c7\"/><path d=\"M18 6V2\" stroke=\"#74aab6\" stroke-width=\"1.8\"/><circle cx=\"18\" cy=\"3\" r=\"2\" fill=\"#f7c975\"/></svg>";if(!existingRow)row.append(icon,bubble);
+  if(!existingRow)row.append(makeAssistantPortrait(),bubble);
+  else if(!row.querySelector(":scope > .avatar-ai"))row.prepend(makeAssistantPortrait());
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
   if(pending){row.dataset.messageKind="image";bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
-  if(picture){row.dataset.messageKind="image";bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
-  if(!pending&&!picture&&String(content||"").trim()){
+  const cachedPreview=messageId?recentImagePreviews.get(messageId):null;
+  if(picture||cachedPreview){row.dataset.messageKind="image";showInlineChatImage(bubble,cachedPreview||picture[1])}
+  if(!pending&&!picture&&!cachedPreview&&String(content||"").trim()){
    renderAssistantText(bubble,content);
    // Keep the answer clean; all actions are in the compact toolbar.
    row.dataset.usedModel=typeof model==="string"?model:"";
    row.dataset.incomplete=incomplete?"1":"0";
   }
-  if(!pending)appendMessageCopy(row,content);
+  if(!pending&&!picture&&!cachedPreview)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   bubble.replaceChildren();
@@ -2166,6 +2230,7 @@ async function sendMessage(){
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
  const loading=appendMessage("assistant","");
+  setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
  const waitLabel=node("span","",isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
@@ -2186,8 +2251,9 @@ async function sendMessage(){
     const bubble=loadingBubble,viewport=$("conversation");
     const onDelta=token=>{
      if(!active||!loading.isConnected)return;
-     receivedStreamingText=true;
-     streamedContent+=token;
+     if(!receivedStreamingText)setPortraitState(loading,"speaking");
+      receivedStreamingText=true;
+      streamedContent+=token;
      pending+=token;if(scheduled)return;scheduled=true;
      requestAnimationFrame(()=>{
       scheduled=false;if(!active||!loading.isConnected)return;
@@ -2215,11 +2281,12 @@ async function sendMessage(){
   if(submittedMode==="text"&&result.provider==="free"&&S.provider!=="free"&&result.model==="free:auto"){
    setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
   }
-  if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
+  if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
    S.chatId=result.chatId;
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null);
+    if(submittedMode==="text")setPortraitState(loading,"finished");
   }
   if(VOICE_CHAT_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
    voiceSession.pending=false;voiceSession.lastReply=result.reply;$("voiceReply").textContent=result.reply;$("voiceReplay").disabled=false;
@@ -2227,7 +2294,8 @@ async function sendMessage(){
   }
   await fetchChats();void fetchMe();
  }catch(e){
-  if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
+   setPortraitState(loading,"error");
+   if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
   // Show status in the assistant reply; retain all streamed content.
   const bubble=loadingBubble,status=node("span","message-send-pending");

@@ -118,7 +118,7 @@ a{color:inherit}
 .messages{width:100%;max-width:840px;margin:0 auto;padding:15px 36px 40px}
 .message{display:flex;gap:13px;align-items:flex-start;line-height:1.75;margin:15px 0 24px}
 .message.user{justify-content:flex-end;flex-direction:column;align-items:flex-end;gap:2px}
-.message.assistant{display:grid;grid-template-columns:28px minmax(0,1fr);column-gap:13px;row-gap:2px}
+.message.assistant{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:10px;row-gap:2px}
 .message.assistant>.avatar-ai{grid-column:1;grid-row:1}
 .message.assistant>.bubble{grid-column:2;grid-row:1;width:100%;min-width:0}
 .message.assistant>.message-copy-bar{grid-column:2;grid-row:2;justify-content:flex-start;margin-top:0}
@@ -609,14 +609,44 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .quick-entry small{font-size:11px;color:#859197}
 @media(max-width:430px){.model-quick{grid-template-columns:1fr;gap:7px}.quick-entry{padding:10px 12px}}
 
-.avatar-ai{width:34px;height:34px;display:grid;place-items:center;flex:none;background:transparent!important;color:inherit!important}
-.avatar-ai svg{display:block;width:34px;height:34px}
+.avatar-ai{width:36px;height:36px;display:grid;place-items:center;flex:none;background:transparent!important;color:inherit!important;isolation:isolate}
+.avatar-ai svg{display:block;width:36px;height:36px;overflow:visible}
+.avatar-ai .ai-avatar-core,.avatar-ai .ai-avatar-halo,.avatar-ai .ai-avatar-eye,.avatar-ai .ai-avatar-beacon{transform-box:fill-box;transform-origin:center}
+.avatar-ai .ai-avatar-mouth{opacity:0;transform-box:fill-box;transform-origin:center}
+.avatar-ai .ai-avatar-smile{opacity:1}
+.message.assistant:last-child .avatar-ai[data-state="idle"] .ai-avatar-core{animation:replyPortraitBreathe 5.8s ease-in-out infinite}
+.message.assistant:last-child .avatar-ai[data-state="idle"] .ai-avatar-eye{animation:replyPortraitBlink 6.2s ease-in-out infinite}
+.avatar-ai[data-state="thinking"] .ai-avatar-core{animation:replyPortraitThink 1.8s ease-in-out infinite}
+.avatar-ai[data-state="thinking"] .ai-avatar-halo,.avatar-ai[data-state="creating"] .ai-avatar-halo{animation:replyPortraitPulse 1.3s ease-in-out infinite}
+.avatar-ai[data-state="thinking"] .ai-avatar-beacon,.avatar-ai[data-state="creating"] .ai-avatar-beacon{animation:replyPortraitBeacon .85s ease-in-out infinite alternate}
+.avatar-ai[data-state="creating"] .ai-avatar-core{animation:replyPortraitBreathe 2.3s ease-in-out infinite}
+.avatar-ai[data-state="speaking"] .ai-avatar-core{animation:replyPortraitTalk .58s ease-in-out infinite alternate}
+.avatar-ai[data-state="speaking"] .ai-avatar-smile{opacity:0}
+.avatar-ai[data-state="speaking"] .ai-avatar-mouth{opacity:1;animation:replyPortraitMouth .31s ease-in-out infinite alternate}
+.avatar-ai[data-state="finished"] .ai-avatar-core{animation:replyPortraitFinish .76s cubic-bezier(.2,.8,.2,1) 1}
+.avatar-ai[data-state="error"]{filter:saturate(.58)}
+@keyframes replyPortraitBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.4px)}}
+@keyframes replyPortraitBlink{0%,45%,48%,80%,83%,100%{transform:scaleY(1)}46%,81%{transform:scaleY(.16)}}
+@keyframes replyPortraitThink{0%,100%{transform:rotate(-3deg) translateY(0)}50%{transform:rotate(3deg) translateY(-1px)}}
+@keyframes replyPortraitPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.055);opacity:.7}}
+@keyframes replyPortraitBeacon{to{opacity:.44;transform:scale(.82)}}
+@keyframes replyPortraitTalk{from{transform:translateY(0) rotate(-1deg)}to{transform:translateY(1px) rotate(1deg)}}
+@keyframes replyPortraitMouth{from{transform:scale(1,.62)}to{transform:scale(1,1.55)}}
+@keyframes replyPortraitFinish{0%,100%{transform:scale(1) translateY(0)}42%{transform:scale(1.065) translateY(-2px)}}
+@media(prefers-reduced-motion:reduce){.avatar-ai .ai-avatar-core,.avatar-ai .ai-avatar-halo,.avatar-ai .ai-avatar-eye,.avatar-ai .ai-avatar-beacon,.avatar-ai .ai-avatar-mouth{animation:none!important}}
 .thinking-status{display:inline-flex;align-items:center;gap:8px;color:#70858a;font-size:13px;min-height:27px}
 .thinking-dots{display:inline-flex;gap:4px;align-items:center}
 .thinking-dots i{width:5px;height:5px;border-radius:50%;background:#a1c9c4;animation:thinkdots 1.15s ease-in-out infinite}
 .thinking-dots i:nth-child(2){animation-delay:.18s}.thinking-dots i:nth-child(3){animation-delay:.36s}
 @keyframes thinkdots{0%,70%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
 @media(prefers-reduced-motion:reduce){.thinking-dots i{animation:none}}
+/* Image-generation previews occupy the corresponding assistant bubble, not a separate panel. */
+.message.assistant .bubble.chat-image-task{width:100%;max-width:440px}
+.message.assistant .chat-image-preview{position:relative;display:block;width:min(100%,420px);max-width:100%;aspect-ratio:4/5;margin:0;border:1px solid #e2e8f1;border-radius:17px;background:linear-gradient(140deg,#eef6fb,#f2f0ff);overflow:hidden}
+.message.assistant .chat-image-preview img.chat-generated-image{display:block;width:100%;height:100%;max-width:none;max-height:none;margin:0;object-fit:contain;border-radius:0;opacity:0;transition:opacity .3s ease}
+.message.assistant .chat-image-preview.is-ready img.chat-generated-image{opacity:1}
+.message.assistant .chat-image-preview .image-job-error{display:grid;place-items:center;height:100%;padding:20px}
+@media(prefers-reduced-motion:reduce){.message.assistant .chat-image-preview img.chat-generated-image{transition:none}}
 .image-job-label{font-size:13px;color:#698189}
 .chat-image-task{width:min(100%,440px);max-width:100%}
 .chat-image-task .image-job-label{display:block;margin:0 0 12px;color:#3e535d;font-size:13px;font-weight:600}
