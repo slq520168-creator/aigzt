@@ -775,6 +775,28 @@ async function submitHordeImageEdit(env,user,imageId,prompt){
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-edit-free')",id,user.id,JSON.stringify(ref),now);
  return {jobId:id,model:"免费图生图 · AI Horde",pending:true};
 }
+/* AI Horde generations may contain an HTTPS image URL or base64 image data.
+ * Do not fetch arbitrary remote image URLs through our Worker. Results remain
+ * session-only and never go to our R2. */
+function hordeImageResult(raw){
+ const input=String(raw||"");
+ if(/^https:\/\//i.test(input)){
+  if(input.length>3072)return "";
+  let u;try{u=new URL(input)}catch{return ""}
+  const host=u.hostname.toLowerCase();
+  if(u.protocol!=="https:"||u.username||u.password||u.port||!host.includes(".")||
+     host==="localhost"||host.endsWith(".local")||
+     /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)||host.includes(":"))return "";
+  return u.href;
+ }
+ const data=/^data:image\/(?:webp|png|jpeg);base64,/i.exec(input);
+ const payload=data?input.slice(data[0].length):input;
+ if(payload.length<1200||payload.length>8000000||!/^[A-Za-z0-9+/]+={0,2}$/.test(payload))return "";
+ let header;try{header=Uint8Array.from(atob(payload.slice(0,64)),c=>c.charCodeAt(0))}catch{return ""}
+ const mime=detectImage(header);
+ return mime?"data:"+mime+";base64,"+payload:"";
+}
+
 async function hordeStatus(env,user,job,ref){
  const now=Date.now();
  if(!hordeUuid(ref.id))return response({ok:true,done:true,failed:true,error:"免费图生图任务号无效"});
@@ -811,12 +833,8 @@ async function hordeStatus(env,user,job,ref){
  if(text.length>8200000)return response({ok:true,done:true,failed:true,error:"免费来源图片过大"});
  let answer;try{answer=JSON.parse(text)}catch{return response({ok:true,done:false,pending:true,waitSeconds:25,startedAt:job.created_at})}
  const raw=String(answer?.generations?.[0]?.img||"");
- const payload=raw.startsWith("data:image/webp;base64,")?raw.slice(23):raw;
- if(payload.length<1200||payload.length>8000000||!/^[A-Za-z0-9+/]+={0,2}$/.test(payload))return response({ok:true,done:true,failed:true,error:"免费来源未返回可用的图片数据"});
- let sample;try{sample=new Uint8Array(Array.from(atob(payload.slice(0,32)),c=>c.charCodeAt(0)))}catch{return response({ok:true,done:true,failed:true,error:"免费来源图片格式无效"})}
- const mime=detectImage(sample);
- if(!mime)return response({ok:true,done:true,failed:true,error:"免费来源没有返回有效图片"});
- const image="data:"+mime+";base64,"+payload;
+ const image=hordeImageResult(raw);
+ if(!image)return response({ok:true,done:true,failed:true,error:"免费来源未返回可预览的图片"});
  const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='pending'",job.id,user.id);
  if(!deleted.meta?.changes)return response({ok:true,done:false,pending:true,waitSeconds:18,startedAt:job.created_at});
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（仅本次会话展示，图片未保存）",job.message_id,user.id).catch(()=>{});
