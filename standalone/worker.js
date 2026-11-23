@@ -1164,9 +1164,6 @@ async function fvCreate(env,user,b,provider,model,prompt){
  if(!env.DB||!env.MEDIA)throw fvError("站点存储暂时不可用",503);
  const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') LIMIT 1",user.id);
  if(active)throw fvError("已有免费视频任务正在生成，请先查询上一条",409);
- const day=Math.floor(Date.now()/86400000)*86400000;
- const count=await dbGet(env.DB,"SELECT COUNT(*) AS n FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND created_at>=?",user.id,day);
- if(Number(count?.n||0)>=2)throw fvError("今天免费生成已达到两次上限",429);
  let file=null;
  if(b.imageId){
   if(!fvId(b.imageId))throw fvError("参考图编号无效",400);
