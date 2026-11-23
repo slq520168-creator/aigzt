@@ -1134,6 +1134,59 @@ function messageTool(icon,label,action){
  });
  renderIcons(b);return b;
 }
+/* One-tap, per-message translation. The original message is immutable;
+ * translations stay in memory only, and never create another chat message. */
+const messageTranslations=new WeakMap();
+function messageTranslationSource(row,content){
+ if(!row||row.dataset.messageKind==="image"||row.dataset.messageKind==="video")return "";
+ if(row.querySelector("img.chat-generated-image,video.chat-generated-video"))return "";
+ let source=String(content||"").trim();
+ if(!source||/^\[\[aigzt:(?:image|video)/i.test(source))return "";
+ source=source.replace(/(?:^|\n)\[文件：[^\]]+\]\(\/api\/files\/[0-9a-f-]{36}\)/gi,"").trim();
+ if(!source||/^```[\s\S]*```$/.test(source))return "";
+ return source;
+}
+async function toggleMessageTranslation(row,source,button){
+ let state=messageTranslations.get(row);
+ const currentSource=messageTranslationSource(row,source);
+ if(!currentSource||!row.isConnected)return;
+ if(state&&state.source!==currentSource){
+  state.panel.remove();messageTranslations.delete(row);state=null;
+ }
+ if(state){
+  const open=state.panel.hidden;
+  state.panel.hidden=!open;
+  button.classList.toggle("is-active",open);
+  button.setAttribute("aria-pressed",String(open));
+  button.title=open?"收起翻译":"翻译";
+  button.setAttribute("aria-label",button.title);
+  return;
+ }
+ const panel=node("div","message-translation");
+ panel.setAttribute("role","status");panel.setAttribute("aria-live","polite");
+ panel.textContent="正在翻译…";
+ row.append(panel);
+ state={source:currentSource,panel,pending:true};
+ messageTranslations.set(row,state);
+ button.classList.add("is-active");
+ button.setAttribute("aria-pressed","true");
+ button.title="收起翻译";button.setAttribute("aria-label","收起翻译");
+ if(currentSource.length>2800){
+  state.pending=false;
+  panel.textContent="这条消息超过单次 2800 字符的翻译上限，请分段翻译。";
+  return;
+ }
+ try{
+  const result=await api("/api/message/translate",{text:currentSource,target:"zh-CN"});
+  if(messageTranslations.get(row)!==state||!row.isConnected)return;
+  state.pending=false;panel.textContent=String(result.translation||"").trim()||"翻译未返回内容";
+ }catch(error){
+  if(messageTranslations.get(row)!==state||!row.isConnected)return;
+  state.pending=false;
+  panel.textContent="翻译失败："+humanError(error);
+ }
+}
+
 function messageQuestion(row){
  let previous=row?.previousElementSibling||(!row?.isConnected?$("messageList").lastElementChild:null);
  while(previous&&!previous.classList.contains("user"))previous=previous.previousElementSibling;
@@ -1284,6 +1337,15 @@ function appendMessageCopy(row,content){
  const user=row.classList.contains("user"),bar=node("div","message-copy-bar");
  if(!image)bar.append(messageTool("copy","复制",b=>copyMessageText(text,b)));
  if(user)bar.append(messageTool("square-pen","编辑消息",()=>messageDraft(row.dataset.sourceText||text)));
+ const translatable=messageTranslationSource(row,user?row.dataset.sourceText||text:text);
+ if(translatable){
+  const toggle=messageTool("languages","翻译",b=>toggleMessageTranslation(row,translatable,b));
+  toggle.dataset.action="translate";
+  const open=Boolean(messageTranslations.get(row)&&!messageTranslations.get(row).panel.hidden);
+  toggle.classList.toggle("is-active",open);
+  toggle.setAttribute("aria-pressed",String(open));
+  bar.append(toggle);
+ }
  bar.append(messageTool("share","分享",b=>messageShare(row,text,b)));
  bar.append(messageTool("download","下载",()=>messageDownload(row,text)));
  if(!image&&row.dataset.messageId){
@@ -1330,7 +1392,8 @@ function appendMessageCopy(row,content){
   }
  }
  if(!user){more.append(trigger,panel);bar.append(more);renderIcons(trigger)}
- row.append(bar);
+ const translated=row.querySelector(":scope > .message-translation");
+ if(translated)row.append(bar,translated);else row.append(bar);
 }
 
 
@@ -1424,7 +1487,12 @@ function inlineVideoJob(bubble,id){
 
 function appendMessage(role,content,model,existingRow=null,incomplete=false,messageId=null,saved=false,feedback=0,usage=null){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
- if(existingRow){row.querySelector(":scope > .message-copy-bar")?.remove();delete bubble.dataset.imageFinalizing}
+ if(existingRow){
+  row.querySelector(":scope > .message-copy-bar")?.remove();
+  row.querySelector(":scope > .message-translation")?.remove();
+  messageTranslations.delete(row);
+  delete bubble.dataset.imageFinalizing;
+ }
  if(messageId)row.dataset.messageId=messageId;
  row.dataset.saved=saved?"1":(row.dataset.saved||"0");
  row.dataset.feedback=String(Number(feedback)||0);
