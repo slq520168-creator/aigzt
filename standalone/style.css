@@ -117,7 +117,7 @@ a{color:inherit}
 .welcome h1{margin:0;font-size:clamp(25px,3vw,32px);font-weight:620;letter-spacing:-.5px}
 .messages{width:100%;max-width:840px;margin:0 auto;padding:15px 36px 40px}
 .message{display:flex;gap:13px;align-items:flex-start;line-height:1.75;margin:15px 0 24px}
-.message.user{justify-content:flex-end}
+.message.user{justify-content:flex-end;flex-direction:column;align-items:flex-end;gap:2px}
 .bubble{max-width:min(93%,700px);overflow-wrap:anywhere;white-space:pre-wrap;min-width:0}
 .message.user .bubble{padding:10px 16px;border-radius:19px 19px 5px 19px;background:#f1f3f4}
 .message.assistant .bubble{flex:1;white-space:normal;line-height:1.72;min-width:0}
@@ -137,6 +137,7 @@ a{color:inherit}
 .message-copy-btn>.ui-icon,.message-copy-btn>.ui-icon svg{display:block;width:14px;height:14px;flex:none}
 .message-copy-btn svg{stroke:#63727e!important}
 .message.user .message-copy-btn{color:#697681}
+.message.user>.message-copy-bar{margin-top:0;min-height:22px;padding-right:3px}
 .draw-previous-section{margin-top:12px;padding-top:10px;border-top:1px solid #e3eaed}
 .message.assistant .bubble p{margin:0 0 12px;white-space:pre-wrap}
 .message.assistant .bubble p:last-child{margin-bottom:0}

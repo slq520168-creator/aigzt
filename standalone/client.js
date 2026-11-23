@@ -901,7 +901,11 @@ async function copyMessageText(value,button){
  }
  if(!copied){flashError("复制失败，请长按消息选择文字");return}
  const label=button.querySelector(".message-copy-label");
- if(label)label.textContent="已复制";
+ if(label){
+  label.textContent="已复制";
+  if(button._copyLabelTimer)clearTimeout(button._copyLabelTimer);
+  button._copyLabelTimer=setTimeout(()=>{if(button.isConnected)label.textContent="复制";button._copyLabelTimer=null},1600);
+ }
 }
 function appendMessageCopy(bubble,content){
  const text=String(content||"");if(!text.trim())return;
@@ -977,8 +981,9 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false){
     if(/\.(jpg|jpeg|png|webp|gif)$/i.test(f[1])){const img=node("img","chat-upload-image");img.src=f[2];img.alt=f[1];img.loading="lazy";bubble.append(img)}
    }
   }
-  appendMessageCopy(bubble,content);
   row.append(bubble);
+  // Keep the sent-message copy action below its bubble, not inside the text background.
+  appendMessageCopy(row,content);
  }
  if(!existingRow)$("messageList").append(row);
  const viewport=$("conversation");
