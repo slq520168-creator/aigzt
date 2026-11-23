@@ -1622,14 +1622,34 @@ function renderAttachments(){
 
  }
 }
+/* Resize an image-edit reference in the visitor's browser before uploading.
+ * No remote conversion service, additional site generations or saved result. */
+async function optimizeImageReference(file){
+ if(S.composerMode!=="image"||!["image/jpeg","image/png","image/webp"].includes(file.type))return file;
+ const bitmap=await createImageBitmap(file);
+ try{
+  const scale=Math.min(1,768/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(bitmap.width*scale));
+  canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);
+  const toWebp=quality=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob&&blob.type==="image/webp"?resolve(blob):reject(Error("本设备暂不支持图生图所需图片格式")),"image/webp",quality));
+  let blob=await toWebp(.76);
+  if(blob.size>1200000){canvas.width=Math.max(1,Math.round(canvas.width*.8));canvas.height=Math.max(1,Math.round(canvas.height*.8));canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);blob=await toWebp(.64)}
+  if(blob.size>1500000)throw Error("参考图压缩后仍过大，请选更小的图片");
+  return new File([blob],String(file.name||"reference").replace(/\.[^.]+$/,"")+".webp",{type:"image/webp"});
+ }finally{bitmap.close?.()}
+}
+
 async function uploadSelected(files){
  if(!S.user){show("authDialog");return}
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
  for(const file of files){
   if(file.size>8000000){flashError("单文件最大8MB："+file.name);continue}
-  const body=new FormData();body.append("file",file);
   try{
    $("attachButton").disabled=true;
+   const selected=await optimizeImageReference(file);
+   const body=new FormData();body.append("file",selected);
    const r=await fetch("/api/files/upload",{method:"POST",credentials:"same-origin",body});
    const d=await r.json().catch(()=>null);
    if(!r.ok||!d?.ok)throw Error(d?.error||"HTTP "+r.status);
@@ -2331,8 +2351,11 @@ async function sendMessage(){
  const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
  if(submittedMode==="video"&&!freeVideo){$("createPrompt").value=prompt;openVideoCreate();return}
  if(freeVideo&&!prompt){flashError("请输入视频描述");return}
+ if(submittedMode==="image"&&!prompt){flashError("请输入修改图片的描述");return}
  if(freeVideo&&S.videoProvider!=="freetext"&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){flashError("请先从左侧＋上传参考图");return}
- if(submittedMode==="image"&&S.attachments.length){flashError("当前免费作图只支持文字描述，附件已保留，切回聊天可继续发送");return}
+ if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
+  flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
+ }
  if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
  }
@@ -2388,7 +2411,8 @@ async function sendMessage(){
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt});
+   const reference=attached.find(x=>["image/jpeg","image/png","image/webp"].includes(x.type));
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt,imageId:reference?.id});
   }
   else if(freeVideo){
    const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
