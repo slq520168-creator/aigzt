@@ -1118,3 +1118,10 @@ html.aigzt-ios-pwa #workModelDialog[open]{
 .video-image-upload input{font-size:12px;width:100%;max-width:100%;min-height:34px;box-sizing:border-box}
 .video-image-upload small{color:#638095;line-height:1.45;overflow-wrap:anywhere}
 .video-model-card[data-video-provider^="free"].selected{border-color:#2c987a;background:#edfaf5;box-shadow:0 0 0 1px #2c987a}
+
+/* Free video tasks and results inside the original chat thread */
+.chat-generated-video{display:block;width:min(350px,100%);max-width:100%;max-height:55dvh;aspect-ratio:9/16;object-fit:contain;background:#10131e;border-radius:14px}
+.chat-video-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.chat-video-save,.video-job-check{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border-radius:9px;border:1px solid #53627c;background:#263a57;color:#fff;font-size:12px;text-decoration:none;cursor:pointer}
+.video-job-label{display:block;font-size:13px;line-height:1.5;margin-bottom:9px}
+.video-job-check:disabled{opacity:.55;cursor:default}

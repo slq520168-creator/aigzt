@@ -1311,6 +1311,36 @@ function appendMessageCopy(row,content){
 }
 
 
+
+function inlineVideo(bubble,id){
+ const url="/api/video/media/"+id,video=node("video","chat-generated-video");
+ video.controls=true;video.playsInline=true;video.preload="metadata";video.src=url;
+ const actions=node("div","chat-video-actions"),link=node("a","chat-video-save","下载");
+ link.href=url;link.download="aigzt-"+id+".mp4";actions.append(link);
+ bubble.replaceChildren(video,actions);
+}
+function inlineVideoJob(bubble,id){
+ const info=node("span","video-job-label","视频已提交，点击查询进度");
+ const button=node("button","video-job-check","查询进度");button.type="button";
+ bubble.replaceChildren(info,button);
+ button.addEventListener("click",async()=>{
+  if(button.disabled||!bubble.isConnected)return;
+  button.disabled=true;info.textContent="正在查询...";
+  try{
+   const r=await api("/api/video/status",{provider:"freewan",requestId:id});
+   if(!bubble.isConnected)return;
+   if(r.status==="completed"&&/^\/api\/video\/media\/[0-9a-f-]{36}$/i.test(r.url||"")){
+    const row=bubble.closest(".message");
+    const mediaId=r.url.split("/").pop();
+    if(row)appendMessage("assistant","[[aigzt:video:"+mediaId+"]]","免费视频",row,false,row.dataset.messageId);
+    else inlineVideo(bubble,mediaId);
+   }else if(r.status==="failed"){info.textContent=r.error||"生成未完成";button.remove()}
+   else info.textContent="仍在生成，请稍后手动查询";
+  }catch(e){info.textContent="暂时无法查询："+humanError(e)}
+  finally{button.disabled=false}
+ });
+}
+
 function appendMessage(role,content,model,existingRow=null,incomplete=false,messageId=null,saved=false,feedback=0,usage=null){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
  if(existingRow){row.querySelector(":scope > .message-copy-bar")?.remove();delete bubble.dataset.imageFinalizing}
@@ -1328,13 +1358,17 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   if(pending){row.dataset.messageKind="image";bubble.replaceChildren();renderImageJob(bubble,pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){row.dataset.messageKind="image";bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
-  if(!pending&&!picture&&String(content||"").trim()){
+  const videoPending=String(content||"").match(/^\[\[aigzt:video-job:([0-9a-f-]{36})\]\]$/i);
+  const videoDone=String(content||"").match(/^\[\[aigzt:video:([0-9a-f-]{36})\]\]$/i);
+  if(videoPending){row.dataset.messageKind="video";inlineVideoJob(bubble,videoPending[1]);}
+  if(videoDone){row.dataset.messageKind="video";inlineVideo(bubble,videoDone[1]);}
+  if(!pending&&!picture&&!videoPending&&!videoDone&&String(content||"").trim()){
    renderAssistantText(bubble,content);
    // Keep the answer clean; all actions are in the compact toolbar.
    row.dataset.usedModel=typeof model==="string"?model:"";
    row.dataset.incomplete=incomplete?"1":"0";
   }
-  if(!pending)appendMessageCopy(row,content);
+  if(!pending&&!videoPending)appendMessageCopy(row,videoDone?"视频已生成":content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
   bubble.replaceChildren();
@@ -1410,8 +1444,8 @@ function updateComposerModel(){
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
  const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
- name.textContent=imageMode?"免费作图 · 点击左侧返回聊天":videoMode?"免费视频 · 上传图片后生成":active;
- name.title=imageMode?"当前在聊天中生成图片，成功后直接显示在对话内":videoMode?"输入视频动作，上传图片后在本站生成视频":(work?"当前工作选择：":"当前聊天选择：")+active;
+ name.textContent=imageMode?"免费作图 · 点击左侧返回聊天":videoMode?(VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频")+" · 点击切换":active;
+ name.title=imageMode?"当前在聊天中生成图片，成功后直接显示在对话内":videoMode?"选择免费来源或个人 API 视频模型":(work?"当前工作选择：":"当前聊天选择：")+active;
  $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":work?"工作模型":"聊天模型";
  switcher.setAttribute("aria-label",imageMode||videoMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型");
  switcher.title=imageMode||videoMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
@@ -2198,7 +2232,10 @@ async function sendMessage(){
  const submittedMode=S.composerMode;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
- if(submittedMode==="video"){$("createPrompt").value=prompt;openVideoCreate();return}
+ const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
+ if(submittedMode==="video"&&!freeVideo){$("createPrompt").value=prompt;openVideoCreate();return}
+ if(freeVideo&&!prompt){flashError("请输入视频描述");return}
+ if(freeVideo&&S.videoProvider!=="freetext"&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){flashError("请先从左侧＋上传参考图");return}
  if(submittedMode==="image"&&S.attachments.length){flashError("当前免费作图只支持文字描述，附件已保留，切回聊天可继续发送");return}
  if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
@@ -2257,6 +2294,11 @@ async function sendMessage(){
   else if(isImageMessage){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt});
   }
+  else if(freeVideo){
+   const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:S.videoProvider,model:S.videoModel,imageId:S.videoProvider==="freetext"?undefined:img?.id,ratio:S.videoRatio,prompt});
+   if(result.requestId)rememberVideoTask(S.videoProvider,S.videoModel,result.requestId);
+  }
   else{
    if(submittedMode==="video"&&!connected("grok")){openKeyPanel("grok");throw Error("请先连接 Grok 密钥");}
    const confirmed=confirm("视频可能收费。确定使用自己的Grok API额度生成吗？");
@@ -2294,7 +2336,8 @@ async function sendMessage(){
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
    if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
-   if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
+   if(freeVideo&&S.composerMode!=="video")setComposerMode("video");
+   else if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage();
   });
@@ -2826,7 +2869,7 @@ function selectVideoModel(provider,model){
  $("confirmVideo").checked=false;
  try{if(S.user)sessionStorage.setItem("aigzt:video-selection:"+S.user.id,JSON.stringify({provider,model,ratio:S.videoRatio}))}catch{}
  restoreVideoTask();$("mediaPreview").replaceChildren();$("createStatus").textContent="";
- syncVideoSelector();
+ syncVideoSelector();updateComposerModel();
  if(S.videoTask)$("createStatus").textContent="此服务商有一条已保存的视频任务，可以查询状态。";
 }
 function openVideoCreate(){
@@ -3094,7 +3137,7 @@ function wire(){
  $("imageMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="image"?"text":"image");$("toolTray").hidden=true;$("prompt").focus()});
  $("videoMode").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=true;setComposerMode(S.composerMode==="video"?"text":"video");$("prompt").focus()});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
- $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="image"||S.composerMode==="video"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});
+ $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="video")openVideoCreate();else if(S.composerMode==="image"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);
