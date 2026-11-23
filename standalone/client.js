@@ -1658,21 +1658,55 @@ function renderAttachments(){
 }
 /* Resize an image-edit reference in the visitor's browser before uploading.
  * No remote conversion service, additional site generations or saved result. */
+/* Normal JPG/PNG/WebP attachments stay unchanged.
+ * Convert only an oversized reference or HEIC/HEIF used in image-edit mode.
+ * Use an Image fallback for iPhone Safari when createImageBitmap cannot decode HEIC. */
 async function optimizeImageReference(file){
- if(S.composerMode!=="image"||!["image/jpeg","image/png","image/webp","image/heic","image/heif"].includes(file.type)&&!/\.(heic|heif)$/i.test(file.name))return file;
- const bitmap=await createImageBitmap(file);
+ if(S.composerMode!=="image")return file;
+ const type=String(file.type||"").toLowerCase();
+ const standard=["image/jpeg","image/png","image/webp"].includes(type);
+ const heic=["image/heic","image/heif"].includes(type)||/\.(heic|heif)$/i.test(file.name||"");
+ if(!standard&&!heic)return file;
+ // Keep already valid image attachments untouched; backend accepts up to 1.6 MB.
+ if(standard&&file.size<=1450000)return file;
+ let bitmap=null,preview=null,objectUrl="";
  try{
-  const scale=Math.min(1,768/Math.max(bitmap.width,bitmap.height));
+  if(typeof createImageBitmap==="function"){
+   try{bitmap=await createImageBitmap(file)}catch{}
+  }
+  if(!bitmap){
+   objectUrl=URL.createObjectURL(file);
+   preview=await new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>resolve(img);
+    img.onerror=()=>reject(Error("该图片无法转换，请改用 JPG 或 PNG 图片"));
+    img.src=objectUrl;
+   });
+  }
+  const source=bitmap||preview;
+  const width=source.width||source.naturalWidth,height=source.height||source.naturalHeight;
+  if(!width||!height)throw Error("无法读取参考图片尺寸");
   const canvas=document.createElement("canvas");
-  canvas.width=Math.max(1,Math.round(bitmap.width*scale));
-  canvas.height=Math.max(1,Math.round(bitmap.height*scale));
-  canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);
-  const toWebp=quality=>new Promise((resolve,reject)=>canvas.toBlob(blob=>blob&&blob.type==="image/webp"?resolve(blob):reject(Error("本设备暂不支持图生图所需图片格式")),"image/webp",quality));
-  let blob=await toWebp(.76);
-  if(blob.size>1200000){canvas.width=Math.max(1,Math.round(canvas.width*.8));canvas.height=Math.max(1,Math.round(canvas.height*.8));canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);blob=await toWebp(.64)}
-  if(blob.size>1500000)throw Error("参考图压缩后仍过大，请选更小的图片");
-  return new File([blob],String(file.name||"reference").replace(/\.[^.]+$/,"")+".webp",{type:"image/webp"});
- }finally{bitmap.close?.()}
+  const draw=side=>{
+   const scale=Math.min(1,side/Math.max(width,height));
+   canvas.width=Math.max(1,Math.round(width*scale));
+   canvas.height=Math.max(1,Math.round(height*scale));
+   const ctx=canvas.getContext("2d");
+   if(!ctx)throw Error("此设备暂不支持图片转换");
+   ctx.drawImage(source,0,0,canvas.width,canvas.height);
+  };
+  const jpeg=quality=>new Promise((resolve,reject)=>{
+   canvas.toBlob(blob=>blob&&blob.type==="image/jpeg"?resolve(blob):reject(Error("此设备暂不支持 JPG 编码")),"image/jpeg",quality);
+  });
+  draw(768);
+  let blob=await jpeg(.78);
+  if(blob.size>1450000){draw(576);blob=await jpeg(.65)}
+  if(blob.size>1500000)throw Error("参考图仍过大，请选较小的图片");
+  return new File([blob],String(file.name||"reference").replace(/\.[^.]+$/,"")+".jpg",{type:"image/jpeg"});
+ }finally{
+  bitmap?.close?.();
+  if(objectUrl)URL.revokeObjectURL(objectUrl);
+ }
 }
 
 async function uploadSelected(files){
