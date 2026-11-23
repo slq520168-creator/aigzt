@@ -20,7 +20,6 @@
    </div>
    <div class="sidebar-primary">
     <button class="nav-row" id="newChat"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span><span>新建对话</span></button>
-    <button class="nav-row" id="voiceChatOpen"><span class="ui-icon" data-icon="audio-lines" aria-hidden="true"></span><span>语音对话</span></button>
     <button class="nav-row" id="searchBtn"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><span>搜索聊天</span></button>
    </div>
    <div class="sidebar-chat-scroll" id="sidebarChatScroll" aria-label="聊天记录">
@@ -275,7 +274,7 @@
  </form>
  </dialog>
 
- <dialog id="voiceDialog" class="modal workspace-view" aria-label="语音对话">
+ <dialog id="voiceDialog" class="modal workspace-view" aria-label="语音对话" hidden>
   <div class="modal-head"><div><h2>语音对话</h2><p>语音提问 · AI 回答 · 设备语音播报</p></div><button type="button" class="close-modal" data-close="voiceDialog" aria-label="关闭语音对话"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
   <div class="voice-settings">
    <label>播报声音<select id="voiceSelect" aria-label="选择设备朗读声音"><option value="">系统默认声音</option></select></label>

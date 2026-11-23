@@ -372,37 +372,76 @@ async function fetchMe(){
  try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();setAuthUI()}
  catch(e){flashError("账号状态读取失败："+humanError(e))}
 }
+let chatFetchSerial=0;
 function renderHistory(){
- const recent=$("history"),pinned=$("pinnedHistory"),pinHeading=$("pinHeading");
- recent.replaceChildren();pinned.replaceChildren();
- const rows=S.chats||[],showPinned=!S.archivedView&&rows.some(item=>!!item.pinned_at);
- const normal=rows.filter(item=>!showPinned||!item.pinned_at);
- $("historyHeading").textContent=S.archivedView?"已归档聊天":S.activeProjectId?"项目聊天":"最近聊天";
- $("navChat").hidden=!(S.activeProjectId||S.archivedView);
- $("chatCount").textContent=rows.length?String(rows.length):"";
- $("historyToggle").hidden=normal.length<=6;
- $("historyToggle").firstChild.textContent=S.historyExpanded?"收起":"显示更多";
- $("historyToggle").setAttribute("aria-expanded",String(S.historyExpanded));
- pinHeading.hidden=!showPinned;pinned.hidden=!showPinned;
- if(!S.user){recent.append(node("div","hint","登录后查看聊天记录"));return}
- if(!rows.length){recent.append(node("div","hint",S.archivedView?"暂无归档聊天":"暂无聊天记录"));return}
- const makeRow=item=>{
-  const row=node("div","history-row"+(S.chatId===item.id?" active":""));
-  const select=node("button","history-select");select.type="button";select.title=item.title||"";select.append(iconSlot("message-circle"),node("span","history-title",item.title||"新对话"));
-  select.addEventListener("click",()=>void loadChat(item.id));
+ const recent=$("history"),pinned=$("pinnedHistory"),pinHeading=$("pinHeading"),scroller=$("sidebarChatScroll");
+ const rows=S.chats||[],hasPinned=!S.archivedView&&rows.some(x=>!!x.pinned_at);
+ const normal=rows.filter(x=>!hasPinned||!x.pinned_at);
+ const heading=S.archivedView?"已归档聊天":S.activeProjectId?"项目聊天":"最近聊天";
+ if($("historyHeading").textContent!==heading)$("historyHeading").textContent=heading;
+ const navHidden=!(S.activeProjectId||S.archivedView);
+ if($("navChat").hidden!==navHidden)$("navChat").hidden=navHidden;
+ const count=rows.length?String(rows.length):"";
+ if($("chatCount").textContent!==count)$("chatCount").textContent=count;
+ const moreHidden=normal.length<=6;
+ if($("historyToggle").hidden!==moreHidden)$("historyToggle").hidden=moreHidden;
+ const label=S.historyExpanded?"收起":"显示更多";
+ if($("historyToggle").firstChild.textContent!==label)$("historyToggle").firstChild.textContent=label;
+ const expanded=String(S.historyExpanded);
+ if($("historyToggle").getAttribute("aria-expanded")!==expanded)$("historyToggle").setAttribute("aria-expanded",expanded);
+ if(pinHeading.hidden===hasPinned)pinHeading.hidden=!hasPinned;
+ if(pinned.hidden===hasPinned)pinned.hidden=!hasPinned;
+ const existing=new Map([...pinned.children,...recent.children].filter(el=>el.dataset.chatId).map(el=>[el.dataset.chatId,el]));
+ const makeRow=x=>{
+  const row=node("div","history-row");row.dataset.chatId=x.id;
+  const select=node("button","history-select");select.type="button";
+  select.append(iconSlot("message-circle"),node("span","history-title",""));
+  select.addEventListener("click",()=>void loadChat(x.id));
   const more=node("button","history-more");more.type="button";more.title="聊天操作";
-  more.setAttribute("aria-label",(item.title||"聊天")+"的操作");more.append(iconSlot("ellipsis"));
-  more.addEventListener("click",()=>openChatActions(item.id));row.append(select,more);renderIcons(row);return row;
+  more.append(iconSlot("ellipsis"));more.addEventListener("click",()=>openChatActions(x.id));
+  row.append(select,more);renderIcons(row);return row;
  };
- if(showPinned)for(const item of rows.filter(x=>x.pinned_at))pinned.append(makeRow(item));
- for(const item of (S.historyExpanded?normal:normal.slice(0,6)))recent.append(makeRow(item));
+ const update=x=>{
+  const row=existing.get(x.id)||makeRow(x),active=S.chatId===x.id;
+  if(row.classList.contains("active")!==active)row.classList.toggle("active",active);
+  const name=x.title||"新对话",select=row.querySelector(".history-select"),text=row.querySelector(".history-title"),more=row.querySelector(".history-more");
+  if(text.textContent!==name)text.textContent=name;
+  if(select.title!==name)select.title=name;
+  const aria=name+"的操作";if(more.getAttribute("aria-label")!==aria)more.setAttribute("aria-label",aria);
+  existing.set(x.id,row);return row;
+ };
+ const reconcile=(target,items,emptyText)=>{
+  if(!items.length){
+   if(!emptyText){if(target.childNodes.length)target.replaceChildren();return}
+   for(const el of [...target.children])if(!el.classList.contains("hint"))el.remove();
+   let hint=target.firstElementChild;
+   if(!hint){hint=node("div","hint",emptyText);target.append(hint)}
+   else if(hint.textContent!==emptyText)hint.textContent=emptyText;
+   return;
+  }
+  let cursor=target.firstChild;const keep=new Set();
+  for(const x of items){
+   const row=update(x);keep.add(row);
+   if(row!==cursor)target.insertBefore(row,cursor);
+   cursor=row.nextSibling;
+  }
+  for(const child of [...target.children])if(!keep.has(child))child.remove();
+ };
+ const top=scroller.scrollTop;
+ reconcile(pinned,hasPinned?rows.filter(x=>x.pinned_at):[],"");
+ const empty=!S.user?"登录后查看聊天记录":!rows.length?(S.archivedView?"暂无归档聊天":"暂无聊天记录"):"";
+ reconcile(recent,S.historyExpanded?normal:normal.slice(0,6),empty);
+ if(scroller.scrollTop!==top)scroller.scrollTop=top;
 }
 async function fetchChats(){
- if(!S.user){S.chats=[];renderHistory();return}
+ const seq=++chatFetchSerial,uid=S.user?.id||"",project=S.activeProjectId||"",archived=!!S.archivedView;
+ if(!uid){S.chats=[];renderHistory();return}
  try{
-  const url="/api/chats"+(S.activeProjectId?"?project="+encodeURIComponent(S.activeProjectId)+(S.archivedView?"&archived=1":""):S.archivedView?"?archived=1":"");
-  const d=await api(url);S.chats=d.chats||[];renderHistory();
- }catch(e){flashError("聊天列表读取失败："+humanError(e))}
+  const url="/api/chats"+(project?"?project="+encodeURIComponent(project)+(archived?"&archived=1":""):archived?"?archived=1":"");
+  const data=await api(url);
+  if(seq!==chatFetchSerial||S.user?.id!==uid||(S.activeProjectId||"")!==project||!!S.archivedView!==archived)return;
+  S.chats=data.chats||[];renderHistory();
+ }catch(e){if(seq===chatFetchSerial&&S.user?.id===uid)flashError("聊天列表读取失败："+humanError(e))}
 }
 function renderProjects(){
  const box=$("projectsList");box.replaceChildren();box.hidden=!S.projectsExpanded;
@@ -575,7 +614,7 @@ function renderImageJob(bubble,id){
 async function pollImageJob(bubble,id,manual){
  if(!bubble.isConnected||bubble.dataset.imageTask!==id||bubble.dataset.imageBusy==="1")return;
  const now=Date.now();
- if(!manual&&now-Number(bubble.dataset.lastImagePoll||0)<7000)return;
+ if(!manual&&now-Number(bubble.dataset.lastImagePoll||0)<6500)return;
  bubble.dataset.imageBusy="1";bubble.dataset.lastImagePoll=String(now);
  let delay=10000;
  try{
@@ -588,7 +627,7 @@ async function pollImageJob(bubble,id,manual){
    const img=node("img","chat-generated-image");img.src=r.image;img.alt="生成图片";img.loading="lazy";
    bubble.replaceChildren(img);return;
   }
-  delay=Math.max(9000,Math.min(18000,Number(r.waitSeconds||10)*1000));
+  delay=Math.max(7000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
  finally{
   bubble.dataset.imageBusy="0";if(!bubble.dataset.imageStart)bubble.dataset.imageStart=String(Date.now());
@@ -658,7 +697,7 @@ async function revealCompletedReply(row,reply){
 }
 
 
-const VOICE_CHAT_ENABLED=true; // Explicit, user-opened voice conversation.
+const VOICE_CHAT_ENABLED=false; // Unverified full-screen two-way audio remains hidden.
 const MESSAGE_READ_ALOUD_ENABLED=false; // Separate per-message read-aloud remains paused.
 const REPLY_LEVELS={short:"简短",standard:"标准",long:"详细"};
 let replyLevel="standard";
@@ -1785,6 +1824,9 @@ async function sendMessage(){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
+  if(submittedMode==="text"&&result.provider==="free"&&S.provider!=="free"&&result.model==="free:auto"){
+   setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
+  }
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText)await revealCompletedReply(loading,result.reply);
   if(loading.isConnected){S.chatId=result.chatId;appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete))}
   if(VOICE_CHAT_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
@@ -1795,24 +1837,32 @@ async function sendMessage(){
  }catch(e){
   if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
   loading.remove();
-  if(isFreeMessage||isImageMessage){
-   // Keep submitted messages in the conversation; never overwrite the user's new draft.
-   // Preserve the unconfirmed message in-place with an explicit manual retry instead.
-   const bubble=sentRow.querySelector(".bubble"),status=node("span","message-send-pending");
-   const retry=node("button","message-resend",isImageMessage?"重新作图":"重新发送");retry.type="button";
-   retry.setAttribute("aria-label","手动重试这条未完成的消息");
-   retry.addEventListener("click",()=>{
-    if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
-    const input=$("prompt");
-    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送将替换当前尚未发送的草稿和附件，继续吗？"))return;
-    if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
-    input.value=prompt;S.attachments=attached.slice();renderAttachments();
-    sentRow.remove();settlePromptSize();void sendMessage();
+  // Preserve the failed question, not a fake assistant error. Never auto-repeat a paid request.
+  const bubble=sentRow.querySelector(".bubble"),status=node("span","message-send-pending");
+  const retry=node("button","message-resend",isImageMessage?"重新作图":"重新发送");retry.type="button";
+  retry.setAttribute("aria-label","手动重试这条未完成的消息");
+  retry.addEventListener("click",()=>{
+   if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
+   const input=$("prompt");
+   if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
+   if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
+   if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
+   input.value=prompt;S.attachments=attached.slice();renderAttachments();
+   sentRow.remove();settlePromptSize();void sendMessage();
+  });
+  status.append(node("span","",isImageMessage?"本次作图未完成":"模型回复中断，可手动重试"),retry);
+  if(!isImageMessage){
+   const alternate=node("button","message-resend","切换免费模型");alternate.type="button";
+   alternate.addEventListener("click",()=>{
+    if(S.busy||S.workMode||S.freeToolsMode)return;
+    setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
+    if(S.composerMode!=="text")setComposerMode("text");
+    if(!$("prompt").value.trim()){$("prompt").value=prompt;settlePromptSize()}
+    $("prompt").focus();
    });
-   status.append(node("span","",isImageMessage?"本次作图未完成":"尚未收到回复"),retry);bubble.append(status);flashError("");
-  }else{
-   flashError(humanError(e));appendMessage("assistant","请求未完成："+humanError(e));
+   status.append(alternate);
   }
+  bubble.append(status);status.title=humanError(e);flashError("");
  }
  finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
@@ -2141,6 +2191,7 @@ function drawSleep(ms,signal){
 }
 async function drawTrackJob(id,tile,batch){
  for(let tries=0;tries<150&&!batch.cancelled;tries++){
+  let waitMs=12000;
   try{
    const r=await api("/api/image/task/"+encodeURIComponent(id));
    if(batch.cancelled)return false;
@@ -2150,10 +2201,11 @@ async function drawTrackJob(id,tile,batch){
     tile.picture.textContent="结果为空";tile.caption.textContent="作图服务未返回图片";return false;
    }
    tile.caption.textContent="正在生成";
+   waitMs=Math.max(7000,Math.min(14000,Number(r.waitSeconds||12)*1000));
   }catch(e){
    tile.caption.textContent="本次查询暂时中断";
   }
-  if(!await drawSleep(12000,batch.controller.signal))return false;
+  if(!await drawSleep(waitMs,batch.controller.signal))return false;
  }
  if(!batch.cancelled){tile.caption.textContent="任务未完成，请在当前页面继续尝试"}
  return false;

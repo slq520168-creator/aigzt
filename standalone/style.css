@@ -54,7 +54,7 @@ a{color:inherit}
 .project-row,.history-row{display:flex;align-items:center;gap:3px;border-radius:9px;min-height:36px;padding:0 2px}
 .project-row.active,.history-row.active{background:#edf0f1}
 .project-select,.history-select{min-width:0;flex:1;display:flex;align-items:center;gap:10px;text-align:left;padding:8px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;border-radius:8px}
-.sidebar-chat-scroll{flex:1 1 auto;min-height:65px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.sidebar-chat-scroll{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;overflow-anchor:none}
 .history{flex:none;min-height:0;max-height:none;overflow:visible;display:flex;flex-direction:column;gap:2px}
 .history-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .history-select .ui-icon{display:inline-flex;flex:none;width:18px;height:18px;color:#56636b}
@@ -72,8 +72,8 @@ a{color:inherit}
 .project-edit:hover,.history-more:hover{opacity:1;background:#ecf0f2}
 .project-edit svg,.history-more svg{width:17px;height:17px}
 .hint{padding:10px;color:#879498;font-size:12px}
-.sidebar-lower{flex:none;min-height:0;border-top:1px solid #eef0f1;padding-top:4px;margin-top:2px;max-height:min(48dvh,340px);display:flex;flex-direction:column;overflow:visible}
-.sidebar-projects{display:flex;flex:0 1 auto;flex-direction:column;min-height:0;margin-top:0}
+.sidebar-lower{flex:0 0 auto;min-height:0;border-top:1px solid #eef0f1;padding-top:4px;margin-top:2px;max-height:min(48dvh,340px);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-projects{display:flex;flex:0 1 auto;flex-direction:column;min-height:0;margin-top:0;overflow:hidden}
 .sidebar-lower .side-heading{margin-top:0}
 .sidebar-lower .project-list:empty{display:none}
 .sidebar-lower .sidebar-links{flex:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 5px;margin-top:0;padding-top:5px;border-top:1px solid #eef0f1}

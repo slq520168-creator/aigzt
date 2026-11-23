@@ -330,14 +330,15 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  }
  const streaming=typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
  if(streaming){body.stream=true;headers.accept="text/event-stream"}
- let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.min(15000,Math.max(2000,timeoutMs)))})}
+ let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.min(60000,Math.max(streaming?45000:30000,timeoutMs)))})}
  catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
  if(res.status>=300&&res.status<400)throw Error("上游跳转已拦截");
- if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503});
+ if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503,upstreamStatus:res.status});
  if(streaming){
   if(!res.body)throw Error("上游没有返回流式数据");
   const reader=res.body.getReader(),decoder=new TextDecoder();
   let buffer="",content="",upstreamModel=model,complete=false,finishReason=null;
+  try{
   while(!complete){
    const {done,value}=await reader.read();
    if(done)break;
@@ -361,6 +362,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
     }
    }
   }
+  }catch(error){if(!content.trim())throw error;}
   if(!content.trim())throw Error("服务商没有返回有效文字");
   return {content:content.trim(),actualModel:upstreamModel,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
  }
@@ -560,14 +562,20 @@ async function chat(req,env,user,onDelta=null){
  if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。不要虚构执行状态。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。"});
  const levelInstruction={short:"简短回复：先回答核心问题，只保留必要的要点，不冗长。",standard:"标准回复：自然对话，说明关键原因、步骤和必要细节。",long:"详细回复：全面回答，包含充分的解释、可执行步骤和必要边界条件，不随意省略关键内容。"}[replyLevel];
  messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
- let result;
+ let result,effectiveProvider=provider;
  try{
   if(provider==="free"){
    result=await freeText(env,messages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=replyLevel==="short"?600:replyLevel==="long"?2600:1200;
-    result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,outputLimit,onDelta);
+    try{result=await callExternal(provider,model,connected.key,messages,connected.consent===true,15000,outputLimit,onDelta)}
+    catch(error){
+     if(![404,429].includes(error?.upstreamStatus))throw error;
+     // An explicit HTTP rejection is safe to reroute; never duplicate an uncertain paid request.
+     result=await freeText(env,messages,mode,"free:auto",30000,false,replyLevel);
+     effectiveProvider="free";
+    }
   }
 
  }catch(e){
@@ -577,8 +585,8 @@ async function chat(req,env,user,onDelta=null){
  }
  const stamp=Date.now();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",crypto.randomUUID(),chatId,user.id,"assistant",result.content,result.actualModel,stamp);
- await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,provider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,reply:result.content,model:provider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider,incomplete:Boolean(result.incomplete)};
+ await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",effectiveProvider,effectiveProvider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
+ return {ok:true,chatId,reply:result.content,model:effectiveProvider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider:effectiveProvider,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -753,7 +761,8 @@ async function saveKreaImage(env,uid,rawUrl,temporary=false){
 const GLM_IMAGE="https://multimodalart-glm-image.hf.space";
 const RIO_IMAGE="https://rioshiina-imagegen.hf.space";
 // Exactly the fixed IM source order. Never reorder based on UI settings or arbitrary heuristics.
-const IM_IMAGE_STAGES=Object.freeze(["krea","rio","vexa","glm"]);
+const IM_IMAGE_STAGES=Object.freeze(["krea","rio","vexa","glm"]); // Legacy v4/v5 jobs keep their original stage indices.
+const IM_IMAGE_STAGES_FAST=Object.freeze(["krea","vexa","rio","glm"]); // New v6 jobs try bounded fast source before long Rio queue.
 function imageShape(shape){return Object.hasOwn(KREA_SHAPES,shape)?KREA_SHAPES[shape]:KREA_SHAPES.portrait}
 function imageStyledPrompt(prompt,style){
  const suffix=Object.hasOwn(KREA_STYLES,style)?KREA_STYLES[style]:KREA_STYLES["portrait-master"];
@@ -793,17 +802,17 @@ async function submitKrea(req,env,user){
   if(error?.uncertain)throw Object.assign(new Error("图片提交状态不确定，已停止重复提交，请稍后再试"),{status:503});
   // Only an explicit upstream rejection permits advancing to the next source.
  }
- const ref={v:5,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
+ const ref={v:6,stage:primary?0:1,phase:primary?"event":"new",id:primary||"",taskId:"",p:prompt,s:shape,t:style,seed,stageAt:Date.now()};
  const id=crypto.randomUUID();
  // Bounded per-user cleanup of abandoned tasks (no global scan / scheduled job).
- await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND external_id LIKE ? ORDER BY created_at ASC LIMIT 24)",user.id,Date.now()-3600000,'{"v":5,%').catch(()=>{});
+ await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND (external_id LIKE ? OR external_id LIKE ?) ORDER BY created_at ASC LIMIT 24)",user.id,Date.now()-3600000,'{"v":5,%','{"v":6,%').catch(()=>{});
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,charged_day) VALUES(?,?,?,'pending',?,?)",id,user.id,JSON.stringify(ref),Date.now(),"image-unmetered");
  return {ok:true,pending:true,jobId:id,model:"免费作图"};
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
  if(r.meta?.changes){
-  if(typeof job.external_id==="string"&&job.external_id.startsWith('{"v":5,')){
+  if(typeof job.external_id==="string"&&(job.external_id.startsWith('{"v":5,')||job.external_id.startsWith('{"v":6,'))){
    await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='failed'",job.id,job.user_id);
   }
   if(job.charged_day!=="image-unmetered")await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",job.charged_day,job.user_id),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",job.charged_day)]).catch(()=>{});
@@ -843,7 +852,7 @@ async function queryGradioImageEvent(env,provider,eid){
 }
 
 function imageRefV4(ref){return JSON.stringify(ref)}
-function imagePending(job){return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
+function imagePending(job){return response({ok:true,done:false,pending:true,waitSeconds:typeof job.external_id==="string"&&job.external_id.startsWith('{"v":6,')?7:12,startedAt:job.created_at})}
 function imageRioFindTask(value){
  if(Array.isArray(value)){for(const v of value){const found=imageRioFindTask(v);if(found)return found}return null}
  if(typeof value==="string"){try{return imageRioFindTask(JSON.parse(value))}catch{return null}}
@@ -926,13 +935,13 @@ async function imageV4Pending(env,job,ref){
 // A generated image is not a failed generation if its download is temporarily unavailable.
 async function imageV4Deliver(env,user,job,ref,url){
  let result;
- try{result=await saveKreaImage(env,user.id,url,ref.v===5)}
+ try{result=await saveKreaImage(env,user.id,url,ref.v>=5)}
  catch(error){
   if(error?.message==="非可信图片来源"||(ref.deliveryFailures||0)>=2)
    return imageV4Move(env,job,ref,ref.stage+1);
   return imageV4Pending(env,job,{...ref,phase:"deliver",url,deliveryFailures:(ref.deliveryFailures||0)+1});
  }
- return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+ return ref.v>=5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
 }
 async function imageTransientComplete(env,job,localImageUrl){
  // Return verified image bytes to the requesting browser once, never save image bytes to R2.
@@ -959,14 +968,14 @@ async function imageV4Status(env,user,job,ref){
  if(now-(job.checked_at||0)<6800)return imagePending(job);
  const claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-6700);
  if(!claim.meta?.changes)return imagePending(job);
- const stage=IM_IMAGE_STAGES[ref.stage];
+ const stage=(ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES)[ref.stage];
  if(!stage){await failKreaJob(env,job,"作图任务阶段无效");return response({ok:true,done:true,failed:true,error:"作图任务状态异常"})}
  try{
   if(now-(ref.stageAt||now)>(stage==="rio"?155000:stage==="glm"?160000:stage==="krea"?140000:35000))return imageV4Move(env,job,ref,ref.stage+1);
   if(stage==="vexa"){
    try{
-    const result=await imageVexaRender(env,user.id,ref,ref.v===5);
-    return ref.v===5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+    const result=await imageVexaRender(env,user.id,ref,ref.v>=5);
+    return ref.v>=5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
    }catch{return imageV4Move(env,job,ref,ref.stage+1)}
   }
   if(ref.phase==="deliver"&&typeof ref.url==="string")
@@ -1019,7 +1028,7 @@ async function imageJobStatus(env,user,id){
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
  if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
   try{const ref=JSON.parse(job.external_id);
-   if([4,5].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
+   if([4,5,6].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
   }catch(e){if(e?.status)throw e}
  }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
@@ -1741,9 +1750,9 @@ async function main(req,env){
 
  if(path==="/api/chats"&&req.method==="GET"){
   const project=url.searchParams.get("project"),archived=url.searchParams.get("archived")==="1";
-  const query=project?"SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND project_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC LIMIT 100":
-   "SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC LIMIT 100";
-  const r=project&&/^[0-9a-f-]{36}$/.test(project)?await env.DB.prepare(query).bind(user.id,project).all():await env.DB.prepare("SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC LIMIT 100").bind(user.id).all();
+  const query=project?"SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND project_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 100":
+   "SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 100";
+  const r=project&&/^[0-9a-f-]{36}$/.test(project)?await env.DB.prepare(query).bind(user.id,project).all():await env.DB.prepare("SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 100").bind(user.id).all();
   return response({ok:true,chats:r.results||[]});
  }
  const hit=path.match(/^\/api\/chats\/([0-9a-f-]{36})(?:\/(delete|rename|pin|archive|project))?$/);
