@@ -696,7 +696,25 @@ function createImageWaitingFrame(){
  const frame=node("div","image-loading-card");frame.setAttribute("role","img");frame.setAttribute("aria-label","七彩图片生成中");
  frame.append(node("span","image-loading-glow"),node("span","image-loading-shimmer"));return frame;
 }
-function showChatImageWaiting(bubble,label){bubble.classList.add("chat-image-task");bubble.replaceChildren(label,createImageWaitingFrame())}
+/* New image content changes the conversation height after the empty reply has been positioned. */
+function followLatestImage(bubble){
+ const viewport=$("conversation"),row=bubble?.closest(".message"),list=$("messageList");
+ if(!viewport||viewport.hidden||!row?.isConnected||row!==list?.lastElementChild)return;
+ requestAnimationFrame(()=>{
+  if(!row.isConnected||row!==list.lastElementChild||viewport.hidden)return;
+  viewport.scrollTop=viewport.scrollHeight-viewport.clientHeight;
+ });
+}
+function chatImageNearBottom(bubble){
+ const viewport=$("conversation"),row=bubble?.closest(".message");
+ return !!viewport&&!viewport.hidden&&!!row?.isConnected&&row===$("messageList")?.lastElementChild&&
+  viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
+}
+function showChatImageWaiting(bubble,label){
+ bubble.classList.add("chat-image-task");bubble.replaceChildren(label,createImageWaitingFrame());
+ // Follow only the newly submitted picture, never historical jobs during chat restore.
+ if(S.busy)followLatestImage(bubble);
+}
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
  const label=node("span","image-job-label","作图中 1秒");
@@ -723,7 +741,16 @@ async function pollImageJob(bubble,id,manual){
    delete bubble.dataset.imageTask;
    if(r.failed){bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","生成失败："+(r.error||"上游繁忙")));return}
    const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
-   img.onload=()=>{if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);const row=bubble.closest(".message");if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}};
+   img.onload=()=>{
+    if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;
+    const follow=chatImageNearBottom(bubble);
+    delete bubble.dataset.imageFinalizing;
+    bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);
+    const row=bubble.closest(".message");
+    if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}
+    // The final image can have a different height from the loading frame.
+    if(follow)followLatestImage(bubble);
+   };
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.replaceChildren(node("span","image-job-error","图片加载失败"))};
    img.src=r.image;return;
   }
