@@ -26,11 +26,11 @@ test('A normal text/chat/video upload is untouched',async()=>{
  const f={type:'image/jpeg',name:'a.jpg',size:2300000};
  assert.equal(await transform(f),f);
 });
-test('Server authenticates same original R2 file and validates actual MIME',()=>{
- assert.match(worker,/\\["image\/webp","image\/jpeg","image\/png"\\]\\.includes\\(mime\\)/);
- assert.match(worker,/detectImage\\(bytes\\)!==mime/);
- assert.match(worker,/source_processing:"img2img"/);
- assert.match(worker,/imgId\\?await submitHordeImageEdit/);
+test('Server authenticates original R2 file and validates actual image type',()=>{
+ assert.ok(worker.includes('["image/webp","image/jpeg","image/png"].includes(mime)'));
+ assert.ok(worker.includes('detectImage(bytes)!==mime'));
+ assert.ok(worker.includes('source_processing:"img2img"'));
+ assert.ok(worker.includes('imgId?await submitHordeImageEdit'));
  assert.doesNotMatch(client,/浏览器无法生成 WebP 参考图|需要转换，请在图生图模式重新添加/);
  assert.doesNotThrow(()=>new Function(client));
 });
