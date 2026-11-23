@@ -758,7 +758,7 @@ async function submitHordeImageEdit(env,user,imageId,prompt){
  if(active)throw Object.assign(Error("上一张图生图仍在生成，请先完成"),{status:409});
  const obj=await env.MEDIA?.get(user.id+"/"+imageId);
  const mime=String(obj?.httpMetadata?.contentType||"").toLowerCase();
- if(!obj||mime!=="image/webp")throw Object.assign(Error("图生图需要 WebP 参考图，请在图生图模式重新上传图片"),{status:415});
+ if(!obj||!["image/webp","image/jpeg","image/png"].includes(mime))throw Object.assign(Error("图生图只支持 JPG、PNG 或 WebP 参考图片"),{status:415});
  if(obj.size<200||obj.size>1600000)throw Object.assign(Error("参考图过大，请在作图模式重新上传以自动缩小图片"),{status:413});
  const bytes=new Uint8Array(await obj.arrayBuffer());
  if(detectImage(bytes)!==mime)throw Object.assign(Error("参考图片内容无效"),{status:415});

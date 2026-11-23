@@ -1663,13 +1663,18 @@ function renderAttachments(){
  * Use an Image fallback for iPhone Safari when createImageBitmap cannot decode HEIC. */
 /* AI Horde source_image accepts Base64 WebP. Keep the ordinary text-to-image
  * implementation unchanged: only optimize a reference added in image mode. */
+/* Reference-image compatibility: WebP is preferred, not required.
+ * iOS Safari may return PNG from canvas.toBlob("image/webp"). Preserve the
+ * actual MIME and filename, never label PNG bytes as WebP or block uploading.
+ * This runs only for image mode; text/chat/video attachments remain untouched. */
 async function optimizeImageReference(file){
  if(S.composerMode!=="image")return file;
  const type=String(file.type||"").toLowerCase();
  const supported=["image/jpeg","image/png","image/webp"].includes(type);
  const heic=["image/heic","image/heif"].includes(type)||/\.(heic|heif)$/i.test(file.name||"");
  if(!supported&&!heic)return file;
- if(type==="image/webp"&&file.size<=1450000)return file;
+ // Small native JPG/PNG/WebP files do not need browser conversion at all.
+ if(supported&&file.size<=1450000)return file;
  let bitmap=null,preview=null,objectUrl="";
  try{
   if(typeof createImageBitmap==="function"){
@@ -1680,29 +1685,31 @@ async function optimizeImageReference(file){
    preview=await new Promise((resolve,reject)=>{
     const img=new Image();
     img.onload=()=>resolve(img);
-    img.onerror=()=>reject(Error("此图片无法读取，请选择 JPG、PNG 或 WebP"));
+    img.onerror=()=>reject(Error("参考图片无法读取，请选择 JPG 或 PNG 图片"));
     img.src=objectUrl;
    });
   }
   const source=bitmap||preview,width=source.width||source.naturalWidth,height=source.height||source.naturalHeight;
-  if(!width||!height)throw Error("参考图尺寸无效");
+  if(!width||!height)throw Error("参考图片尺寸无效");
   const canvas=document.createElement("canvas");
-  const encode=async(size,quality)=>{
-   const scale=Math.min(1,size/Math.max(width,height));
+  const encode=(maxSide,mime,quality)=>new Promise((resolve,reject)=>{
+   const scale=Math.min(1,maxSide/Math.max(width,height));
    canvas.width=Math.max(1,Math.round(width*scale));
    canvas.height=Math.max(1,Math.round(height*scale));
    const ctx=canvas.getContext("2d");
-   if(!ctx)throw Error("此设备没有图片转换能力");
+   if(!ctx)return reject(Error("浏览器无法处理参考图片"));
    ctx.drawImage(source,0,0,canvas.width,canvas.height);
-   return new Promise((resolve,reject)=>canvas.toBlob(blob=>{
-    if(!blob||blob.type!=="image/webp")return reject(Error("当前浏览器无法生成 WebP 参考图，请换用支持 WebP 的浏览器"));
-    resolve(blob);
-   },"image/webp",quality));
-  };
-  let blob=await encode(768,.78);
-  if(blob.size>1450000)blob=await encode(576,.65);
-  if(blob.size>1500000)throw Error("参考图压缩后仍超过上限，请选择较小图片");
-  return new File([blob],String(file.name||"reference").replace(/\.[^.]+$/,"")+".webp",{type:"image/webp"});
+   canvas.toBlob(blob=>blob&&["image/webp","image/jpeg","image/png"].includes(blob.type)?
+    resolve(blob):reject(Error("图片编码失败，请换一张图片")),mime,quality);
+  });
+  let blob=await encode(768,"image/webp",.76);
+  // A PNG result is Safari's normal unsupported-WebP fallback, not a failure.
+  if(blob.size>1450000)blob=await encode(640,"image/jpeg",.7);
+  if(blob.size>1450000)blob=await encode(448,"image/png",1);
+  if(blob.size>1500000)throw Error("参考图片过大，请换一张较小的图片");
+  const ext=blob.type==="image/webp"?"webp":blob.type==="image/png"?"png":"jpg";
+  const base=String(file.name||"reference").replace(/\.[^.]+$/,"")||"reference";
+  return new File([blob],base+"."+ext,{type:blob.type});
  }finally{
   bitmap?.close?.();
   if(objectUrl)URL.revokeObjectURL(objectUrl);
@@ -2462,9 +2469,6 @@ async function sendMessage(){
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
  if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
   flashError("请先上传一张参考图");$("photosInput").click();return
- }
- if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&S.attachments.length===1&&S.attachments[0].type!=="image/webp"){
-  flashError("这张参考图需要转换，请在图生图模式重新添加图片");return
  }
  if(freeVideo&&S.videoProvider!=="freetext"&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){flashError("请先从左侧＋上传参考图");return}
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
