@@ -1600,7 +1600,6 @@ function syncMobileHeight(){
 function syncMiniTools(){
  const active={
   miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",
-  miniTextVideo:S.composerMode==="video"&&S.videoProvider==="freetext",
   miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan",
   miniFrameVideo:S.composerMode==="video"&&S.videoProvider==="freeloop"
  };
@@ -1617,15 +1616,15 @@ function chooseMiniTool(action){
   S.miniToolChoice="image-edit";
   $("prompt").placeholder="添加参考图片，描述你想修改的内容…";
   syncMiniTools();
-  if(S.user&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type)))$("photosInput").click();
+  if(S.user&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){$("photosInput").click();return}
  }else{
-  const provider=action==="text-video"?"freetext":action==="image-video"?"freewan":action==="frame-video"?"freeloop":null;
+  const provider=action==="image-video"?"freewan":action==="frame-video"?"freeloop":null;
   if(!provider)return;
   selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
   setComposerMode("video");
   if(provider!=="freetext")$("prompt").placeholder="添加参考图，描述想生成的动作…";
   syncMiniTools();
-  if(provider!=="freetext"&&S.user&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type)))$("photosInput").click();
+  if(provider!=="freetext"&&S.user&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){$("photosInput").click();return}
  }
  $("prompt").focus({preventScroll:true});
 }
@@ -2024,7 +2023,7 @@ const ORIGINAL_GENERATION_SITES=[
  {provider:"Vexa",name:"Vexa · 图片接口",category:"作图",categories:["作图"],url:"https://vexa-ai.pages.dev/",features:["免费生图","来源页面"],access:"community",note:"原始接口对应页面不一定提供交互式网页"},
  {provider:"AI Horde",name:"AI Horde · 免费图生图",category:"图生图",categories:["图生图","作图"],url:"https://aihorde.net/",features:["社区算力","生成服务"],access:"community",note:"这是社区服务主页；使用网页生成器可打开 ArtBot"},
  {provider:"ArtBot",name:"ArtBot · 图生图工具",category:"图生图",categories:["图生图","作图"],url:"https://artbot.site/create",features:["上传参考图","AI Horde 网页生成"],access:"community",note:"AI Horde 的网页客户端；志愿者算力可能排队"},
- {provider:"Wan Free",name:"Wan · 免费文生视频",category:"视频",categories:["视频"],url:"https://alexcheng0072-wan27-free-video-generator.hf.space/",features:["文生视频","原始模型页面"],access:"community",note:"实际生成能力受上游 ZeroGPU 额度限制"},
+ {provider:"Wan Free",name:"Wan · 免费文生视频",category:"视频",categories:["视频"],url:"https://upsampler-wan-2-2-14b-text-to-video.hf.space/",features:["文生视频","原始模型页面"],access:"community",note:"实际生成能力受上游 ZeroGPU 额度限制"},
  {provider:"Wan I2V",name:"Wan · 免费图生视频",category:"视频",categories:["视频"],url:"https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space/",features:["图生视频","原始模型页面"],access:"community",note:"共享 ZeroGPU 来源，可能无剩余额度"},
  {provider:"Wan Frame",name:"Wan · 免费首尾帧",category:"视频",categories:["视频"],url:"https://mcp-tools-wan-2-2-first-last-frame.hf.space/",features:["首尾帧生成","原始模型页面"],access:"community",note:"共享 ZeroGPU 来源，生成可能排队或失败"}
 ];
@@ -2055,9 +2054,16 @@ function renderFreeTools(){
   if(seen.has(key))return false;
   seen.add(key);return true;
  });
- hits.sort((a,b)=>category==="角色"
-  ?Number(Boolean(b.roleLabel))-Number(Boolean(a.roleLabel))||Number(Boolean(b.verified))-Number(Boolean(a.verified))
-  :Number(Boolean(b.verified))-Number(Boolean(a.verified)));
+ // Each category starts with the exact upstream sites used by this website.
+ const originalRank=new Map(ORIGINAL_GENERATION_SITES.map((item,index)=>[item.url,index]));
+ hits.sort((a,b)=>{
+  const ar=originalRank.has(a.url)?originalRank.get(a.url):Infinity;
+  const br=originalRank.has(b.url)?originalRank.get(b.url):Infinity;
+  if(ar!==br)return ar-br;
+  return category==="角色"
+   ?Number(Boolean(b.roleLabel))-Number(Boolean(a.roleLabel))||Number(Boolean(b.verified))-Number(Boolean(a.verified))
+   :Number(Boolean(b.verified))-Number(Boolean(a.verified));
+ });
  for(const item of hits){
   const a=node("a","free-tool-card");
   a.href=item.url;a.target="_blank";a.rel="noopener noreferrer";
@@ -2415,6 +2421,7 @@ async function sendMessage(){
  const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
  if(submittedMode==="video"&&!freeVideo){$("createPrompt").value=prompt;openVideoCreate();return}
  if(freeVideo&&!prompt){flashError("请输入视频描述");return}
+ if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入修改图片的描述");return}
  if(freeVideo&&S.videoProvider!=="freetext"&&!S.attachments.some(a=>["image/jpeg","image/png","image/webp"].includes(a.type))){flashError("请先从左侧＋上传参考图");return}
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
@@ -3039,7 +3046,7 @@ function syncVideoSelector(){
  $("videoConnectKey").hidden=free;
  $("videoConfirmRow").hidden=free;
  $("videoImageRow").hidden=!free;
- $("videoModelInfo").textContent=free?(provider==="freetext"?"文字生成约 3 秒视频，也可以选择上传参考图。":provider==="freewan"?"图生视频约 3 秒。上传一张图片，生成后保存在本人账号媒体中。":"首尾帧约 2 秒。默认使用同一张图片作为首尾帧。"):
+ $("videoModelInfo").textContent=free?(provider==="freetext"?"仅文字生成视频。需要参考图片请切换图生视频。":provider==="freewan"?"图生视频约 3 秒。上传一张图片，生成后保存在本人账号媒体中。":"首尾帧约 2 秒。默认使用同一张图片作为首尾帧。"):
   provider==="grok"?"Grok Imagine：固定 6 秒、720p；以 xAI 账号实际计费为准。":
   provider==="runway"?"Runway 多模型 API：按照所选视频模型和时长计费。":
   provider==="luma"?"Luma Dream Machine：画质、时长由服务商支持的参数和额度决定。":
@@ -3332,7 +3339,7 @@ function wire(){
  $("imageMode").addEventListener("click",()=>{setComposerMode(S.composerMode==="image"?"text":"image");$("toolTray").hidden=true;$("prompt").focus()});
  $("videoMode").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=true;setComposerMode(S.composerMode==="video"?"text":"video");$("prompt").focus()});
  $("codeToggle").addEventListener("click",()=>{S.code=!S.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code))});
- for(const [id,action] of [["miniImageEdit","image-edit"],["miniTextVideo","text-video"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
+ for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
  $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="video")openVideoCreate();else if(S.composerMode==="image"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});

@@ -754,7 +754,7 @@ function hordeBase64(bytes){
 }
 async function submitHordeImageEdit(env,user,imageId,prompt){
  if(!hordeUuid(imageId))throw Object.assign(Error("请选择一张 JPG、PNG 或 WebP 参考图"),{status:400});
- const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='image-edit-free' AND status IN ('pending','recovering') LIMIT 1",user.id);
+ const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='image-edit-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-11*60000);
  if(active)throw Object.assign(Error("上一张图生图仍在生成，请先完成"),{status:409});
  const obj=await env.MEDIA?.get(user.id+"/"+imageId);
  const mime=String(obj?.httpMetadata?.contentType||"").toLowerCase();
@@ -1254,7 +1254,7 @@ function videoStatus(provider,data){
 /* Shared free upstreams: never fall back to charged providers. Both require
  * the user's own uploaded image. One task at a time, two daily per account. */
 const FREE_VIDEO=Object.freeze({
- freetext:{url:"https://alexcheng0072-wan27-free-video-generator.hf.space",model:"wan2.2-ti2v"},
+ freetext:{url:"https://upsampler-wan-2-2-14b-text-to-video.hf.space",model:"wan2.2-ti2v"},
  freewan:{url:"https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",model:"wan2.2-i2v-fast"},
  freeloop:{url:"https://mcp-tools-wan-2-2-first-last-frame.hf.space",model:"wan2.2-firstlast"}
 });
@@ -1265,8 +1265,9 @@ async function fvCreate(env,user,b,provider,model,prompt){
  const cfg=FREE_VIDEO[provider];
  if(!cfg||model!==cfg.model)throw fvError("免费视频模型参数无效",400);
  if(!prompt||(provider!=="freetext"&&!fvId(b.imageId)))throw fvError(provider==="freetext"?"请输入视频描述":"请上传图片并填写视频动作描述",400);
+ if(provider==="freetext"&&b.imageId)throw fvError("文生视频仅使用文字；请改选图生视频",400);
  if(!env.DB||!env.MEDIA)throw fvError("站点存储暂时不可用",503);
- const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') LIMIT 1",user.id);
+ const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-2100000);
  if(active)throw fvError("已有免费视频任务正在生成，请先查询上一条",409);
  let file=null;
  if(b.imageId){
@@ -1285,7 +1286,7 @@ async function fvCreate(env,user,b,provider,model,prompt){
   if(!/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)||path.includes(".."))throw fvError("免费来源图片凭据无效",502);
   file={path,meta:{_type:"gradio.FileData"},orig_name:"source.jpg"};
  }
- const data=provider==="freetext"?[file,prompt,b.ratio==="9:16"?"480x832":"832x480",3]:
+ const data=provider==="freetext"?[prompt,b.ratio==="9:16"?"9:16 (480x832)":"16:9 (832x480)",4,FV_BAD,3.5,1,1,42,true]:
   provider==="freewan"?[file,prompt,4,FV_BAD,3,1,1,42,true]:[file,file,prompt,FV_BAD,2.1,8,1,1,42,true];
  let submit;
  try{submit=await fetch(cfg.url+"/gradio_api/call/generate_video",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data}),redirect:"manual",signal:AbortSignal.timeout(14000)})}
