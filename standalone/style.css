@@ -236,16 +236,11 @@ a{color:inherit}
 .attach-menu button,.attach-menu label{display:flex;align-items:center;gap:14px;text-align:left;padding:11px 13px;border-radius:12px;font-size:15px;cursor:pointer}
 .attach-menu button:hover,.attach-menu label:hover,.attach-menu label:focus-visible{background:#f2f5f6}
 .native-media-file-input{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;padding:0!important;opacity:0!important;clip-path:inset(50%)!important;pointer-events:none!important}
-.tool-tray{display:flex;gap:5px;flex-wrap:nowrap;align-items:center;overflow-x:auto;overflow-y:hidden;white-space:nowrap;touch-action:pan-x;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:7px 3px 3px;border-top:1px solid #eff1f2;margin-top:8px}
-.tool-tray::-webkit-scrollbar{display:none}
+.tool-tray{display:flex;flex-direction:column;gap:3px;max-height:min(34vh,300px);overflow-y:auto;overscroll-behavior:contain;padding-top:4px;border-top:1px solid #eff1f2}
 .subtle{display:inline-flex;align-items:center;gap:3px;padding:5px 4px;font-size:11px;color:#435a63;border-radius:8px}
-.tool-tray .subtle{flex:0 0 auto}
-.tool-tray .subtle .ui-icon,.tool-tray .subtle svg{width:14px;height:14px}
-.tool-tray .mini-tool{display:inline-flex;align-items:center;justify-content:center;gap:3px;flex:0 0 auto;white-space:nowrap;padding:4px 3px;font-size:10px;line-height:18px;color:#64747e;font-weight:500;background:transparent;border:0;border-radius:6px;cursor:pointer}
-.tool-tray .mini-tool .ui-icon,.tool-tray .mini-tool .ui-icon svg{width:13px;height:13px;flex:none}
-.tool-tray .mini-tool:hover,.tool-tray .mini-tool.active{color:#235b88;background:#eaf3ff}
-.tool-tray .mini-tool:focus-visible{outline:2px solid #749ccb;outline-offset:1px}
-@media(max-width:420px){.tool-tray{gap:2px;padding:6px 1px 2px}.tool-tray .subtle{padding:4px 3px;font-size:10px;gap:2px}.tool-tray .mini-tool{font-size:9px;padding:4px 2px}.tool-tray .subtle .ui-icon,.tool-tray .subtle svg{width:13px;height:13px}}
+.tool-tray button{width:100%;justify-content:flex-start;background:transparent;border:0;color:#435a63;white-space:nowrap}
+.tool-tray button.active{background:#edf2f7;color:#234667}
+.tool-tray button:focus-visible{outline:2px solid #749ccb;outline-offset:-2px}
 .subtle:hover,.subtle.active{background:#edf2f7;color:#234667}
 .subtle .ui-icon{width:17px;height:17px}
 .subtle svg{width:17px;height:17px}

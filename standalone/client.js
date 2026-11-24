@@ -1714,7 +1714,7 @@ function syncMobileHeight(){
  });
 }
 
-/* Compact text-only tool selectors follow the original 作图／视频／代码 controls. */
+/* Tool selections live exclusively in the + menu. */
 function syncMiniTools(){
  const active={
   miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",
@@ -1726,12 +1726,10 @@ function syncMiniTools(){
   btn.classList.toggle("active",yes);btn.setAttribute("aria-pressed",String(yes));
  }
 }
-/* The selected input tool must remain visible. iOS file selection uses the
- * native label in the existing '+' menu, not a click on display:none input. */
+/* The selected mode is shown in the model line. Native file pickers remain in the + menu. */
 function chooseMiniTool(action){
  if(S.busy)return;
  hideAttachMenu();
- $("toolTray").hidden=false;
  const isEdit=action==="image-edit";
  const isImageVideo=action==="image-video";
  const isFrameVideo=action==="frame-video";
@@ -1750,7 +1748,7 @@ function chooseMiniTool(action){
  const images=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
  const needed=isFrameVideo?2:1;
  if(S.user&&images.length<needed){
-  // Keep the selected tool highlighted while exposing a visible native picker.
+  // Expose the native attachment picker without reopening the tool list.
   $("attachMenu").hidden=false;
   $("photosAction").focus({preventScroll:true});
  }else $("prompt").focus({preventScroll:true});
@@ -2598,11 +2596,11 @@ async function sendMessage(){
  if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
  if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
-  flashError("请点击＋中的照片上传参考图片");$("toolTray").hidden=false;$("attachMenu").hidden=false;return
+  flashError("请点击＋中的照片上传参考图片");$("attachMenu").hidden=false;return
  }
  if(freeVideo&&S.videoProvider!=="freetext"&&videoImages.length<(S.videoProvider==="freeloop"?2:1)){
   flashError(S.videoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
-  $("toolTray").hidden=false;$("attachMenu").hidden=false;return
+  $("attachMenu").hidden=false;return
  }
  if(freeVideo&&S.videoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
   flashError("首尾帧需要两张不同的图片附件");return
@@ -3524,21 +3522,21 @@ function wire(){
  $("modelInstructionSave").addEventListener("click",()=>void saveModelInstruction());
  $("savedMessagesBtn").addEventListener("click",()=>void toggleSavedMessages());
  
- $("attachButton").addEventListener("click",()=>{$("attachMenu").hidden=!$("attachMenu").hidden;$("toolTray").hidden=true});
+ $("attachButton").addEventListener("click",()=>{if($("attachMenu").hidden){$("attachMenu").hidden=false}else hideAttachMenu()});
  // Native <label for=file-input> activation is a real iPhone user gesture.
  for(const id of ["cameraAction","photosAction","filesAction"]){
   // Leave native label's default activation untouched until the OS picker opens.
   $(id).addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$(id).click()}});
  }
- $("toolsAction").addEventListener("click",()=>{hideAttachMenu();$("toolTray").hidden=!$("toolTray").hidden});
+ $("toolsAction").addEventListener("click",()=>{const tray=$("toolTray");tray.hidden=!tray.hidden;$("toolsAction").setAttribute("aria-expanded",String(!tray.hidden))});
  for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{hideAttachMenu();void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
  $("imageMode").addEventListener("click",()=>{
   hideAttachMenu();setComposerMode(S.composerMode==="image"?"text":"image");
-  $("toolTray").hidden=false;$("prompt").focus({preventScroll:true});
+  $("prompt").focus({preventScroll:true});
  });
  $("videoMode").addEventListener("click",()=>{
   hideAttachMenu();setComposerMode(S.composerMode==="video"?"text":"video");
-  $("toolTray").hidden=false;$("prompt").focus({preventScroll:true});
+  $("prompt").focus({preventScroll:true});
  });
  $("codeToggle").addEventListener("click",()=>{
   hideAttachMenu();
@@ -3547,7 +3545,7 @@ function wire(){
   $("codeToggle").classList.toggle("active",S.code);
   $("codeToggle").setAttribute("aria-pressed",String(S.code));
   $("prompt").placeholder=S.code?"描述编程任务…":"向 AI 提问…";
-  $("toolTray").hidden=false;updateComposerModel();
+  updateComposerModel();
   $("prompt").focus({preventScroll:true});
  });
  for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
@@ -3621,7 +3619,7 @@ function wire(){
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();
 }
-function hideAttachMenu(){$("attachMenu").hidden=true}
+function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false")}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
