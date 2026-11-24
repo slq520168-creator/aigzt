@@ -421,7 +421,7 @@ function isFreeModel(provider,model){
  return false;
 }
 // Account-scoped model preference, independent of a chat's historical model.
-let restoredChatModelOwner=null;
+let restoredChatModelOwner=null,chatModelPreferenceReady=false;
 function chatModelStorageKey(userId){return "aigzt:chat-model:v1:"+String(userId)}
 function rememberChatModelSelection(){
  if(!S.user?.id)return;
@@ -500,7 +500,7 @@ async function removeSavedKey(){
 }
 
 async function fetchMe(){
- try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();setAuthUI()}
+ try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();setAuthUI()}
  catch(e){flashError("账号状态读取失败："+humanError(e))}
 }
 let chatFetchSerial=0,historyScope="",historyNextCursor=null,historyLoading=false;
@@ -2187,6 +2187,7 @@ async function loadChat(id){
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
 function chatSelectedName(){
+ if(!chatModelPreferenceReady)return "恢复模型…";
  if(S.provider==="free")return "免费自动";
  const raw=String(S.modelTitle||S.model||"").trim(),label=raw.startsWith(S.provider+" · ")?raw.slice(S.provider.length+3):raw;
  return providerRouteLabel(S.provider)+" · "+(WORK_PROVIDER_SHORT[S.provider]||S.provider)+" · "+(label||S.model);
@@ -2204,7 +2205,7 @@ function updateComposerModel(){
  switcher.title=(videoMode||imageMode||S.code)?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
 }
 function updateModelTitle(){
- $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
+ $("modelTitle").textContent=!chatModelPreferenceReady?"恢复模型…":S.provider==="free"?"免费自动":S.modelTitle;
  updateComposerModel();
 }
 function setModel(row){
@@ -3174,7 +3175,7 @@ async function apiChatStream(payload,onDelta){
  if(!final?.chatId||typeof final.reply!=="string")throw Error("回复中断，未收到完整结果");
  return final;
 }
-async function sendMessage(continueFrom=null){
+async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
@@ -3206,18 +3207,23 @@ async function sendMessage(continueFrom=null){
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
   flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
  }
- if(submittedMode==="text"&&S.provider!=="free"){
+ // Request routing is independent of the selected model preference.
+ let requestProvider=S.provider,requestModel=S.model;
+ if(submittedMode==="text"&&S.provider!=="free"&&!forceFreeOnce){
+  if(!S.connectionsLoaded){
+   if(!S.connectionsLoading)void fetchConnections();
+   flashError("正在同步模型连接，请稍后再发送");return;
+  }
   const imageOutput=S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages);
   const incompatible=S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")&&
    (S.attachments.some(x=>x.type==="application/pdf")||!["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(S.model));
-  const needsFree=!!unavailableChatModel(S.provider,S.model)||!connected(S.provider)||(!isFreeModel(S.provider,S.model)&&!S.allowPaid)||incompatible;
-  if(needsFree&&!imageOutput){setFreeDefault(false);rememberChatModelSelection();updateModelTitle()}
-  else if(needsFree){openKeyPanel(S.provider);return}
+  if(!connected(S.provider)||(!isFreeModel(S.provider,S.model)&&!S.allowPaid)){openKeyPanel(S.provider);return}
+  if(incompatible&&!imageOutput){requestProvider="free";requestModel="free:auto"}
  }
+ if(submittedMode==="text"&&forceFreeOnce){requestProvider="free";requestModel="free:auto"}
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
- const isFreeMessage=submittedMode==="text"&&S.provider==="free";
- const requestProvider=S.provider,requestModel=S.model;
+ const isFreeMessage=submittedMode==="text"&&requestProvider==="free";
  const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
@@ -3259,8 +3265,8 @@ async function sendMessage(continueFrom=null){
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
      });
     };
-    try{result=await apiChatStream({chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
-      mode:S.code?"code":"general",freeFallback:true,outputImages:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages),imageOnly:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
+    try{result=await apiChatStream({chatId:S.chatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
+      mode:S.code?"code":"general",freeFallback:true,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined},onDelta);}
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
@@ -3283,7 +3289,7 @@ async function sendMessage(continueFrom=null){
     else if(result.primaryFailure)recordModelOutcome(requestProvider,requestModel,false,result.primaryFailure);
     if(result.freeFallback===true)recordModelOutcome("free","free:auto",true);
    }
-   if(submittedMode==="text"&&result.freeFallback===true&&S.provider===requestProvider&&S.model===requestModel){setFreeDefault(false);rememberChatModelSelection();updateModelTitle()}
+   // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
     if(submittedMode==="text")setPortraitState(loading,"finished");
@@ -3316,7 +3322,7 @@ async function sendMessage(continueFrom=null){
    if(freeVideo){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;if(S.composerMode!=="video")setComposerMode("video")}
    else if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
-   loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom);
+   loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom,forceFreeOnce);
   });
   const detail=submittedMode==="text"?"当前线路暂时繁忙，原消息已保留，可继续重试。":humanError(e);
   if(isImageMessage){status.append(retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
@@ -3324,10 +3330,9 @@ async function sendMessage(continueFrom=null){
    const alternate=messageTool("layers","免费线路重试",()=>{
     if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
     if(($("prompt").value.trim()||S.attachments.length)&&!confirm("重试会替换未发送的草稿及附件，继续吗？"))return;
-    setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
     if(S.composerMode!=="text")setComposerMode("text");
     $("prompt").value=prompt;S.attachments=attached.slice();renderAttachments();settlePromptSize();
-    loading.remove();sentRow.remove();void sendMessage(continueFrom);
+    loading.remove();sentRow.remove();void sendMessage(continueFrom,true);
    });
    status.append(alternate);
   }
@@ -4001,6 +4006,34 @@ function syncInstalledPwaLayout(){
  const installed=navigator.standalone===true||(ios&&window.matchMedia("(display-mode: standalone)").matches);
  document.documentElement.classList.toggle("aigzt-ios-pwa",ios&&installed);
 }
+// Chat-only shortcuts: reveal on manual scrolling, without changing message geometry.
+function wireChatScrollArrows(){
+ const viewport=$("conversation"),control=$("chatScrollArrows"),up=$("chatScrollUp"),down=$("chatScrollDown");
+ if(!viewport||!control||!up||!down)return;
+ let intentUntil=0,timer=null;
+ const hideArrows=()=>{clearTimeout(timer);timer=null;control.hidden=true};
+ const valid=()=>!viewport.hidden&&!viewport.classList.contains("empty-chat")&&!S.workMode&&!S.freeToolsMode&&!$("shell").classList.contains("menu-open")&&viewport.scrollHeight-viewport.clientHeight>16;
+ const showArrows=()=>{
+  if(!valid()){hideArrows();return}
+  const main=viewport.parentElement.getBoundingClientRect(),bounds=viewport.getBoundingClientRect();
+  control.style.bottom=Math.max(8,main.bottom-bounds.bottom+10)+"px";
+  up.disabled=viewport.scrollTop<=5;down.disabled=viewport.scrollHeight-viewport.clientHeight-viewport.scrollTop<=5;
+  control.hidden=false;clearTimeout(timer);timer=setTimeout(hideArrows,2000);
+ };
+ const mark=()=>{intentUntil=Date.now()+2200};
+ viewport.addEventListener("touchmove",mark,{passive:true});
+ viewport.addEventListener("wheel",mark,{passive:true});
+ viewport.addEventListener("pointerdown",e=>{if(e.pointerType==="mouse")mark()},{passive:true});
+ viewport.addEventListener("scroll",()=>{if(!valid())hideArrows();else if(Date.now()<intentUntil||!control.hidden)showArrows()},{passive:true});
+ const jump=end=>{if(!valid()){hideArrows();return}mark();viewport.scrollTo({top:end?viewport.scrollHeight:0,behavior:window.matchMedia("(prefers-reduced-motion:reduce)").matches?"instant":"smooth"});showArrows()};
+ up.addEventListener("click",()=>jump(false));down.addEventListener("click",()=>jump(true));
+ window.addEventListener("resize",hideArrows,{passive:true});
+ window.visualViewport?.addEventListener("resize",hideArrows,{passive:true});
+ document.addEventListener("visibilitychange",()=>{if(document.hidden)hideArrows()});
+ const observer=new MutationObserver(()=>{if(!valid())hideArrows()});
+ observer.observe(viewport,{attributes:true,attributeFilter:["hidden","class"]});observer.observe($("shell"),{attributes:true,attributeFilter:["class"]});
+}
+
 function wire(){
  syncInstalledPwaLayout();
  wireDrawerGestures();
@@ -4202,7 +4235,7 @@ function wire(){
  });
  $("keyDialog").addEventListener("close",()=>{S.videoPendingKeyReturn=false});
  if(VOICE_CHAT_ENABLED)voiceWire();
- wireDictation();wireReplyLevel();
+ wireDictation();wireReplyLevel();wireChatScrollArrows();
 }
 function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false")}
 

@@ -110,6 +110,13 @@ a{color:inherit}
 .model-select .ui-icon{width:16px;height:16px;color:#708187}
 .model-select .ui-icon svg{width:16px;height:16px}
 .conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
+.chat-scroll-arrows{position:absolute;right:7px;bottom:90px;z-index:4;display:flex;flex-direction:column;width:26px;border-radius:14px;background:rgba(100,110,120,.82);box-shadow:0 1px 5px rgba(20,30,40,.14);overflow:hidden}
+.chat-scroll-arrows[hidden]{display:none}
+.chat-scroll-arrows button{display:grid;place-items:center;width:26px;height:29px;padding:4px;border:0;background:transparent;color:#fff;touch-action:manipulation}
+.chat-scroll-arrows button+button{border-top:1px solid rgba(255,255,255,.24)}
+.chat-scroll-arrows button:disabled{opacity:.35}
+.chat-scroll-arrows svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.shell.menu-open .chat-scroll-arrows,.shell.free-tools-active .chat-scroll-arrows{display:none}
 .welcome{margin:auto;padding:0 15px 38px;text-align:center}
 .welcome h1{margin:0;font-size:clamp(25px,3vw,32px);font-weight:620;letter-spacing:-.5px}
 .messages{width:100%;max-width:1100px;margin:0 auto;padding:15px 16px 40px}
