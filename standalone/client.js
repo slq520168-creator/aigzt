@@ -2922,33 +2922,51 @@ async function apiChatStream(payload,onDelta){
  if(!final?.chatId||typeof final.reply!=="string")throw Error("回复中断，未收到完整结果");
  return final;
 }
+function resolveChatIntent(value,images,manualMode="text",continuation=false,code=false){
+ const text=String(value||"").trim();
+ if(continuation||code)return {mode:"text",auto:true};
+ // Questions about creating media, translation and descriptions are normal text requests.
+ if(/^(?:请)?(?:帮我|给我)?(?:翻译|解释|介绍|分析|总结|描述|识别|评价|比较|推荐|查找|查询|如何|怎么|怎样|为什么|什么是|能不能|是否|教我|写.{0,12}(?:提示词|脚本|教程|代码))/.test(text)||/^(?:how|what|why|translate|describe|explain|summarize|write)\b/i.test(text)||/^(?:请)?(?:不要|别|不用|无需|禁止)(?:帮我)?(?:生成|画|制作|创建)/.test(text))return {mode:"text",auto:true};
+ if(/(?:提示词|教程|代码|脚本|方案|方法|步骤)[。！？!?\s]*$/.test(text))return {mode:"text",auto:true};
+ const video=/(?:文生视频|图生视频|图转视频|图片转视频|生成.{0,36}(?:视频|短片|动画)|(?:制作|做|创建|拍摄|合成).{0,30}(?:视频|短片|动画)|(?:让|把).{0,35}(?:动起来|跑起来|走起来|跳起来|变成视频)|(?:generate|create|make).{0,45}(?:video|animation)|animate (?:this|the) (?:image|photo))/i.test(text);
+ if(video)return {mode:"video",auto:true,provider:images>=2&&/(?:首尾帧|首帧.*尾帧|第一张.*最后一张)/.test(text)?"freeloop":images?"freewan":"freetext"};
+ const edit=/(?:图生图|改图|修图|重绘|(?:修改|编辑|美化|修复|调整|处理|重新画|重画).{0,15}(?:图|照片|头像|背景)|(?:把|将).{0,45}(?:改成|换成|替换|去掉|删除|加上|变成|调成)|(?:换|去掉|删除|移除|添加|加上|替换|修改).{0,10}(?:背景|衣服|颜色|人物|水印)|(?:edit|modify|remove|replace).{0,40}(?:image|photo|background))/i.test(text);
+ const image=/(?:^|\s)(?:画|绘制)(?!面|质|风)|(?:帮我|给我|请)(?:画|绘制)|(?:文生图|作图|生成.{0,35}(?:图片|图像|插画|照片|海报|头像|壁纸)|(?:制作|设计|创建).{0,25}(?:图片|图像|插画|海报|头像|壁纸)|(?:draw|paint|generate an image|create an image)\b)/i.test(text);
+ if(edit&&(images||/图生图|改图|修图|重绘|照片|这张图|刚才的图|背景/.test(text)))return {mode:"image",auto:true,edit:true};
+ if(image)return {mode:"image",auto:true,edit:images>0};
+ return {mode:manualMode,auto:false};
+}
 async function sendMessage(continueFrom=null){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
- const submittedMode=S.composerMode;
- const submittedVideoProvider=S.videoProvider,submittedVideoModel=S.videoModel,submittedVideoRatio=S.videoRatio;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
- const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
  const videoImages=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+ const intent=resolveChatIntent(prompt,videoImages.length,S.composerMode,typeof continueFrom==="string",S.code);
+ const submittedMode=intent.mode;
+ const automaticVideo=intent.auto&&submittedMode==="video";
+ const submittedVideoProvider=automaticVideo?intent.provider:S.videoProvider;
+ const submittedVideoModel=automaticVideo?VIDEO_OPTIONS[submittedVideoProvider]?.[0]:S.videoModel;
+ const submittedVideoRatio=S.videoRatio;
+ const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(submittedVideoProvider);
  if(submittedMode==="video"&&!freeVideo){
   if(!prompt){flashError("请输入视频描述");return}
   if(S.attachments.length){flashError("当前个人 API 视频接口仅支持文字描述，请选择图生视频处理附件");return}
-  if(!videoKeyPermitted(S.videoProvider)){S.videoPendingKeyReturn=true;openKeyPanel(S.videoProvider);return}
-  if(!confirm("确认使用 "+VIDEO_PROVIDER_NAMES[S.videoProvider]+" 个人 API 额度生成视频？可能产生费用。"))return;
+  if(!videoKeyPermitted(submittedVideoProvider)){S.videoPendingKeyReturn=true;openKeyPanel(submittedVideoProvider);return}
+  if(!confirm("确认使用 "+VIDEO_PROVIDER_NAMES[submittedVideoProvider]+" 个人 API 额度生成视频？可能产生费用。"))return;
  }
  if(freeVideo&&!prompt){flashError("请输入视频描述");return}
- if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
+ if(freeVideo&&submittedVideoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
- if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
+ if(submittedMode==="image"&&(intent.edit||(!intent.auto&&S.miniToolChoice==="image-edit"))&&!S.attachments.length){
   flashError("请点击＋中的照片上传参考图片");$("attachMenu").hidden=false;return
  }
- if(freeVideo&&S.videoProvider!=="freetext"&&videoImages.length<(S.videoProvider==="freeloop"?2:1)){
-  flashError(S.videoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
+ if(freeVideo&&submittedVideoProvider!=="freetext"&&videoImages.length<(submittedVideoProvider==="freeloop"?2:1)){
+  flashError(submittedVideoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
   $("attachMenu").hidden=false;return
  }
- if(freeVideo&&S.videoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
+ if(freeVideo&&submittedVideoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
   flashError("首尾帧需要两张不同的图片附件");return
  }
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
@@ -2975,6 +2993,8 @@ async function sendMessage(continueFrom=null){
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
  const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
+ // A creative request is per-message, never a sticky composer mode.
+ if(S.composerMode!=="text")setComposerMode("text");
  const loading=appendMessage("assistant","");
   setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
@@ -3020,7 +3040,7 @@ async function sendMessage(continueFrom=null){
   }
   else if(freeVideo){
    const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:S.videoProvider,model:S.videoModel,imageId:img?.id,endImageId:S.videoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:S.videoRatio,prompt});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",autoVideo:automaticVideo,provider:submittedVideoProvider,model:submittedVideoModel,imageId:img?.id,endImageId:submittedVideoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:submittedVideoRatio,prompt});
   }
   else{
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
