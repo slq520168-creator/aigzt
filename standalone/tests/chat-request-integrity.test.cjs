@@ -19,7 +19,7 @@ test("legacy route never truncates current user content",()=>{
 });
 test("Groq reasoning budgets preserve selected reply level",()=>{
  assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","short"),600);
- assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","long"),8192);
+ assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","long"),4096);
  assert.equal(helpers.chatOutputBudget("openrouter","other/model","long"),2600);
 });
 test("memory switch retains current, project and ordinary cross-chat context",()=>{

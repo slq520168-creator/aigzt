@@ -140,8 +140,43 @@ function legacyQueryPrompt(history){
 }
 function chatOutputBudget(provider,model,level){
  if(level==="short")return 600;
- if(provider==="groq"&&/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return level==="long"?8192:4096;
+ if(provider==="groq"&&/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return level==="long"?4096:2400;
  return level==="long"?2600:1200;
+}
+// Estimate token usage conservatively; actual account limits remain provider-controlled.
+function groqMessageCost(m){
+ let bytes=0;
+ for(const ch of String(m.content||"")){const n=ch.codePointAt(0);bytes+=n<128?1:n<2048?2:n<65536?3:4;}
+ return Math.ceil(bytes/2)+16;
+}
+function groqRequestPlan(history,requestedOutput,totalBudget=7400){
+ const latest=history.findLastIndex(m=>m.role==="user");
+ const optionalMemory=m=>m.role==="system"&&m.content.startsWith("以下是同一用户的相关上下文");
+ const required=history.map((m,i)=>i===latest||(m.role==="system"&&!optionalMemory(m)));
+ let used=160+history.reduce((n,m,i)=>n+(required[i]?groqMessageCost(m):0),0);
+ // Never truncate the current user turn or explicit directives.
+ const output=Math.min(requestedOutput,Math.max(600,totalBudget-used));
+ let room=Math.max(0,totalBudget-used-output);
+ const selected=new Map();
+ // Preserve the nearest conversation turns and saved memory as space permits.
+ // Nothing is deleted from the database and the memory switch is unchanged.
+ for(let i=history.length-1;i>=0;i--){
+  if(required[i]||history[i].role==="system")continue;
+  const cost=groqMessageCost(history[i]);
+  if(cost>room)break;
+  selected.set(i,history[i]);room-=cost;
+ }
+ for(let i=0;i<history.length;i++){
+  const m=history[i];if(!optionalMemory(m))continue;
+  if(groqMessageCost(m)<=room){selected.set(i,m);room-=groqMessageCost(m);continue;}
+  const lines=m.content.split("\n"),kept=[lines[0]];
+  for(const line of lines.slice(1)){
+   const next={...m,content:[...kept,line].join("\n")};
+   if(groqMessageCost(next)<=room)kept.push(line);
+  }
+  if(kept.length>1){const partial={...m,content:kept.join("\n")};selected.set(i,partial);room-=groqMessageCost(partial);}
+ }
+ return {messages:history.flatMap((m,i)=>required[i]?[m]:selected.has(i)?[selected.get(i)]:[]),maxTokens:output};
 }
 async function listModels(env){
  const availableFree=FREE_MODELS;
@@ -372,17 +407,31 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   body={model,max_tokens:maxTokens,messages:turns.length?turns:[{role:"user",content:"你好"}],...(system?{system}:{})};
  }else if(provider==="groq"){
   // Groq uses max_completion_tokens, not the deprecated max_tokens alias.
-  body={model,messages:history,max_completion_tokens:maxTokens,stream:false};
+  const plan=groqRequestPlan(history,maxTokens);
+   body={model,messages:plan.messages,max_completion_tokens:plan.maxTokens,stream:false};
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
  if(provider==="openrouter"&&outputImages)body.modalities=imageOnly?["image"]:["image","text"];
  const streaming=!outputImages&&typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
  if(streaming){body.stream=true;headers.accept="text/event-stream";if(provider==="groq")body.stream_options={include_usage:true}}
- let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.min(60000,Math.max(streaming?45000:30000,timeoutMs)))})}
- catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
+ let res;
+ const deadline=Date.now()+Math.min(60000,Math.max(streaming?45000:30000,timeoutMs));
+ const request=async()=>fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.max(1,deadline-Date.now()))});
+ try{
+  res=await request();
+  // Definitive 413: retry once, same provider/model and current user turn.
+  if(provider==="groq"&&res.status===413&&Date.now()+1000<deadline){
+   const smaller=groqRequestPlan(history,Math.min(body.max_completion_tokens,1800),4800);
+   if(smaller.maxTokens<body.max_completion_tokens||JSON.stringify(smaller.messages).length<JSON.stringify(body.messages).length){
+    await res.body?.cancel().catch(()=>{});
+    body.messages=smaller.messages;body.max_completion_tokens=smaller.maxTokens;
+    res=await request();
+   }
+  }
+ }catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
  if(res.status>=300&&res.status<400)throw Error("上游跳转已拦截");
- if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503,upstreamStatus:res.status});
+ if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":res.status===413?"所选模型请求容量超限（HTTP 413），已保留原模型；请检查账号额度或缩短本次输入":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503,upstreamStatus:res.status});
  if(streaming){
   if(!res.body)throw Error("上游没有返回流式数据");
   const reader=res.body.getReader(),decoder=new TextDecoder();
@@ -506,7 +555,11 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // Legacy prompt-only endpoints cannot receive a long request intact.
   if(source.query&&recent===null){errors.push(source.id+" 上下文容量不足");continue;}
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
-   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:source.id==="groq"?chatOutputBudget("groq",source.model,replyLevel):replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
+   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
+  if(source.id==="groq"){
+   const plan=groqRequestPlan(payload.messages,chatOutputBudget("groq",source.model,replyLevel));
+   payload.messages=plan.messages;delete payload.max_tokens;payload.max_completion_tokens=plan.maxTokens;
+  }
   let res;
   try{
    res=await fetch(source.endpoint,{
@@ -521,7 +574,8 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   }
   if(!res.ok){
    const status=res.status;
-   await freeRouteFailure(env,source.id,status,sourceState,res.headers);
+   // A request-specific 413 must not disable a healthy free provider.
+   if(status!==413)await freeRouteFailure(env,source.id,status,sourceState,res.headers);
    errors.push(source.id+" HTTP "+status);
    if(status===429||[400,401,402,403,404].includes(status)||status>=500)continue;
    continue;
