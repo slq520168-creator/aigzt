@@ -3007,22 +3007,13 @@ async function sendMessage(continueFrom=null){
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
   flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
  }
- if(submittedMode==="text"&&S.provider!=="free"&&unavailableChatModel(S.provider,S.model)){
-  flashError("此模型当前不可调用，请选择其他可用模型；草稿及附件已保留。");openModels();return;
- }
- if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
-  openKeyPanel(S.provider);return;
- }
- if(submittedMode==="text"&&S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")){
-  const pdf=S.attachments.some(x=>x.type==="application/pdf");
-  if(pdf||!["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(S.model)){
-   flashError(pdf?"当前Groq附件接口不支持PDF，请选择支持PDF输入的模型。原附件和草稿已保留。":"当前Groq模型不支持图片输入，请选择支持图片分析的Qwen模型或免费自动。原附件和草稿已保留。");return;
-  }
- }
- const freeRoute=isFreeModel(S.provider,S.model);
- if(submittedMode==="text"&&!freeRoute&&!S.allowPaid){
-  flashError(connected(S.provider)?"密钥已保存，请授权使用此服务商额度；无需再次填写密钥。":"此模型需要服务商密钥。");
-  openKeyPanel(S.provider);return;
+ if(submittedMode==="text"&&S.provider!=="free"){
+  const imageOutput=S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages);
+  const incompatible=S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")&&
+   (S.attachments.some(x=>x.type==="application/pdf")||!["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(S.model));
+  const needsFree=!!unavailableChatModel(S.provider,S.model)||!connected(S.provider)||(!isFreeModel(S.provider,S.model)&&!S.allowPaid)||incompatible;
+  if(needsFree&&!imageOutput){setFreeDefault(false);rememberChatModelSelection();updateModelTitle()}
+  else if(needsFree){openKeyPanel(S.provider);return}
  }
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
@@ -3101,7 +3092,7 @@ async function sendMessage(continueFrom=null){
     unavailableChatModels.set(chatModelKey(requestProvider,requestModel),{code:e.code,at:Date.now()});
     if(e.code==="MODEL_UNAVAILABLE")void refreshConnectedModelCatalog(requestProvider);
    }
-   setPortraitState(loading,"error");
+   setPortraitState(loading,submittedMode==="text"?"idle":"error");
    if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
   // Show status in the assistant reply; retain all streamed content.
@@ -3120,7 +3111,7 @@ async function sendMessage(continueFrom=null){
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom);
   });
-  const detail=submittedMode==="text"&&requestProvider!=="free"?providerLabel(requestProvider)+"："+humanError(e):humanError(e);
+  const detail=submittedMode==="text"?"当前线路暂时繁忙，原消息已保留，可继续重试。":humanError(e);
   if(isImageMessage){status.append(retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage&&submittedMode==="text"){
    const alternate=messageTool("layers","免费线路重试",()=>{
@@ -3133,7 +3124,7 @@ async function sendMessage(continueFrom=null){
    });
    status.append(alternate);
   }
-  bubble.append(status);if(!isImageMessage)status.title=humanError(e);flashError("");
+  bubble.append(status);if(submittedMode!=="text"&&!isImageMessage)status.title=humanError(e);flashError("");
  }
  finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
