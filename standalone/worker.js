@@ -147,10 +147,10 @@ async function listModels(env){
   const outMods=m.architecture?.output_modalities||[];
   const priceIn=m.pricing?.prompt??null,priceOut=m.pricing?.completion??null;
   const free=String(priceIn)==="0"&&String(priceOut)==="0";
-  const media=outMods.includes("image")?"image":outMods.includes("video")?"video":"text";
+  const media=outMods.includes("video")?"video":outMods.includes("image")&&!outMods.includes("text")?"image":"text";
   return {id:m.id,name:m.name||m.id,provider:m.id.split("/")[0]||"其他",type:media,free,
    context:m.context_length||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",
-   inputImages:inMods.includes("image"),description:truncate(m.description,160)};
+   inputImages:inMods.includes("image"),outputImages:outMods.includes("image"),outputText:outMods.includes("text"),description:truncate(m.description,160)};
  });
  return {ok:true,at:new Date().toISOString(),freeModels:availableFree,models,count:models.length};
  }catch(error){
@@ -306,7 +306,25 @@ function verifiedTokenUsage(payload){
  if(input===null&&output===null&&total===null)return null;
  return {input,output,total:total??(input!==null&&output!==null?input+output:null),reasoning};
 }
-async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null){
+function replyMedia(parts,images=[]){
+ let content="",total=images.reduce((n,x)=>n+x.length,0);
+ const add=raw=>{
+  const url=typeof raw==="string"?raw:raw?.url;
+  if(typeof url!=="string"||images.includes(url)||images.length>=3)return;
+  if(/^data:image\/(?:png|jpeg|webp);base64,/i.test(url)){if(total+url.length>7400000||!hordeImageResult(url))return;images.push(url);total+=url.length;return}
+  try{const u=new URL(url);if(u.protocol==="https:"&&!u.username&&!u.password&&!u.port&&u.hostname.includes(".")&&!/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname)&&!u.hostname.endsWith(".local")&&u.href.length<=3072)images.push(u.href)}catch{}
+ };
+ if(typeof parts==="string")content=parts;
+ else if(Array.isArray(parts))for(const p of parts){
+  if(typeof p?.text==="string")content+=p.text;
+  add(p?.image_url||p?.url&&p.type==="image_url"&&p.url);
+  if(p?.inlineData?.data&&/^image\/(?:png|jpeg|webp)$/.test(p.inlineData.mimeType||""))add("data:"+p.inlineData.mimeType+";base64,"+p.inlineData.data);
+  if(p?.type==="image_generation_call"&&typeof p.result==="string")add(hordeImageResult(p.result));
+  if(p?.type==="image"&&p.source?.type==="base64")add("data:"+p.source.media_type+";base64,"+p.source.data);
+ }
+ return {content,images,add};
+}
+async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))throw Error("请先输入自己的 API Key");
@@ -341,7 +359,8 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
- const streaming=typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
+ if(provider==="openrouter"&&outputImages)body.modalities=imageOnly?["image"]:["image","text"];
+ const streaming=!outputImages&&typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
  if(streaming){body.stream=true;headers.accept="text/event-stream";if(provider==="groq")body.stream_options={include_usage:true}}
  let res;try{res=await fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.min(60000,Math.max(streaming?45000:30000,timeoutMs)))})}
  catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
@@ -381,13 +400,14 @@ const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newe
   return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
  }
  const out=await res.json();
- const text=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]).map(x=>x.text||"").join("\n"):
- provider==="openai"?(out.output_text||(out.output||[]).flatMap(o=>o.content||[]).map(x=>x.text||"").join("\n")):
- provider==="claude"?(out.content||[]).filter(x=>x.type==="text").map(x=>x.text||"").join("\n"):
- out.choices?.[0]?.message?.content;
- if(typeof text!=="string"||!text.trim())throw Error("服务商没有返回有效文字");
+ const message=out.choices?.[0]?.message;
+ const parts=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]):provider==="openai"?(out.output||[]).flatMap(o=>o.type==="image_generation_call"?[o]:o.content||[]):provider==="claude"?(out.content||[]):message?.content;
+ const parsed=replyMedia(parts);
+ for(const item of Array.isArray(message?.images)?message.images:[])parsed.add(item?.image_url||item?.url||item);
+ const text=parsed.content||out.output_text||"";
+ if(!String(text).trim()&&!parsed.images.length)throw Error("服务商没有返回有效内容");
  const reason=out?.choices?.[0]?.finish_reason||out?.stop_reason||out?.candidates?.[0]?.finishReason||"";
- return {content:truncate(text,40000),actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
+ return {content:truncate(text,40000),images:parsed.images,actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
 }
 // Storage uploads retain bounded protection; ordinary free text and work do not use daily quotas.
 async function uploadQuota(env,userId){
@@ -635,7 +655,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=replyLevel==="short"?600:replyLevel==="long"?2600:1200;
-    try{result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta)}
+    try{result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true)}
     catch(error){
      if(![404,429].includes(error?.upstreamStatus))throw error;
      // An explicit HTTP rejection is safe to reroute; never duplicate an uncertain paid request.
@@ -650,9 +670,11 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   throw e;
  }
  const stamp=Date.now(),assistantMessageId=crypto.randomUUID();
- await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",result.content,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
+ const images=Array.isArray(result.images)?result.images:[],remote=images.filter(x=>x.startsWith("https:")),temporary=images.filter(x=>x.startsWith("data:"));
+ const storedReply=[result.content,...remote.map(x=>"![模型图片]("+x.replace(/[()]/g,ch=>encodeURIComponent(ch))+")"),...(!result.content&&!remote.length&&temporary.length?["图片已生成（仅当前会话展示）"]:[])].filter(Boolean).join("\n\n");
+ await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",effectiveProvider,effectiveProvider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:result.content,model:effectiveProvider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider:effectiveProvider,incomplete:Boolean(result.incomplete)};
+ return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model:effectiveProvider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider:effectiveProvider,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -663,7 +685,7 @@ function chatStream(req,env,user){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
-    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,model:result.model,usedModel:result.usedModel,provider:result.provider,usage:result.usage||null,incomplete:result.incomplete});
+    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,usage:result.usage||null,incomplete:result.incomplete});
    }catch(e){send({type:"error",error:e?.message||"回复未完成"})}
    finally{controller.close()}
   }
@@ -818,7 +840,7 @@ async function submitQwenImageEdit(env,user,imageId,prompt){
  form.append("files",new Blob([bytes],{type:mime}),"reference."+ext);
  let upload;
  try{upload=await fetch(QWEN_EDIT_HOST+"/gradio_api/upload",{method:"POST",headers:{accept:"application/json",...hfHeaders(env)},body:form,redirect:"manual",signal:AbortSignal.timeout(11500)})}
- catch{throw Object.assign(Error("图生图来源图片上传连接失败"),{status:503})}
+ catch{throw Object.assign(Error("图生图来源图片上传连接失败"),{status:503,definite:true})}
  if(!upload.ok||upload.status>=300)throw Object.assign(Error("Qwen 图片来源拒绝上传"),{status:503,definite:true});
  const files=await upload.json().catch(()=>null),path=String(files?.[0]||"");
  if(!/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)||path.includes(".."))
@@ -889,7 +911,7 @@ async function qwenEditStatus(env,user,job,ref){
  try{image=await saveKreaImage(env,user.id,state.url,true)}
  catch{
   const tries=(Number(ref.tries)||0)+1;
-  if(tries>=3)return now-job.created_at>=50000?qwenFailoverToHorde(env,user,job,ref,now,"图片结果无法获取"):failure("图生图已完成但图片无法下载");
+  if(tries>=3)return qwenFailoverToHorde(env,user,job,ref,now,"图片结果无法获取");
   await dbRun(env.DB,"UPDATE image_jobs SET external_id=? WHERE id=? AND user_id=? AND status='pending'",JSON.stringify({...ref,deliveryUrl:state.url,tries}),job.id,user.id);
   return pending();
  }
@@ -1131,11 +1153,9 @@ async function submitKrea(req,env,user){
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
  if(r.meta?.changes){
-  if(typeof job.external_id==="string"&&(job.external_id.startsWith('{"v":5,')||job.external_id.startsWith('{"v":6,')||job.external_id.startsWith('{"v":9,'))){
-   await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='failed'",job.id,job.user_id);
-  }
+  // Keep terminal status until the existing bounded cleanup.
   if(job.charged_day!=="image-unmetered")await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",job.charged_day,job.user_id),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",job.charged_day)]).catch(()=>{});
-  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","作图失败："+message,job.message_id,job.user_id).catch(()=>{});
+  // Preserve the task marker for a neutral retry after reload.
  }
 }
 async function queryGradioImageEvent(env,provider,eid){
@@ -1259,13 +1279,13 @@ async function imageVexaRender(env,uid,ref,temporary=false){
  return mid;
 }
 async function imageV4Move(env,job,ref,nextStage){
- if(nextStage>=(ref.v===9?IM_IMAGE_STAGES_QUICK:IM_IMAGE_STAGES).length){
+ if(nextStage>=(ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES).length){
   await failKreaJob(env,job,"免费作图来源均未成功");
   return response({ok:true,done:true,failed:true,error:"免费作图服务目前全部不可用"});
  }
  const next={...ref,stage:nextStage,phase:"new",id:"",taskId:"",stageAt:Date.now()};
- await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(next),Date.now(),job.id,job.user_id);
- return imagePending(job);
+ await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(next),job.id,job.user_id);
+ return response({ok:true,done:false,pending:true,waitSeconds:1,startedAt:job.created_at});
 }
 async function imageV4Pending(env,job,ref){
  await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(ref),Date.now(),job.id,job.user_id);
@@ -1301,9 +1321,9 @@ async function imageV4Status(env,user,job,ref){
   return response({ok:true,done:true,failed:true,error:ref.v===9?"免费来源排队过久，本次已停止等待":"作图超时"});
  }
  if(job.status==="recovering"){
-  if(now-job.checked_at>45000){
-   await failKreaJob(env,job,"任务处理超时");
-   return response({ok:true,done:true,failed:true,error:"图片处理状态中断，请重新提交"});
+  if(now-job.checked_at>50000){
+   const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='recovering' AND checked_at=?",now,job.id,user.id,job.checked_at);
+   if(claimed.meta?.changes)return imageV4Move(env,job,ref,ref.stage+1);
   }
   return imagePending(job);
  }
