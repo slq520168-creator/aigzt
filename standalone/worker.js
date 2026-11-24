@@ -157,6 +157,8 @@ async function planNativeChatAttachments(env,provider,model,files){
    const match=catalog.models.find(m=>m.id===model);
    if((images.length&&!match?.inputImages&&model!=="openrouter/free")||(pdfs.length&&!match?.inputFiles))throw Error("当前所选模型不支持此附件，请选择支持图片或PDF输入的模型；不会自动更换模型");
   }
+ }else if(provider==="openai"){
+  // Native Responses API supports attachments on compatible models; the official endpoint validates model capability.
  }else if(provider==="groq"&&groqVisionModel(model)&&!pdfs.length){
   if(images.length>3)throw Error("当前 Groq 视觉模型每次最多分析三张图片");
  }else throw Error("当前所选模型的附件分析接口不支持该文件；请选择支持图片或PDF输入的模型");
@@ -488,10 +490,18 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
  if(inputParts.length){
-  if(!["openrouter","groq"].includes(provider))throw Error("附件输入接口不支持当前服务商");
-  body.messages=attachNativeChatParts(body.messages,inputParts);
-  // Use native PDF input only; do not silently enable a paid OCR parser.
-  if(inputParts.some(p=>p.type==="file"))body.plugins=[{id:"file-parser",pdf:{engine:"native"}}];
+  if(provider==="openai"){
+   const index=history.findLastIndex(m=>m.role==="user");
+   if(index<0)throw Error("没有可关联附件的用户消息");
+   const parts=inputParts.map(p=>p.type==="image_url"?{type:"input_image",image_url:p.image_url.url,detail:"auto"}:p.type==="file"?{type:"input_file",filename:p.file.filename,file_data:p.file.file_data}:null);
+   if(parts.some(p=>!p))throw Error("OpenAI 附件格式不支持");
+   body.input=history.map((m,i)=>i===index?{...m,content:[{type:"input_text",text:m.content},...parts]}:m);
+  }else{
+   if(!["openrouter","groq"].includes(provider))throw Error("附件输入接口不支持当前服务商");
+   body.messages=attachNativeChatParts(body.messages,inputParts);
+   // Use native PDF input only; do not silently enable a paid OCR parser.
+   if(inputParts.some(p=>p.type==="file"))body.plugins=[{id:"file-parser",pdf:{engine:"native"}}];
+  }
  }
  if(provider==="openrouter"&&outputImages)body.modalities=imageOnly?["image"]:["image","text"];
  const streaming=!outputImages&&typeof onDelta==="function"&&["openrouter","groq"].includes(provider);

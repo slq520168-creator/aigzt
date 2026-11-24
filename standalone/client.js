@@ -421,6 +421,16 @@ async function useSavedConnection(){
  try{
   if(VIDEO_ONLY_PROVIDERS.has(provider)||S.videoPendingKeyReturn){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;setComposerMode("video");$("prompt").focus({preventScroll:true})}return}
   let model=S.provider===provider&&S.model?S.model:entry.model;
+  if(provider==="openai"){
+   const catalog=await api("/api/connections/openai/models",{});
+   if(!catalog.verified||!Array.isArray(catalog.models)||!catalog.models.length)throw Error("OpenAI 官方目录未验证，请稍后再试");
+   S.connected.openai=catalog.models;entry.verified=true;refreshSourceChips();
+   const directId=S.provider==="openrouter"&&S.model.startsWith("openai/")?S.model.slice(7):null;
+   const candidate=[directId,model].find(id=>id&&catalog.models.some(m=>m.id===id&&m.type==="text"));
+   if(!candidate){hide("keyDialog");activateSource("openai");openModels();return}
+   model=candidate;
+   await api("/api/connections/openai/selected",{model});entry.model=model;
+  }
   if(!model){
    const manual=$("manualModel").value.trim();
    if(manual){
@@ -3184,7 +3194,7 @@ function allModels(){
   for(const x of items){
    if(!x.id)continue;const key=provider+"\0"+x.id;
    if(seen.has(key))continue;
-   result.push({id:x.id,name:x.name||x.id,provider,type:x.type||"text",free:!!x.free,ownKey:true});seen.add(key);
+   result.push({...x,id:x.id,name:x.name||x.id,provider,type:x.type||"text",free:!!x.free,ownKey:true,availableWith:undefined});seen.add(key);
   }
  }
  return result;
@@ -3226,7 +3236,9 @@ function renderModels(){
   const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model),unlisted:true};
   if(modelMatches(active))visible.unshift(active);
  }
- visible.sort((a,b)=>Number(modelIsSelected(b))-Number(modelIsSelected(a)));
+ // Prefer the verified official connection in the GPT family without silently changing an explicit selection.
+ const directRank=m=>S.source==="family:gpt"&&S.savedProviders.openai?.verified&&m.provider==="openai"&&m.availableWith!=="openrouter-key"&&m.type==="text"?1:0;
+ visible.sort((a,b)=>directRank(b)-directRank(a)||Number(modelIsSelected(b))-Number(modelIsSelected(a)));
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  $("modelCount").textContent=count+" 个模型";
  $("moreModels").hidden=count<=shown.length;
@@ -3241,10 +3253,10 @@ function renderModels(){
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
   const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id);
-  const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
+  const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"密钥已验证":saved?"待验证":item.free?"免费 · 需连接":"需连接");
   title.append(tag);
   const owner=domesticGroupFor(item);
-  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+(WORK_PROVIDER_SHORT[via]||via)+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
+  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+(via==="openai"?"OpenAI 官方直连":(WORK_PROVIDER_SHORT[via]||via))+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image"].includes(item.type)||(item.type==="video"&&VIDEO_OPTIONS[item.provider]?.includes(item.id));
   const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!!blocked||!actionable||selected;
@@ -3278,7 +3290,8 @@ function activateSource(name){
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===name);
  renderModels();
  if(name==="family:china"||name.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
- if(S.savedProviders[name])void refreshConnectedModelCatalog(name);
+ if(name==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
+ else if(S.savedProviders[name])void refreshConnectedModelCatalog(name);
 }
 function refreshSourceChips(){
  const container=$("sourceChips");
@@ -3294,7 +3307,8 @@ function openModels(){
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
  show("modelDialog");renderModels();void loadCatalog();
- if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
+ if(S.source==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
+ else if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
  if(S.source==="family:china"||S.source.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
 }
