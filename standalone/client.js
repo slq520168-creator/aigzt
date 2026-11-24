@@ -117,12 +117,12 @@ function closeMenu(){
  $("menuBtn").setAttribute("aria-expanded","false");
 }
 function openMenu(){
+ if($("shell").classList.contains("menu-open"))return;
  closeMessageMore();
  // The composer must release the iOS keyboard before the independent drawer opens.
  const focused=document.activeElement;
- if(focused?.closest?.("#composerArea")&&focused.matches?.("input,textarea,[contenteditable]"))focused.blur();
- hideAttachMenu();
- syncMobileHeight();
+ if(focused?.closest?.("#composerArea")&&focused.matches?.("input,textarea,[contenteditable]")){focused.blur();syncMobileHeight()}
+ if(!$("attachMenu").hidden||!$("toolTray").hidden)hideAttachMenu();
  $("shell").classList.add("menu-open");
  $("sideShade").hidden=false;
  $("menuBtn").setAttribute("aria-expanded","true");
@@ -130,16 +130,16 @@ function openMenu(){
 function wireDrawerGestures(){
  let gesture=null;
  const isMobile=()=>window.matchMedia("(max-width:900px)").matches;
- const edgeWidth=24,minDistance=75,drawerEdgeWidth=44,replyEdgeWidth=20,drawerOpenDistance=60;
+ const edgeWidth=24,minDistance=75,drawerEdgeWidth=44,replyEdgeWidth=22,drawerOpenDistance=34;
  const excluded="input,textarea,select,[contenteditable='true'],[role='slider'],.chat-table-scroll,table,pre,code,img,video,canvas,.iv-stage,.iv-thumbs,.source-chips,.model-region-links,.work-progress,.free-tool-filters,.tool-tray,.attachment-preview";
  function blockedTarget(target,replyEdge=false){
   if(!(target instanceof Element))return false;
   // A full-width reply can cover the whole left edge; only non-interactive text can start there.
   const selector=replyEdge?excluded.replace(".chat-table-scroll,table,pre,code,",""):excluded;
   if(target.closest(selector))return true;
-  for(let el=target;el&&el!==document.body;el=el.parentElement){
-   if(el.scrollWidth>el.clientWidth+2&&/^(auto|scroll|overlay)$/.test(window.getComputedStyle(el).overflowX))return true;
-  }
+  // Only known horizontal surfaces need layout checks. Do not force layout through every ancestor.
+  const horizontal=target.closest(".chat-table-scroll,pre,.bubble,.sidebar-chat-scroll");
+  if(horizontal&&horizontal.scrollWidth>horizontal.clientWidth+2&&/^(auto|scroll|overlay)$/.test(window.getComputedStyle(horizontal).overflowX))return true;
   return false;
  }
  function activePage(){
@@ -151,7 +151,10 @@ function wireDrawerGestures(){
   if(!isMobile()||event.touches.length!==1||!$("imageViewer").hidden)return;
   const touch=event.touches[0],target=event.target,open=$("shell").classList.contains("menu-open");
   const left=touch.clientX<=edgeWidth,right=touch.clientX>=window.innerWidth-edgeWidth;
+  // Ordinary interior taps and vertical reading never enter the expensive gesture path.
+  if(!open&&touch.clientX>drawerEdgeWidth&&!right)return;
   const page=activePage();
+  if(!page&&!open&&!S.freeToolsMode&&!S.workMode&&touch.clientX>drawerEdgeWidth)return;
   const replyEdge=!page&&!open&&!S.freeToolsMode&&!S.workMode&&touch.clientX<=replyEdgeWidth;
   if(blockedTarget(target,replyEdge))return;
   let action="",direction=0;
@@ -170,7 +173,7 @@ function wireDrawerGestures(){
    action=S.freeToolsMode?"tools":"work";direction=left?1:-1;
   }else{
    // Full-width replies no longer have an avatar column as a swipe gutter.
-    // Permit a deliberate right swipe from the outer 20px of text, not its interior.
+    // Permit a deliberate right swipe from the outer 22px of text, not its interior.
     if(touch.clientX>drawerEdgeWidth)return;
     const startElement=target instanceof Element?target:target?.parentElement;
     if(startElement?.closest(".message-copy-bar,.message-translation,button,a,summary,label"))return;
@@ -184,21 +187,30 @@ function wireDrawerGestures(){
   if(!gesture)return;
   if(event.touches.length!==1||event.touches[0].identifier!==gesture.id){gesture=null;return}
   const touch=event.touches[0],dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
-  if(gesture.action==="open"){
-   if(Math.abs(dy)>42||(Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx)*.7)){gesture=null;return;}
-   // Claim only a confirmed horizontal drag; ordinary scrolling is untouched.
-   if(dx>16&&dx>Math.abs(dy)*1.7&&event.cancelable)event.preventDefault();
+  if(gesture.committed){if(event.cancelable)event.preventDefault();return}
+  if(gesture.action==="open"||gesture.action==="close"){
+   const distance=dx*gesture.direction;
+   if(Math.abs(dy)>32||(Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)*.7)||distance< -16){gesture=null;return}
+   // Begin the drawer transition as soon as horizontal intent is clear, not on touchend.
+   if(distance>12&&distance>Math.abs(dy)*2.2){
+    if(event.cancelable)event.preventDefault();
+    if(distance>=drawerOpenDistance&&Math.abs(dy)<=24){
+     if(gesture.action==="open"&&window.getSelection?.()?.toString()){gesture=null;return}
+     gesture.committed=true;
+     if(gesture.action==="open")openMenu();else closeMenu();
+    }
+   }
   }
   if((Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx))||dx*gesture.direction< -16)gesture=null;
  },{passive:false});
  document.addEventListener("touchend",event=>{
   const origin=gesture;gesture=null;
-  if(!origin||event.touches.length!==0||event.changedTouches.length!==1||!isMobile()||!$("imageViewer").hidden)return;
+  if(!origin||origin.committed||event.touches.length!==0||event.changedTouches.length!==1||!isMobile()||!$("imageViewer").hidden)return;
   const touch=event.changedTouches[0];
   if(touch.identifier!==origin.id||activePage()!==origin.page)return;
   const dx=touch.clientX-origin.x,dy=touch.clientY-origin.y;
   const opening=origin.action==="open";
-   if(dx*origin.direction<(opening?drawerOpenDistance:minDistance)||Math.abs(dx)<Math.abs(dy)*(opening?1.7:1.5)||(opening&&Math.abs(dy)>42))return;
+   if(dx*origin.direction<((opening||origin.action==="close")?drawerOpenDistance:minDistance)||Math.abs(dx)<Math.abs(dy)*(opening?1.7:1.5)||(opening&&Math.abs(dy)>42))return;
    if(opening&&window.getSelection?.()?.toString())return;
   if(origin.action==="page"){if(origin.page.open)hide(origin.page.id);return}
   if(document.querySelector("dialog[open]"))return;

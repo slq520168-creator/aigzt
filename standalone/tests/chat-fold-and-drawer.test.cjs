@@ -28,13 +28,14 @@ function run(type,x,dx,dy,mode="chat",selection=""){
  const t=(a,b)=>({identifier:1,clientX:a,clientY:b});
  handlers.touchstart({touches:[t(x,120)],target});
  handlers.touchmove({touches:[t(x+dx*.6,120+dy*.6)],target,cancelable:true,preventDefault(){claimed++}});
+ const beforeRelease=opens;
  handlers.touchend({touches:[],changedTouches:[t(x+dx,120+dy)],target});
- return {opens,back,claimed};
+ return {opens,back,claimed,beforeRelease};
 }
 test("drawer opens only on deliberate outer edge swipe",()=>{
  assert.equal(run("bubble",5,140,0).opens,1);
  assert.equal(run("bubble",18,65,0).opens,1);
- assert.equal(run("bubble",21,140,0).opens,0);
+ assert.equal(run("bubble",23,140,0).opens,0);
  assert.equal(run("bubble",15,0,120).opens,0);
  assert.equal(run("bubble",150,120,0).opens,0);
  assert.equal(run("toolbar",25,120,0).opens,0);
@@ -78,4 +79,13 @@ test("message menu is a normal button and in-flow panel, never a floating detail
  assert.match(s,/\.message-more-panel\{flex:0 0 100%;order:1;/);
  assert.match(s,/\.message-more-panel\[hidden\]\{display:none\}/);
  assert.doesNotMatch(s,/\.message-more-panel\{[^}]*position:absolute/);
+});
+
+test("confirmed right swipe opens before finger release, only once",()=>{
+ const result=run("bubble",18,65,0);
+ assert.equal(result.beforeRelease,1);assert.equal(result.opens,1);
+ assert.equal(run("bubble",18,20,0).opens,0);
+ assert.equal(run("bubble",150,150,0).claimed,0);
+ assert.match(s,/transition:transform \.18s/);
+ assert.doesNotMatch(s,/\.shell\.menu-open \.sidebar\{[^}]*box-shadow/);
 });
