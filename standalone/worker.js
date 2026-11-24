@@ -55,7 +55,7 @@ function fail(msg,status=400){return response({ok:false,error:msg},status)}
 function secureHeaders(ext={}){
  return {"x-content-type-options":"nosniff","referrer-policy":"no-referrer",
  "x-frame-options":"DENY","cross-origin-resource-policy":"same-origin",
- "content-security-policy":"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' https:; img-src 'self' data: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",...ext};
+ "content-security-policy":"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob: https:; img-src 'self' blob: data: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",...ext};
 }
 function staticResponse(text,type){
  return new Response(text,{headers:secureHeaders({"content-type":type,"cache-control":"no-store"})});
@@ -1200,10 +1200,7 @@ async function saveKreaImage(env,uid,rawUrl,temporary=false){
  if(url.protocol!=="https:"||url.username||url.password||!(h==="krea-krea-2.hf.space"||h.endsWith(".hf.space")||h==="huggingface.co"||h.endsWith(".huggingface.co")||h==="hf.co"||h.endsWith(".hf.co")||h.endsWith(".gradio.live")))throw Error("非可信图片来源");
  const resp=await fetch(url.href,{headers:{accept:"image/*",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(11000)});
  const {a,mime}=await downloadImage(resp);
- if(temporary)return transientImageUrl(a,mime);
- const id=crypto.randomUUID();
- await env.MEDIA.put(uid+"/"+id,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
- return id;
+ return transientImageUrl(a,mime);
 }
 const GLM_IMAGE="https://multimodalart-glm-image.hf.space";
 const RIO_IMAGE="https://rioshiina-imagegen.hf.space";
@@ -1397,10 +1394,7 @@ async function imageVexaRender(env,uid,ref,temporary=false){
  if(url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/")||url.username||url.password)throw Error("Vexa 图片地址未通过校验");
  const file=await fetch(url.href,{headers:{accept:"image/*"},redirect:"manual",signal:AbortSignal.timeout(11000)});
  const {a,mime}=await downloadImage(file);
- if(temporary)return transientImageUrl(a,mime);
- const mid=crypto.randomUUID();
- await env.MEDIA.put(uid+"/"+mid,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
- return mid;
+ return transientImageUrl(a,mime);
 }
 async function imageV4Move(env,job,ref,nextStage,reason="来源未返回有效图片"){
  const stage=imageStages(ref)[ref.stage]||"unknown";
@@ -1427,12 +1421,12 @@ async function imageV4Deliver(env,user,job,ref,url){
    return imageV4Move(env,job,ref,ref.stage+1);
   return imageV4Pending(env,job,{...ref,phase:"deliver",url,deliveryFailures:(ref.deliveryFailures||0)+1});
  }
- return ref.v>=5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+ return imageTransientComplete(env,job,result);
 }
 async function imageTransientComplete(env,job,localImageUrl){
  // Return verified image bytes to the requesting browser once, never save image bytes to R2.
  const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",job.id,job.user_id,job.checked_at,job.external_id);
- if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付，请重新生成"});
+ if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付，不会自动重新生成"});
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（本次会话临时展示，图片未保存）",job.message_id,job.user_id).catch(()=>{});
  return response({ok:true,done:true,image:localImageUrl,temporary:true,model:"免费作图"});
 }
@@ -1475,7 +1469,7 @@ async function imageV4Status(env,user,job,ref){
   if(stage==="vexa"){
    try{
     const result=await imageVexaRender(env,user.id,ref,ref.v>=5);
-    return ref.v>=5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
+    return imageTransientComplete(env,job,result);
    }catch(error){return imageV4Move(env,job,ref,ref.stage+1,error?.message||"来源连接失败")}
   }
   if(ref.phase==="deliver"&&typeof ref.url==="string")
@@ -1584,12 +1578,11 @@ async function imageJobStatus(env,user,id){
   return response({ok:true,done:true,failed:true,error:state.error||"图片生成失败"});
  }
  try{
-  const mid=await saveKreaImage(env,user.id,state.url);
-  const changed=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',media_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",mid,Date.now(),id,user.id);
-  if(changed.meta?.changes&&job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mid+")",job.message_id,user.id);
-  const final=changed.meta?.changes?mid:(await dbGet(env.DB,"SELECT media_id FROM image_jobs WHERE id=? AND user_id=?",id,user.id))?.media_id;
-  if(!final)return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at});
-  return response({ok:true,done:true,image:"/api/files/"+final,model:"免费作图"});
+  const image=await saveKreaImage(env,user.id,state.url,true);
+  const changed=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='pending'",id,user.id);
+  if(!changed.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付"});
+  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（保存在原设备，网站不保存）",job.message_id,user.id);
+  return response({ok:true,done:true,image,temporary:true,model:"免费作图"});
  }catch{return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
 }
 async function authorizedVideoKey(env,user,provider){
@@ -1752,22 +1745,7 @@ async function fvPoll(env,cfg,eventId,timeoutMs=11500){
  catch{}finally{try{await reader.cancel()}catch{}}
  return error?{status:"failed",error,retryable}:result!==null?{status:"completed",data:result}:{status:"pending"};
 }
-async function fvSave(env,user,rawUrl,cfg){
- const url=new URL(rawUrl);
- if(url.origin!==cfg.url||url.username||url.password||!url.pathname.includes("/gradio_api/file=")||url.pathname.length>850)throw fvError("生成结果地址未通过来源验证",502);
- let response;
- try{response=await fetch(url.href,{headers:{accept:"video/mp4"},redirect:"manual",signal:AbortSignal.timeout(15000)})}
- catch{throw fvError("生成视频暂时不能下载",503)}
- if(!response.ok||response.status>=300||!response.body)throw fvError("生成视频下载失败",503);
- const reader=response.body.getReader(),parts=[];let size=0;
- try{for(;;){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>12000000)throw fvError("视频超过12MB",413);parts.push(value)}}
- finally{try{await reader.cancel()}catch{}}
- const bytes=new Uint8Array(size);let at=0;for(const chunk of parts){bytes.set(chunk,at);at+=chunk.byteLength}
- if(size<2048||String.fromCharCode(...bytes.slice(4,8))!=="ftyp")throw fvError("视频内容不是合法 MP4",415);
- const id=crypto.randomUUID();
- await env.MEDIA.put(user.id+"/"+id,bytes,{httpMetadata:{contentType:"video/mp4"},customMetadata:{name:"免费生成视频"}});
- return id;
-}
+
 // A standalone success may satisfy an identical failed chat request from
 // the same account. Reuse only a real, existing MP4; retain the failed job's audit trail.
 async function fvRecoverMatchingMedia(env,user,job,ref){
@@ -1811,7 +1789,7 @@ async function fvStatus(env,user,id){
  const ref=JSON.parse(job.external_id||"{}"),cfg=fvRoute(ref.p,Number(ref.stage)||0,ref.request);
  if(!cfg||!/^[a-z0-9_-]{8,128}$/i.test(ref.e||""))throw fvError("视频任务记录无效",422);
  if(job.status==="complete"&&fvId(job.media_id))return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+job.media_id,temporaryUrl:false};
- if(job.status==="complete"&&ref.url&&fvOutput(ref.url,cfg)===ref.url)return {ok:true,status:"completed",provider:ref.p,url:ref.url,temporaryUrl:true};
+ if(job.status==="complete"&&ref.url&&fvOutput(ref.url,cfg)===ref.url)return {ok:true,status:"completed",provider:ref.p,url:"/api/video/result/"+id,temporaryUrl:true};
  if(job.status==="failed"){
   const recovered=await fvRecoverMatchingMedia(env,user,job,ref);
   if(recovered)return recovered;
@@ -1854,21 +1832,27 @@ async function fvStatus(env,user,id){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游视频结果格式不兼容' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
   return {ok:true,status:"failed",error:"生成完成但没有返回可播放的视频",officialUrl:cfg.official};
  }
- let media;
- try{media=await fvSave(env,user,url,cfg)}
- catch{
-  // A completed source video must never turn into endless "pending" just
-  // because this account cannot save an MP4 larger than the R2 policy.
-  const external=JSON.stringify({...ref,url});
-  const mark=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',external_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",external,Date.now(),id,user.id);
-  if(!mark.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
-  return {ok:true,status:"completed",provider:ref.p,url,temporaryUrl:true};
- }
- const done=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='pending'",media,Date.now(),id,user.id);
- if(!done.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
- if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","[[aigzt:video:"+media+"]]",job.message_id,user.id).catch(()=>{});
- return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+media,temporaryUrl:false};
+ const external=JSON.stringify({...ref,url});
+ const mark=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',external_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",external,Date.now(),id,user.id);
+ if(!mark.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
+ if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","视频已生成（保存在原设备，网站不保存）",job.message_id,user.id).catch(()=>{});
+ return {ok:true,status:"completed",provider:ref.p,url:"/api/video/result/"+id,temporaryUrl:true};
 }
+
+async function fvTransientMedia(req,env,user,id){
+ requireUser(user);
+ const job=await dbGet(env.DB,"SELECT external_id FROM image_jobs WHERE id=? AND user_id=? AND charged_day='video-free' AND status='complete'",id,user.id);
+ if(!job)return fail("视频不存在",404);
+ let ref;try{ref=JSON.parse(job.external_id)}catch{return fail("视频记录无效",404)}
+ const cfg=fvRoute(ref.p,Number(ref.stage)||0,ref.request);
+ if(!cfg||!ref.url||fvOutput(ref.url,cfg)!==ref.url)return fail("视频已过期",404);
+ const upstream=await fetch(ref.url,{headers:{accept:"video/mp4"},redirect:"manual",signal:AbortSignal.timeout(30000)});
+ if(!upstream.ok||!upstream.body)return fail("原视频已过期或不可下载",410);
+ const type=(upstream.headers.get("content-type")||"").toLowerCase();
+ if(!type.startsWith("video/mp4")&&!type.startsWith("application/octet-stream"))return fail("无效视频响应",415);
+ return new Response(upstream.body,{headers:{"content-type":"video/mp4","cache-control":"private, no-store","x-content-type-options":"nosniff"}});
+}
+
 async function fvMedia(req,env,user,id){
  if(!fvId(id))return fail("视频编号无效",400);
  const key=user.id+"/"+id,info=await env.MEDIA?.head(key);
@@ -2407,6 +2391,8 @@ async function main(req,env){
  if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,env,user));
  if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,env,user));
  if(path==="/api/video/retry"&&req.method==="POST")return response(await fvRetry(req,env,user));
+ const transientVideo=path.match(/^\/api\/video\/result\/([0-9a-f-]{36})$/i);
+ if(transientVideo&&req.method==="GET")return fvTransientMedia(req,env,user,transientVideo[1]);
  const freeVideoFile=path.match(/^\/api\/video\/media\/([0-9a-f-]{36})$/i);
  if(freeVideoFile&&req.method==="GET")return fvMedia(req,env,user,freeVideoFile[1]);
  if(path==="/api/chat/stream"&&req.method==="POST")return chatStream(req,env,user);

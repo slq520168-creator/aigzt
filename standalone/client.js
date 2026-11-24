@@ -909,6 +909,58 @@ function showChatImageWaiting(bubble,label){
  // Follow only the newly submitted picture, never historical jobs during chat restore.
  if(S.busy)followLatestImage(bubble);
 }
+
+/* Generated media is stored only on this device; reading history never submits jobs. */
+let localMediaDB;
+function openLocalMedia(){
+ if(!localMediaDB)localMediaDB=new Promise((resolve,reject)=>{
+  const req=indexedDB.open("aigzt-device-media-v1",1);
+  req.onupgradeneeded=()=>req.result.createObjectStore("media");
+  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+ }).catch(e=>{localMediaDB=null;throw e});
+ return localMediaDB;
+}
+function deviceMediaKey(id){return S.user?.id&&id?S.user.id+":"+id:null}
+async function deviceMediaPut(key,blob){
+ if(!key||!(blob instanceof Blob))return;
+ try{const db=await openLocalMedia();await new Promise((resolve,reject)=>{
+  const tx=db.transaction("media","readwrite");tx.objectStore("media").put(blob,key);
+  tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+ })}catch{ /* Storage quota or private browsing: current media remains downloadable. */ }
+}
+async function deviceMediaGet(key){
+ if(!key)return null;
+ try{const db=await openLocalMedia();return await new Promise((resolve,reject)=>{
+  const req=db.transaction("media","readonly").objectStore("media").get(key);
+  req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error);
+ })}catch{return null}
+}
+async function deviceMediaBlob(src){
+ const match=String(src||"").match(/^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/i);
+ if(match){const raw=atob(match[2]),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);return new Blob([bytes],{type:match[1]})}
+ if(!/^\/api\/(?:files|video\/(?:media|result))\/[0-9a-f-]{36}$/i.test(src))return null;
+ const res=await fetch(src,{cache:"no-store",credentials:"same-origin"});
+ if(!res.ok)return null;
+ const blob=await res.blob();return /^(image\/|video\/)/.test(blob.type)?blob:null;
+}
+function localMediaNotice(bubble,kind){bubble.replaceChildren(node("span","video-job-hint",kind==="video"?"视频仅保留在原设备；不会自动重新生成":"图片仅保留在原设备；不会自动重新生成"))}
+function renderDeviceMedia(bubble,blob,kind){
+ const url=URL.createObjectURL(blob);
+ if(kind==="video"){
+  const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=url;
+  const link=node("a","chat-video-save","下载");link.href=url;link.download="aigzt-video.mp4";bubble.replaceChildren(video,link);
+ }else{
+  const img=node("img","chat-generated-image");img.alt="生成图片";img.src=url;bubble.replaceChildren(img);
+  const row=bubble.closest(".message");if(row)appendMessageCopy(row,"");
+ }
+}
+async function restoreDeviceMedia(bubble,id,kind,legacyUrl=""){
+ const key=deviceMediaKey(id);localMediaNotice(bubble,kind);
+ let blob=await deviceMediaGet(key);
+ if(!blob&&legacyUrl){try{blob=await deviceMediaBlob(legacyUrl);if(blob)await deviceMediaPut(key,blob)}catch{}}
+ if(blob&&bubble.isConnected&&deviceMediaKey(id)===key)renderDeviceMedia(bubble,blob,kind);
+}
+
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
  const label=node("span","image-job-label","作图中 1秒");
@@ -952,7 +1004,8 @@ async function pollImageJob(bubble,id,manual){
     if(follow)followLatestImage(bubble);
    };
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;showImageRetry(bubble)};
-   img.src=r.image;return;
+   const key=deviceMediaKey(bubble.closest('.message')?.dataset.messageId||id);
+   img.src=r.image;void deviceMediaBlob(r.image).then(blob=>deviceMediaPut(key,blob)).catch(()=>{});return;
   }
   delay=Math.max(1000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -1552,6 +1605,7 @@ function appendMessageCopy(row,content){
  if(!row?.classList?.contains("message"))return;
  row.querySelector(":scope > .message-copy-bar")?.remove();
  const text=String(content||""),image=row.querySelector("img.chat-generated-image");
+ if(row.dataset.messageKind==="video")return;
  if(!text.trim()&&!image)return;
  const user=row.classList.contains("user"),bar=node("div","message-copy-bar");
  if(!image)bar.append(messageTool("copy","复制",b=>copyMessageText(text,b)));
@@ -1689,6 +1743,11 @@ function inlineVideoJob(bubble,id,retry=false){
      if(r.recovered){const target=row?.querySelector(".bubble")||bubble;target.append(node("span","video-job-hint","已恢复同一请求生成的视频"));}
      return;
     }
+    if(r.status==="completed"&&r.temporaryUrl===true&&String(r.url||"").startsWith("/api/video/result/")){
+     const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);cleanup();
+     try{const blob=await deviceMediaBlob(r.url);if(!blob)throw Error("视频下载失败");await deviceMediaPut(key,blob);if(bubble.isConnected){renderDeviceMedia(bubble,blob,"video");setPortraitState(bubble.closest(".message"),"finished")}}
+     catch{if(bubble.isConnected){localMediaNotice(bubble,"video");const link=node("a","chat-video-save","下载原视频");link.href=r.url;link.download="aigzt-video.mp4";bubble.append(link)}}return;
+    }
     if(external){
      const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=r.url;
      const link=node("a","chat-video-save","下载临时视频");link.href=r.url;link.target="_blank";link.rel="noopener noreferrer";
@@ -1778,21 +1837,23 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   if(!existingRow)row.append(makeAssistantPortrait(),bubble);
   else if(!row.querySelector(":scope > .avatar-ai"))row.prepend(makeAssistantPortrait());
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
-  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();renderImageJob(bubble,pending[1])}
+  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image")}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
-  if(picture){row.dataset.messageKind="image";bubble.replaceChildren();const im=node("img","chat-generated-image");im.src=picture[1];im.alt="AI生成的图片";im.loading="lazy";bubble.append(im)}
+  if(picture){row.dataset.messageKind="image";void restoreDeviceMedia(bubble,messageId,"image",picture[1])}
   const videoPending=String(content||"").match(/^\[\[aigzt:video-job:([0-9a-f-]{36})\]\]$/i);
   const videoDone=String(content||"").match(/^\[\[aigzt:video:([0-9a-f-]{36})\]\]$/i);
-  if(videoPending){row.dataset.messageKind="video";inlineVideoJob(bubble,videoPending[1]);}
-  if(videoDone){row.dataset.messageKind="video";inlineVideo(bubble,videoDone[1]);}
-  if(!pending&&!picture&&!videoPending&&!videoDone&&String(content||"").trim()){
+  if(videoPending){row.dataset.messageKind="video";if(existingRow)inlineVideoJob(bubble,videoPending[1]);else void restoreDeviceMedia(bubble,messageId||videoPending[1],"video");}
+  if(videoDone){row.dataset.messageKind="video";void restoreDeviceMedia(bubble,messageId||videoDone[1],"video","/api/video/media/"+videoDone[1]);}
+  const localDone=/^(图片已生成[（(]|图生图已生成[（(]|视频已生成[（(])/.test(String(content||""));
+  if(localDone){const kind=String(content).startsWith("视频")?"video":"image";row.dataset.messageKind=kind;void restoreDeviceMedia(bubble,messageId,kind)}
+  if(!pending&&!picture&&!videoPending&&!videoDone&&!localDone&&String(content||"").trim()){
    renderAssistantText(bubble,content);
    // Keep the answer clean; all actions are in the compact toolbar.
    row.dataset.usedModel=typeof model==="string"?model:"";
    row.dataset.incomplete=incomplete?"1":"0";
   }
-  if(Array.isArray(replyImages))for(const src of replyImages)appendReplyImage(bubble,src);
-   if(!pending&&!videoPending)appendMessageCopy(row,videoDone?"视频已生成":content);
+  if(Array.isArray(replyImages))for(const src of replyImages){appendReplyImage(bubble,src);const key=deviceMediaKey(messageId);if(key)void deviceMediaBlob(src).then(blob=>deviceMediaPut(key,blob)).catch(()=>{})}
+   if(!pending&&!videoPending&&!videoDone&&!picture&&!localDone)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
    bubble.replaceChildren();
@@ -3277,7 +3338,8 @@ async function drawResult(tile,url){
  duck.href="https://duck.ai/";duck.target="_blank";duck.rel="noopener noreferrer";
  duck.title="先下载这张图片，再到 Duck.ai 上传原图继续编辑";
  actions.append(revise,duck);tile.tile.append(actions);
- tile.caption.textContent="仅当前页面显示 · 网站不保存";
+ tile.caption.textContent="保留在本机 · 网站不保存";
+ if(tile.cacheKey){try{const blob=await deviceMediaBlob(url);if(blob)await deviceMediaPut(tile.cacheKey,blob)}catch{}}
  return true;
 }
 function drawSleep(ms,signal){
@@ -3332,7 +3394,9 @@ async function runFreeDraw(){
  if(ready.length){$("drawPrevious").replaceChildren(...ready);$("drawPreviousSection").hidden=false}
  $("drawResults").replaceChildren();
  $("drawResultTitle").textContent="本次图片";
- const tiles=Array.from({length:count},(_,i)=>drawTile(i+1,"准备生成",shape));
+ const batchId=crypto.randomUUID();
+ try{localStorage.setItem(deviceMediaKey("draw-latest"),JSON.stringify({id:batchId,count,shape}))}catch{}
+ const tiles=Array.from({length:count},(_,i)=>{const tile=drawTile(i+1,"准备生成",shape);tile.cacheKey=deviceMediaKey("draw:"+batchId+":"+i);return tile});
  $("createButton").disabled=true;$("drawCancel").hidden=false;$("drawElapsed").hidden=false;
  const renderClock=()=>{if(S.drawBatch===batch)paintDrawStopwatch(batch,tiles)};
  renderClock();
@@ -3411,6 +3475,7 @@ function setCreationMode(mode){
 function openCreate(){
  if(!S.user){show("authDialog");return}
  setCreationMode("image");show("createDialog");closeMenu();
+ if(!$("drawResults").children.length&&!S.drawBatch){const owner=S.user.id;void (async()=>{let record;try{record=JSON.parse(localStorage.getItem(deviceMediaKey("draw-latest"))||"null")}catch{};if(!record||![1,2,4].includes(record.count))return;for(let i=0;i<record.count;i++){const blob=await deviceMediaGet(owner+":draw:"+record.id+":"+i);if(!blob||S.user?.id!==owner||S.drawBatch||S.createMode!=="image")continue;const tile=drawTile(i+1,"本机图片",record.shape);await drawResult(tile,URL.createObjectURL(blob))}})().catch(()=>{})}
 }
 function videoKeyPermitted(provider){
  if(provider==="freetext"||provider==="freewan"||provider==="freeloop")return true;
@@ -3458,7 +3523,7 @@ function syncVideoSelector(){
  $("videoConfirmRow").hidden=free;
  $("videoImageRow").hidden=!free||provider==="freetext";
  $("videoEndImageRow").hidden=provider!=="freeloop";
- $("videoModelInfo").textContent=free?(provider==="freetext"?"仅文字生成视频。需要参考图片请切换图生视频。":provider==="freewan"?"图生视频约 3 秒。上传一张图片，生成后保存在本人账号媒体中。":"首尾帧视频：分别上传开始画面和结束画面，生成真实过渡视频。"):
+ $("videoModelInfo").textContent=free?(provider==="freetext"?"仅文字生成视频。需要参考图片请切换图生视频。":provider==="freewan"?"图生视频约 3 秒。上传一张图片，生成后可下载到自己的设备。":"首尾帧视频：分别上传开始画面和结束画面，生成真实过渡视频。"):
   provider==="grok"?"Grok Imagine：固定 6 秒、720p；以 xAI 账号实际计费为准。":
   provider==="runway"?"Runway 多模型 API：按照所选视频模型和时长计费。":
   provider==="luma"?"Luma Dream Machine：画质、时长由服务商支持的参数和额度决定。":
@@ -3528,8 +3593,9 @@ async function queryVideo(){
    response.status==="failed"?response.error||"免费来源视频生成失败":"视频仍在排队或生成中，稍后手动查询即可。";
   if(response.url){
    const video=node("video");video.controls=true;video.playsInline=true;video.src=response.url;video.preload="metadata";
-   const link=node("a","","打开或保存视频");link.href=response.url;link.target="_blank";link.rel="noopener noreferrer";
-   $("mediaPreview").replaceChildren(video,link);$("refreshVideo").hidden=true;
+    if(response.url.startsWith("/api/video/result/")){try{const blob=await deviceMediaBlob(response.url);if(blob){await deviceMediaPut(deviceMediaKey("standalone-video:"+id),blob);video.src=URL.createObjectURL(blob)}}catch{}}
+   const link=node("a","","打开或保存视频");link.href=video.src;link.download="aigzt-video.mp4";link.target="_blank";link.rel="noopener noreferrer";
+   $("mediaPreview").replaceChildren(video,link);$("refreshVideo").hidden=true;try{sessionStorage.removeItem(videoStorageKey(provider))}catch{};S.videoTask=null;
   }else if(response.status==="failed"){
    $("refreshVideo").hidden=true;
    if(/^https:\/\/huggingface\.co\/spaces\/[\w-]+\/[\w-]+$/i.test(response.officialUrl||"")){
