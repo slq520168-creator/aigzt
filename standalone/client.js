@@ -1191,6 +1191,67 @@ function renderAssistantText(bubble,answer){
  }
  flush();
 }
+// One Markdown renderer for streaming, completed replies and restored history.
+const assistantTextState=new WeakMap();
+function streamingMarkdownPrefix(answer){
+ const lines=String(answer||"").replace(/\r\n?/g,"\n").split("\n");
+ let tail=lines.pop()||"";
+ const cells=line=>String(line||"").trim().includes("|");
+ const separator=line=>/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line||"");
+ let fence=null;
+ for(let i=0;i<lines.length;i++){
+  const m=lines[i].trim().match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
+  if(!m)continue;
+  if(!fence)fence={index:i,mark:m[1],lang:m[2]};
+  else if(!m[2]&&m[1][0]===fence.mark[0]&&m[1].length>=fence.mark.length)fence=null;
+ }
+ if(fence&&!fence.lang)return lines.slice(0,fence.index).join("\n");
+ if(fence&&!/^(?:markdown|md|mdx)$/i.test(fence.lang)){
+  return lines.concat(/^\s*(?:\x60{1,}|~{1,})\s*$/.test(tail)?[]:[tail]).join("\n");
+ }
+ // Wait for a table separator before displaying the header; wait for each full row.
+ let inTable=false;
+ for(let i=0;i<lines.length;i++){
+  if(separator(lines[i])&&i>0&&cells(lines[i-1]))inTable=true;
+  else if(!cells(lines[i]))inTable=false;
+ }
+ if(lines.length&&cells(lines[lines.length-1])&&!inTable&&!separator(lines[lines.length-1]))return lines.slice(0,-1).join("\n");
+ if(cells(tail)||/^\s*(?:#{1,6}|\d+\.?|[-*~_]{1,}|\x60{1,})\s*$/.test(tail))return lines.join("\n");
+ // Incomplete inline markers are held, rather than appearing raw and changing style later.
+ const bold=Array.from(tail.matchAll(/\*\*/g));
+ if(bold.length%2)tail=tail.slice(0,bold[bold.length-1].index);
+ const code=Array.from(tail.matchAll(/\x60/g));
+ if(code.length%2)tail=tail.slice(0,code[code.length-1].index);
+ const link=tail.match(/!?\[[^\]]*(?:\]\([^)]*)?$/);
+ if(link)tail=tail.slice(0,link.index);
+ if(tail.endsWith("*")&&!tail.endsWith("**"))tail=tail.slice(0,-1);
+ return lines.concat(tail).join("\n");
+}
+function syncAssistantChildren(target,source){
+ const children=Array.from(source.childNodes);
+ for(const [index,desired] of children.entries()){
+  const current=target.childNodes[index];
+  if(!current){target.append(desired);continue}
+  if(current.isEqualNode(desired))continue;
+  if(current.nodeType===3&&desired.nodeType===3){current.nodeValue=desired.nodeValue;continue}
+  if(current.nodeType===1&&desired.nodeType===1&&current.tagName===desired.tagName&&
+     current.attributes.length===desired.attributes.length&&Array.from(current.attributes).every(a=>desired.getAttribute(a.name)===a.value)&&
+     !["IMG","BUTTON","A","SVG"].includes(current.tagName)){
+   syncAssistantChildren(current,desired);continue;
+  }
+  target.replaceChild(desired,current);
+ }
+ while(target.childNodes.length>children.length)target.lastChild.remove();
+}
+function updateAssistantText(bubble,answer,complete=false){
+ const text=complete?String(answer||""):streamingMarkdownPrefix(answer);
+ if(assistantTextState.get(bubble)===text)return;
+ const staged=node("div");
+ renderAssistantText(staged,text);
+ bubble.classList.remove("chat-revealing");
+ syncAssistantChildren(bubble,staged);
+ assistantTextState.set(bubble,text);
+}
 // Position the new text turn once; do not chase its growing end while reading.
 function positionNewTextReply(row,question,viewport){
  if(!row?.isConnected||!viewport||viewport.hidden||viewport.clientHeight<=0)return;
@@ -1208,15 +1269,14 @@ async function revealCompletedReply(row,reply){
  const bubble=row?.querySelector(".bubble");if(!bubble||!row.isConnected)return;
  const viewport=$("conversation"),letters=Array.from(String(reply||""));
  if(!letters.length)return;
- bubble.classList.add("chat-revealing");bubble.replaceChildren();
- if(document.hidden||window.matchMedia("(prefers-reduced-motion:reduce)").matches){bubble.textContent=letters.join("");return}
+ if(document.hidden||window.matchMedia("(prefers-reduced-motion:reduce)").matches){updateAssistantText(bubble,letters.join(""),true);return}
  const batch=Math.max(7,Math.ceil(letters.length/65));let index=0;
  await new Promise(resolve=>{
   const frame=()=>{
    if(!row.isConnected){resolve();return}
    const next=Math.min(letters.length,index+batch);
    const nearBottom=row.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<155;
-   bubble.append(document.createTextNode(letters.slice(index,next).join("")));
+   updateAssistantText(bubble,letters.slice(0,next).join(""),next===letters.length);
    index=next;if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
    if(index>=letters.length)resolve();else requestAnimationFrame(frame);
   };
@@ -1942,7 +2002,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  row.dataset.usage=typeof usage==="string"?usage:usage?JSON.stringify(usage):(row.dataset.usage||"");
  bubble.classList.remove("chat-image-task");
  if(role==="user")row.dataset.sourceText=String(content||"");
- bubble.textContent=String(content||"");
+ if(role!=="assistant"||!assistantTextState.has(bubble))bubble.textContent=String(content||"");
  if(role==="assistant"){
   if(!existingRow)row.append(makeAssistantPortrait(),bubble);
   else if(!row.querySelector(":scope > .avatar-ai"))row.prepend(makeAssistantPortrait());
@@ -1959,7 +2019,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   const localDone=/^(图片已生成[（(]|图生图已生成[（(]|视频已生成[（(])/.test(String(content||""));
   if(localDone){const kind=String(content).startsWith("视频")?"video":"image";row.dataset.messageKind=kind;void restoreDeviceMedia(bubble,messageId,kind)}
   if(!pending&&!picture&&!videoPending&&!videoDone&&!paidVideo&&!localDone&&String(content||"").trim()){
-   renderAssistantText(bubble,content);
+   updateAssistantText(bubble,content,true);
    // Keep the answer clean; all actions are in the compact toolbar.
    row.dataset.usedModel=typeof model==="string"?model:"";
    row.dataset.incomplete=incomplete?"1":"0";
@@ -3101,9 +3161,9 @@ async function sendMessage(continueFrom=null){
      requestAnimationFrame(()=>{
       scheduled=false;if(!active||!loading.isConnected)return;
       if(!pending)return;
-      if(bubble.querySelector(".thinking-status")){bubble.classList.add("chat-revealing");bubble.replaceChildren()}
+      
       const nearBottom=loading.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
-      bubble.textContent+=pending;pending="";
+      updateAssistantText(bubble,streamedContent);pending="";
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
      });
     };
@@ -3153,7 +3213,7 @@ async function sendMessage(continueFrom=null){
   // Show status in the assistant reply; retain all streamed content.
   const bubble=loadingBubble,status=node("span","message-send-pending");
   if(streamedContent.trim()&&submittedMode==="text"){
-   renderAssistantText(bubble,streamedContent);
+   updateAssistantText(bubble,streamedContent,true);
    appendMessageCopy(loading,streamedContent);
   }else bubble.replaceChildren();
   const retry=messageTool("refresh-cw",isImageMessage?"重新作图":"手动重试",()=>{
