@@ -578,6 +578,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 #modelDialog .modal-head{background:#fff;border:0;border-bottom:1px solid #e8ecf1;border-radius:0;padding:6px 3px 12px;min-height:54px;margin:0}
 #modelDialog .modal-head h2{font-size:20px}
 #modelDialog .modal-head p{font-size:12px;margin-top:5px}
+#modelDialog .model-sticky-filters{position:sticky;top:0;z-index:5;flex:0 0 auto;min-width:0;display:flex;flex-direction:column;gap:5px;background:#fff;padding:4px 0 7px;border-bottom:1px solid #e8ecf1}
 #modelDialog .model-tools{grid-template-columns:minmax(0,1fr) 160px;background:#f8fafc;border:1px solid #e7ecf2;border-radius:12px;padding:8px 10px;gap:9px}
 #modelDialog .model-tools input,#modelDialog .model-tools select{margin-top:0}
 #modelDialog .source-chips{padding:3px 0 8px;gap:8px}
