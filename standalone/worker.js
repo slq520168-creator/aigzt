@@ -131,6 +131,48 @@ function chatProviderHistory(messages){
  const newest=messages.findLastIndex(m=>m.role==="user");
  return messages.map((m,i)=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?String(m.body||""):truncate(m.body,m.role==="system"?8000:3000)}));
 }
+function groqVisionModel(model){
+ return ["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(model);
+}
+function attachNativeChatParts(history,parts){
+ if(!parts.length)return history;
+ const index=history.findLastIndex(m=>m.role==="user");
+ if(index<0)throw Error("没有可关联附件的用户消息");
+ return history.map((m,i)=>i===index?{...m,content:[{type:"text",text:m.content},...parts]}:m);
+}
+async function planNativeChatAttachments(env,provider,model,files){
+ if(!files.length)return null;
+ const images=files.filter(x=>x.type.startsWith("image/")),pdfs=files.filter(x=>x.type==="application/pdf");
+ if(images.some(x=>!["image/jpeg","image/png","image/webp"].includes(x.type)))throw Object.assign(Error("图片分析支持 JPG、PNG、WebP，请转换图片格式后发送"),{status:415});
+ if(files.reduce((n,f)=>n+f.size,0)>8000000)throw Object.assign(Error("本次图片及PDF内容超过8MB，请分次发送"),{status:413});
+ let route=provider,selected=model;
+ if(provider==="free"||provider==="openrouter"){
+  const catalog=await listModels(env);
+  if(provider==="free"){
+   if(typeof env.OPENROUTER_FREE_KEY!=="string"||env.OPENROUTER_FREE_KEY.length<12)throw Error("免费图片分析线路尚未配置，请选择支持附件的个人模型");
+   const match=catalog.models.find(m=>m.free===true&&m.id.endsWith(":free")&&m.outputText&&(!images.length||m.inputImages)&&(!pdfs.length||m.inputFiles)&&!/(?:fish|pollinations)/i.test(m.id));
+   if(!match)throw Error("当前没有可用的免费附件分析模型，请选择支持附件的模型");
+   route="openrouter";selected=match.id;
+  }else{
+   const match=catalog.models.find(m=>m.id===model);
+   if((images.length&&!match?.inputImages&&model!=="openrouter/free")||(pdfs.length&&!match?.inputFiles))throw Error("当前所选模型不支持此附件，请选择支持图片或PDF输入的模型；不会自动更换模型");
+  }
+ }else if(provider==="groq"&&groqVisionModel(model)&&!pdfs.length){
+  if(images.length>3)throw Error("当前 Groq 视觉模型每次最多分析三张图片");
+ }else throw Error("当前所选模型的附件分析接口不支持该文件；请选择支持图片或PDF输入的模型");
+ const parts=[];
+ for(const file of files){
+  const obj=await env.MEDIA.get(file.key);
+  if(!obj||obj.size!==file.size)throw Error("附件不存在或已变化，请重新选择");
+  const bytes=new Uint8Array(await obj.arrayBuffer());
+  if(bytes.byteLength!==file.size)throw Error("附件内容读取不完整");
+  if(file.type.startsWith("image/")&&detectImage(bytes)!==file.type)throw Error("图片实际格式无效");
+  if(file.type==="application/pdf"&&!String.fromCharCode(...bytes.slice(0,1024)).includes("%PDF-"))throw Error("PDF文件格式无效");
+  const data="data:"+file.type+";base64,"+toB64(bytes);
+  parts.push(file.type==="application/pdf"?{type:"file",file:{filename:file.name,file_data:data}}:{type:"image_url",image_url:{url:data}});
+ }
+ return {provider:route,model:selected,parts};
+}
 function legacyQueryPrompt(history){
  const current=history.findLast(m=>m.role==="user")?.content||"";
  if(current.length>2797)return null;
@@ -203,7 +245,7 @@ async function listModels(env){
   const media=outMods.includes("video")?"video":outMods.includes("image")&&!outMods.includes("text")?"image":"text";
   return {id:m.id,name:m.name||m.id,provider:m.id.split("/")[0]||"其他",type:media,free,
    context:m.context_length||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",
-   inputImages:inMods.includes("image"),outputImages:outMods.includes("image"),outputText:outMods.includes("text"),description:truncate(m.description,160)};
+   inputImages:inMods.includes("image"),inputFiles:inMods.includes("file"),outputImages:outMods.includes("image"),outputText:outMods.includes("text"),description:truncate(m.description,160)};
  });
  return {ok:true,at:new Date().toISOString(),freeModels:availableFree,models,count:models.length};
  }catch(error){
@@ -328,6 +370,7 @@ async function providerModels(body){
   (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired").map(x=>({
   id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":""),
   free:providerModelIsFree(id,x.id),
+  inputImages:id==="groq"&&groqVisionModel(x.id),
   type:isAudioOnlyModel(x.id)?"audio":/image|cogview|seedream/i.test(x.id)?"image":/video|cogvideox|seedance/i.test(x.id)?"video":"text"
  }));
  if(!Array.isArray(models)||models.length===0)throw Object.assign(new Error("连接成功但服务商没有返回可用模型"),{status:502});
@@ -378,7 +421,7 @@ function replyMedia(parts,images=[]){
  }
  return {content,images,add};
 }
-async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false){
+async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false,inputParts=[]){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))throw Error("请先输入自己的 API Key");
@@ -412,6 +455,12 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
+ if(inputParts.length){
+  if(!["openrouter","groq"].includes(provider))throw Error("附件输入接口不支持当前服务商");
+  body.messages=attachNativeChatParts(body.messages,inputParts);
+  // Use native PDF input only; do not silently enable a paid OCR parser.
+  if(inputParts.some(p=>p.type==="file"))body.plugins=[{id:"file-parser",pdf:{engine:"native"}}];
+ }
  if(provider==="openrouter"&&outputImages)body.modalities=imageOnly?["image"]:["image","text"];
  const streaming=!outputImages&&typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
  if(streaming){body.stream=true;headers.accept="text/event-stream";if(provider==="groq")body.stream_options={include_usage:true}}
@@ -425,7 +474,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
    const smaller=groqRequestPlan(history,Math.min(body.max_completion_tokens,1800),4800);
    if(smaller.maxTokens<body.max_completion_tokens||JSON.stringify(smaller.messages).length<JSON.stringify(body.messages).length){
     await res.body?.cancel().catch(()=>{});
-    body.messages=smaller.messages;body.max_completion_tokens=smaller.maxTokens;
+    body.messages=inputParts.length?attachNativeChatParts(smaller.messages,inputParts):smaller.messages;body.max_completion_tokens=smaller.maxTokens;
     res=await request();
    }
   }
@@ -476,17 +525,6 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  return {content:truncate(text,40000),images:parsed.images,actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
 }
 // Storage uploads retain bounded protection; ordinary free text and work do not use daily quotas.
-async function uploadQuota(env,userId){
- const day=new Date().toISOString().slice(0,10)+":upload";
- const a=await dbRun(env.DB,"INSERT INTO usage_user(day,user_id,used) VALUES(?,?,1) ON CONFLICT(day,user_id) DO UPDATE SET used=used+1 WHERE used<?",day,userId,15);
- if(!a.meta?.changes)throw Object.assign(new Error("今日上传次数已用完"),{status:429});
- const b=await dbRun(env.DB,"INSERT INTO usage_site(day,used) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used<?",day,180);
- if(!b.meta?.changes){
-  await dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId);
-  throw Object.assign(new Error("网站今日上传保护额度已用完"),{status:429});
- }
- return async()=>{await Promise.all([dbRun(env.DB,"UPDATE usage_user SET used=MAX(0,used-1) WHERE day=? AND user_id=?",day,userId),dbRun(env.DB,"UPDATE usage_site SET used=MAX(0,used-1) WHERE day=?",day)])};
-}
 const FREE_ROUTER_SOURCE_IDS=Object.freeze(["vireonix","openrouter","groq","vexa"]);
 function freeSources(env){
  // Use the existing authenticated text provider before the currently unstable public relays.
@@ -658,17 +696,21 @@ async function chat(req,env,user,onDelta=null){
 // The bounded transport size is independent of model context capacity.
 const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(attachments.length>4)throw Error("一次最多四个附件");
- const lines=[],context=[];
+ const lines=[],context=[],nativeFiles=[];
  for(const id of attachments){
   if(typeof id!=="string"||!/^[0-9a-f-]{36}$/.test(id))throw Error("附件编号无效");
   const key=user.id+"/"+id,obj=await env.MEDIA?.head(key);
   if(!obj)throw Error("附件不存在或无权访问");
   const name=String(obj.customMetadata?.name||"附件").replace(/[\[\]()\r\n]/g," ").slice(0,100);
   lines.push("[文件："+name+"](/api/files/"+id+")");
-  if(["text/plain","text/markdown","text/csv"].includes(obj.httpMetadata?.contentType)&&obj.size<100000){
+  const type=String(obj.httpMetadata?.contentType||"");
+  if(["text/plain","text/markdown","text/csv"].includes(type)){
+   if(obj.size>=100000)throw Object.assign(Error("文本附件超过当前解析容量（100KB），请分文件提交"),{status:413});
    const entry=await env.MEDIA.get(key);
-   context.push("附件 "+name+" 内容：\n"+(await entry.text()).slice(0,14000));
-  }
+   if(!entry)throw Error("附件读取失败");
+   context.push("附件 "+name+" 内容：\n"+await entry.text());
+  }else if(type.startsWith("image/")||type==="application/pdf")nativeFiles.push({key,name,type,size:obj.size});
+  else throw Error("附件格式无法解析");
  }
  const message=typed+(lines.length?"\n"+lines.join("\n"):"");
  if(!message.trim())throw Error("请输入消息或添加附件");
@@ -679,6 +721,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(provider!=="free"&&isAudioOnlyModel(model))throw Object.assign(new Error("该模型只支持音频处理，不能用于文字聊天"),{status:400});
  if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("免费模型选择无效");
  if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
+ const nativePlan=await planNativeChatAttachments(env,provider,model,nativeFiles);
  let chatId=typeof body.chatId==="string"?body.chatId:null;
  const projectId=typeof body.projectId==="string"&&/^[0-9a-f-]{36}$/.test(body.projectId)?body.projectId:null;
  if(!chatId&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Error("项目不存在");
@@ -713,7 +756,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const creativeId=typeof body.creativeMode==="string"?body.creativeMode:"";
  if(Object.hasOwn(FREE_CREATIVE_PROMPTS,creativeId))messages.unshift({role:"system",body:FREE_CREATIVE_PROMPTS[creativeId]});
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
- if(lines.length&&!context.length&&provider==="free"&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n提示：外部免费文字模型不能直接解析图片或PDF像素，不要虚构文件内容。"};
+ // Native attachment bytes are transmitted only to the chosen compatible API, never written into chat history.
  const mode=body.mode==="code"?"code":"general";
  if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。不要虚构执行状态。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。"});
  const levelInstruction={short:"简短回复：先回答核心问题，只保留必要的要点，不冗长。",standard:"标准回复：自然对话，说明关键原因、步骤和必要细节。",long:"详细回复：全面回答，包含充分的解释、可执行步骤和必要边界条件，不随意省略关键内容。"}[replyLevel];
@@ -723,12 +766,12 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  let result;
  try{
   if(provider==="free"){
-   result=await freeText(env,selectedMessages,mode,model,40000,false,replyLevel);
+   result=nativePlan?await callExternal(nativePlan.provider,nativePlan.model,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",nativePlan.model,replyLevel),onDelta,false,false,nativePlan.parts):await freeText(env,selectedMessages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=chatOutputBudget(provider,model,replyLevel);
     // Explicit selections never fall back to another model, even on 404 or 429.
-    result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true);
+    result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[]);
   }
 
  }catch(e){
@@ -781,9 +824,8 @@ async function uploadFile(req,env,user){
  if(!file.size||file.size>8000000)throw Error("单文件上限8MB");
  const name=String(file.name||"附件").replace(/[<>\x00-\x1f]/g,"").slice(0,110)||"附件";
  const id=crypto.randomUUID();
- const refund=await uploadQuota(env,user.id);
- try{await env.MEDIA.put(user.id+"/"+id,file.stream(),{httpMetadata:{contentType:type},customMetadata:{name}})}
- catch(e){await refund().catch(()=>{});throw e}
+ // Uploads use the existing authenticated, rate-limited route and bounded file size.
+ await env.MEDIA.put(user.id+"/"+id,file.stream(),{httpMetadata:{contentType:type},customMetadata:{name}});
  return {ok:true,id,name,type,size:file.size,url:"/api/files/"+id};
 }
 async function avatarUpload(req,env,user){

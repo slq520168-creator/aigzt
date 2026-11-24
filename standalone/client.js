@@ -117,6 +117,11 @@ function closeMenu(){
  $("menuBtn").setAttribute("aria-expanded","false");
 }
 function openMenu(){
+ // The composer must release the iOS keyboard before the independent drawer opens.
+ const focused=document.activeElement;
+ if(focused?.closest?.("#composerArea")&&focused.matches?.("input,textarea,[contenteditable]"))focused.blur();
+ hideAttachMenu();
+ syncMobileHeight();
  $("shell").classList.add("menu-open");
  $("sideShade").hidden=false;
  $("menuBtn").setAttribute("aria-expanded","true");
@@ -2060,24 +2065,28 @@ async function optimizeImageReference(file){
 
 async function uploadSelected(files){
  if(!S.user){show("authDialog");return}
+ if(S.uploading)return;
+ if(!files.length)return;
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
  if(S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.attachments.length+files.length>2){flashError("首尾帧需要两张图片，请先移除多余附件");return}
  if(S.composerMode==="image"&&S.miniToolChoice==="image-edit"&&(files.length!==1||S.attachments.length)){
   flashError("图生图一次仅允许一张参考图片，请先移除原图再选择");return
  }
+ S.uploading=true;$("attachButton").disabled=true;flashError("");
+ try{
  for(const file of files){
-  if(file.size>8000000){flashError("单文件最大8MB："+file.name);continue}
   try{
-   $("attachButton").disabled=true;
-   const selected=await optimizeImageReference(file);
+   const heic=/^image\/hei[cf]$/i.test(file.type||"")||/\.(heic|heif)$/i.test(file.name||"");
+   const selected=await optimizeImageReference(file,heic);
+   if(selected.size>8000000){flashError("单文件最大8MB："+file.name);continue}
    const body=new FormData();body.append("file",selected);
    const r=await fetch("/api/files/upload",{method:"POST",credentials:"same-origin",body});
    const d=await r.json().catch(()=>null);
    if(!r.ok||!d?.ok)throw Error(d?.error||"HTTP "+r.status);
    S.attachments.push(d);renderAttachments();
   }catch(e){flashError("上传失败："+humanError(e))}
-  finally{$("attachButton").disabled=false}
  }
+ }finally{S.uploading=false;$("attachButton").disabled=false}
 }
 
 
@@ -2803,6 +2812,7 @@ async function apiChatStream(payload,onDelta){
  return final;
 }
 async function sendMessage(){
+ if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
  const submittedMode=S.composerMode;
@@ -2830,6 +2840,12 @@ async function sendMessage(){
  }
  if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
+ }
+ if(submittedMode==="text"&&S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")){
+  const pdf=S.attachments.some(x=>x.type==="application/pdf");
+  if(pdf||!["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(S.model)){
+   flashError(pdf?"当前Groq附件接口不支持PDF，请选择支持PDF输入的模型。原附件和草稿已保留。":"当前Groq模型不支持图片输入，请选择支持图片分析的Qwen模型或免费自动。原附件和草稿已保留。");return;
+  }
  }
  const freeRoute=isFreeModel(S.provider,S.model);
  if(submittedMode==="text"&&!freeRoute&&!S.allowPaid){
@@ -3072,7 +3088,7 @@ function renderModels(){
   const tag=node("span","price-tag"+(item.free?" free":""),selected?"✓ 当前使用":via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
   title.append(tag);
   const owner=domesticGroupFor(item);
-  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+(WORK_PROVIDER_SHORT[via]||via)+" · ID："+item.id+(item.outputImages?" · 支持图片输出":"")));
+  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+(WORK_PROVIDER_SHORT[via]||via)+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image","video"].includes(item.type);
   const button=node("button","model-action",!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!actionable||selected;
