@@ -872,9 +872,8 @@ async function mediaChat(req,env,user){
  const exists=b.chatId?await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",b.chatId,user.id):null;
  if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
 
- if(mode==="video"&&(b.autoVideo===true||Object.hasOwn(FREE_VIDEO,String(b.provider||"")))){
-  // Automatic video dispatch uses the existing registered free routes only.
-  const provider=b.autoVideo===true?(b.imageId?(b.endImageId?"freeloop":"freewan"):"freetext"):String(b.provider),model=b.autoVideo===true?FREE_VIDEO[provider].model:String(b.model||"");
+ if(mode==="video"&&Object.hasOwn(FREE_VIDEO,String(b.provider||""))){
+  const provider=String(b.provider),model=String(b.model||"");
   const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
   if(!exists&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Object.assign(Error("项目不存在"),{status:404});
   const task=await fvCreate(env,user,{imageId:b.imageId,endImageId:b.endImageId,ratio:b.ratio},provider,model,prompt);
