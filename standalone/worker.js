@@ -293,29 +293,32 @@ async function saveUserProvider(env,user,body){
   throw Object.assign(new Error("请输入有效格式的 API Key"),{status:400});
  const older=await loadUserProvider(env,user.id,provider);
  const desired=validModelIdentifier(body?.model)?String(body.model):older?.model_id||"";
- const sealed=await protectKey(env,user.id,provider,plain),now=Date.now(),consent=body.consent===true?1:0;
- // Save ciphertext before any external API request. Upstream outages must not lose a user key.
- await dbRun(env.DB,"INSERT INTO user_api_keys(user_id,provider,iv,ciphertext,model_id,consent,updated_at,verified) VALUES(?,?,?,?,?,?,?,0) ON CONFLICT(user_id,provider) DO UPDATE SET iv=excluded.iv,ciphertext=excluded.ciphertext,model_id=excluded.model_id,consent=excluded.consent,updated_at=excluded.updated_at,verified=0",
-  user.id,provider,sealed.iv,sealed.ciphertext,desired,consent,now);
- if(isVideoOnlyProvider(provider)){
-  // Never submit a billable generation merely to test a newly saved key.
-  return {ok:true,connection:{provider,model:"",consent:consent===1,updatedAt:now,verified:false},
-   models:[],warning:"视频密钥已加密保存；只有明确点击生成才调用可能收费的视频接口。"};
- }
+ const consent=body.consent===true?1:0;
  let models=[],verified=false,model=desired,warning="";
- try{
-  const catalog=await providerModels({provider,apiKey:plain,model:desired||undefined});
-  models=Array.isArray(catalog.models)?catalog.models:[];
-  verified=catalog.verified===true;
-  const favorite=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(x=>x.id===id)).find(Boolean):
-   ["novai","novai_pro"].includes(provider)?models.find(x=>x.free===true&&x.type==="text"):null;
-  const selected=desired?models.find(x=>x.id===desired):favorite||models.find(x=>x.type==="text")||models[0];
-  model=desired||selected?.id||"";
-  if(desired&&!selected)warning="密钥已保存，所选模型未出现在当前目录；已保留原模型，请确认服务商权限。";
-  await dbRun(env.DB,"UPDATE user_api_keys SET model_id=?,verified=? WHERE user_id=? AND provider=?",model,verified?1:0,user.id,provider);
- }catch(error){
-  warning="密钥已加密保存，模型目录尚未验证："+truncate(error?.message||"服务商连接失败",120);
+ if(!isVideoOnlyProvider(provider)){
+  try{
+   const catalog=await providerModels({provider,apiKey:plain,model:desired||undefined});
+   models=Array.isArray(catalog.models)?catalog.models:[];
+   verified=catalog.verified===true;
+   if(!verified&&older)throw Object.assign(Error("新密钥未能验证，已保留原密钥"),{status:409,code:"KEY_NOT_VERIFIED"});
+   const favorite=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(x=>x.id===id)).find(Boolean):
+    ["novai","novai_pro"].includes(provider)?models.find(x=>x.free===true&&x.type==="text"):null;
+   const selected=desired?models.find(x=>x.id===desired):favorite||models.find(x=>x.type==="text")||models[0];
+   model=desired||selected?.id||"";
+   if(desired&&!selected)warning="密钥已验证，但所选模型未出现在当前目录，请选择实际可用模型。";
+   if(!verified)warning="密钥已保存；服务商不提供目录验证，实际模型权限尚未验证。";
+  }catch(error){
+   if(older&&error?.code!=="KEY_NOT_VERIFIED")error.message+="；原密钥未修改";
+   throw error;
+  }
+ }else{
+  model="";warning="视频密钥已加密保存；只有明确点击生成才调用可能收费的视频接口。";
  }
+ const sealed=await protectKey(env,user.id,provider,plain),now=Date.now();
+ // Validate before writing and guard concurrent replacement.
+ const saved=older?await dbRun(env.DB,"UPDATE user_api_keys SET iv=?,ciphertext=?,model_id=?,consent=?,updated_at=?,verified=? WHERE user_id=? AND provider=? AND iv=? AND ciphertext=? AND updated_at=?",sealed.iv,sealed.ciphertext,model,consent,now,verified?1:0,user.id,provider,older.iv,older.ciphertext,older.updated_at):
+  await dbRun(env.DB,"INSERT INTO user_api_keys(user_id,provider,iv,ciphertext,model_id,consent,updated_at,verified) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,provider) DO NOTHING",user.id,provider,sealed.iv,sealed.ciphertext,model,consent,now,verified?1:0);
+ if(saved?.meta?.changes===0)throw Object.assign(Error("连接已在其他页面更新，请刷新后重试"),{status:409});
  return {ok:true,connection:{provider,model,consent:consent===1,updatedAt:now,verified},models,warning};
 }
 
@@ -363,9 +366,7 @@ async function providerModels(body){
   // Some vendor accounts expose chat completion without model-list endpoints.
   // A user-supplied ID may be saved, but this is explicitly not a verified connection.
   if(resp.status===404&&manual)return {ok:true,models:[{id:manual,name:manual}],verified:false};
-  const status=resp.status;
-  const reason=status===401?"API Key 无效、已撤销或输入不完整":status===403?"服务商拒绝访问，检查账号地区与密钥权限":status===429?"服务商免费额度或频率已达到上限":status===404?"模型目录地址不可用":status>=500?"服务商接口暂时故障":"模型目录请求失败 HTTP "+status;
-  throw Object.assign(new Error(reason+"（HTTP "+status+"）"),{status:status===429?429:status===401||status===403?400:502});
+  throw await externalModelFailure(resp);
  }
  const json=await resp.json();
  let models=id==="gemini"?(json.models||[]).filter(x=>x.name?.startsWith("models/gemini-")).map(x=>({id:x.name.slice(7),name:x.displayName||x.name})):
@@ -426,7 +427,8 @@ function replyMedia(parts,images=[]){
 // Distinguish explicit model retirement from a missing route or account entitlement.
 function classifyModelFailure(status,body){
  const detail=body?.error&&typeof body.error==="object"?body.error:body||{};
- const code=String(detail.code||detail.type||"").toLowerCase();
+ const codes=[detail.code,detail.type].filter(x=>typeof x==="string").map(x=>x.toLowerCase());
+ const code=codes[0]||"";
  const message=String(detail.message||"").slice(0,1200).toLowerCase();
  if([400,404,410].includes(status)){
   if(["model_decommissioned","model_retired","model_discontinued"].includes(code)||/\bmodel\b.{0,120}\b(?:has been decommissioned|has been retired|has been discontinued|is decommissioned|is retired|is no longer supported)\b/.test(message))
@@ -435,10 +437,18 @@ function classifyModelFailure(status,body){
    return {code:"MODEL_UNAVAILABLE",message:"当前账号无法使用此模型，请核对服务商目录及权限"};
   if(status===404||status===410)return {code:"UPSTREAM_ROUTE",message:"服务商接口或模型地址暂不可用，请核对接口及账号权限"};
  }
- if(status===401)return {code:"AUTH",message:"服务商授权已失效，请检查已保存的密钥"};
- if(status===403)return {code:"ACCESS",message:"服务商访问受限，请检查账号权限或地区限制"};
- if(status===429)return {code:"RATE_LIMIT",message:"服务商调用频率或额度已达上限，请稍后再试"};
- if(status===402)return {code:"BILLING",message:"服务商需要充值，本次请求已停止"};
+ if(status===401)return {code:"AUTH",message:"服务商拒绝密钥认证（401），请核对该服务商的有效 API Key"};
+ if(status===403)return {code:"ACCESS",message:"服务商拒绝访问（403），请核对账号、项目或模型权限"};
+ if(status===429||status===402){
+  if(codes.some(x=>["billing_hard_limit_reached","billing_limit_reached","usage_limit_reached","spend_limit_reached"].includes(x))||/billing hard limit|spend limit|monthly budget|monthly spending limit/.test(message))
+   return {code:"BILLING_LIMIT",message:"服务商消费上限已达到（"+status+"），请检查账户或项目预算"};
+  if(codes.some(x=>["insufficient_quota","insufficient_credits","insufficient_balance","out_of_credits"].includes(x))||/exceeded your current quota|insufficient (?:quota|credits|balance)|not enough credits|more credits/.test(message))
+   return {code:"QUOTA",message:"服务商确认 API 可用额度不足（"+status+"），请检查该渠道的余额及项目额度"};
+  if(status===402)return {code:"BILLING",message:"服务商拒绝计费请求（402），请检查该渠道的余额或密钥消费限额"};
+  if(codes.some(x=>["rate_limit_exceeded","rate_limit_error","too_many_requests","rate_limit_reached"].includes(x))||/rate limit|too many requests|requests per minute|tokens per minute/.test(message))
+   return {code:"RATE_LIMIT",message:"服务商请求频率受限（429），稍后重试；不代表需要充值"};
+  return {code:"LIMIT_UNKNOWN",message:"服务商返回429，但未明确额度或频率原因；请检查该渠道状态"};
+ }
  if(status===413)return {code:"CAPACITY",message:"所选模型请求容量超限（HTTP 413），请缩短输入或检查额度"};
  return {code:"UPSTREAM_ERROR",message:"服务商暂无法完成请求（HTTP "+status+"）"};
 }
@@ -2403,11 +2413,13 @@ async function main(req,env){
   }
   if(action==="models"){
    if(isVideoOnlyProvider(provider))return response({ok:true,verified:false,models:[]});
-   const catalog=await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext),model:row.model_id||undefined});
+   let catalog;
+   try{catalog=await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext),model:row.model_id||undefined})}
+   catch(e){if(e?.code==="AUTH"&&row.verified===1)await dbRun(env.DB,"UPDATE user_api_keys SET verified=0 WHERE user_id=? AND provider=? AND iv=? AND ciphertext=?",user.id,provider,row.iv,row.ciphertext);throw e}
    if(catalog.verified&&catalog.models?.length){
     const next=row.model_id||catalog.models.find(x=>x.type==="text")?.id||catalog.models[0].id;
     // Directory verification does not imply the previously selected model is still available.
-    if(row.verified!==1||next!==row.model_id)await dbRun(env.DB,"UPDATE user_api_keys SET verified=1,model_id=? WHERE user_id=? AND provider=?",next,user.id,provider);
+    if(row.verified!==1||next!==row.model_id)await dbRun(env.DB,"UPDATE user_api_keys SET verified=1,model_id=? WHERE user_id=? AND provider=? AND iv=? AND ciphertext=? AND updated_at=?",next,user.id,provider,row.iv,row.ciphertext,row.updated_at);
    }
    return response(catalog);
   }
@@ -2679,7 +2691,8 @@ export default {
    const msg=e instanceof Error?e.message:"内部处理异常";
    // Never expose upstream credentials or SQL errors to the visitor.
    const safe=status<500?msg:/额度|免费|模型|服务商|调用|超时|无法|限制|注册|API/.test(msg)?msg:"服务暂时不可用，请稍后再试";
-   return fail(safe,status);
+   const code=typeof e?.code==="string"&&/^[A-Z_]{2,40}$/.test(e.code)?e.code:null;
+   return response({ok:false,error:safe,...(code?{code,upstreamStatus:e.upstreamStatus||null}:{})},status);
   }
  }
 };

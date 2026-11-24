@@ -222,7 +222,7 @@ async function api(path,body){
  try{resp=await fetch(path,options)}
  catch{throw Error("网络连接失败，请检查当前网络")}
  const data=await resp.json().catch(()=>null);
- if(!resp.ok||!data?.ok)throw Error(data?.error||"请求失败，HTTP "+resp.status);
+ if(!resp.ok||!data?.ok)throw Object.assign(Error(data?.error||"请求失败，HTTP "+resp.status),{code:data?.code||null,upstreamStatus:data?.upstreamStatus||null});
  return data;
 }
 let avatarOwner=null,avatarEpoch=0;
@@ -484,7 +484,7 @@ async function useSavedConnection(){
   S.provider=provider;S.model=model;S.modelTitle=provider+" · "+model;
   S.allowPaid=!!entry.consent;S.selectedFree=isFreeModel(provider,model);
   rememberChatModelSelection();updateModelTitle();hide("keyDialog");$("prompt").focus();
- }catch(e){$("keyStatus").textContent=humanError(e)}
+ }catch(e){if(e?.code==="AUTH"){entry.verified=false;refreshKeyPanel();$("keyAdvanced").open=true} $("keyStatus").textContent=humanError(e)}
  finally{button.disabled=false}
 }
 async function removeSavedKey(){
@@ -3119,7 +3119,7 @@ async function sendMessage(continueFrom=null){
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage();
   });
-  const detail=humanError(e);
+  const detail=submittedMode==="text"&&requestProvider!=="free"?providerLabel(requestProvider)+"："+humanError(e):humanError(e);
   if(isImageMessage){status.append(retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage&&submittedMode==="text"){
    const alternate=messageTool("layers","切换免费模型",()=>{
@@ -3159,7 +3159,7 @@ async function refreshConnectedModelCatalog(provider){
    S.connected[provider]=data.models;
    for(const model of data.models){const k=chatModelKey(provider,model.id);const blocked=unavailableChatModels.get(k);if(blocked?.code==="MODEL_UNAVAILABLE")unavailableChatModels.delete(k)}
    refreshSourceChips();if($("modelDialog").open)renderModels();
-  }catch{/* A catalog outage cannot invalidate an existing usable model. */}
+  }catch(e){if(e?.code==="AUTH"&&S.user?.id===owner&&S.savedProviders[provider]){S.savedProviders[provider].verified=false;if($("modelDialog").open)renderModels();if($("keyDialog").open&&$("keyProvider").value===provider&&!$("personalKey").value){refreshKeyPanel();$("keyStatus").textContent=humanError(e)}}}
   finally{entry.pending=null}
  })();
  return entry.pending;
