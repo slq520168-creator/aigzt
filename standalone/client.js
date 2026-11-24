@@ -1657,13 +1657,6 @@ function chatSelectedName(){
  const raw=String(S.modelTitle||S.model||"").trim(),label=raw.startsWith(S.provider+" · ")?raw.slice(S.provider.length+3):raw;
  return (WORK_PROVIDER_SHORT[S.provider]||S.provider)+" · "+(label||S.model);
 }
-function updateChatActiveModel(){
- const title=$("chatActiveModelName"),note=$("chatActiveModelNote");
- if(!title||!note)return;
- title.textContent=chatSelectedName();
- note.textContent=S.provider==="free"?"免费线路自动选择上游，具体模型按每次请求决定":
- "选定模型 ID："+S.model+" · "+(S.savedProviders[S.provider]?.verified?"连接已保存":"连接尚待验证");
-}
 function updateComposerModel(){
  const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
  if(!line||!name||!switcher)return;
@@ -1678,7 +1671,7 @@ function updateComposerModel(){
 }
 function updateModelTitle(){
  $("modelTitle").textContent=S.provider==="free"?"免费自动":S.modelTitle;
- updateChatActiveModel();updateComposerModel();
+ updateComposerModel();
 }
 function setModel(row){
  if(row.type!=="text"&&!(row.type==="image"&&row.availableWith==="openrouter-key"&&row.outputImages)){
@@ -2757,10 +2750,7 @@ async function loadCatalog(){
   S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
   S.loadedCatalog=true;
   if(S.workMode)workModelHints();
-  const chinaCount=S.remoteModels.filter(m=>domesticGroupFor(m)).length;
-   $("modelSummary").textContent="公开目录 "+S.remoteModels.length+" 个 · 国内 "+chinaCount+" 个 · 需对应 API 授权";
  }catch(e){
-  $("modelSummary").textContent="免费自动";
   S.freeModels=[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}];
  }
  renderModels();
@@ -2852,7 +2842,6 @@ function modelIsSelected(m){
  return (m.type==="text"||m.outputImages)&&S.provider===via&&S.model===(via==="free"?"free:auto":m.id);
 }
 function renderModels(){
- updateChatActiveModel();
  const models=allModels();renderChinaBrands(models);
  const visible=models.filter(modelMatches);
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
@@ -2861,7 +2850,7 @@ function renderModels(){
  }
  visible.sort((a,b)=>Number(modelIsSelected(b))-Number(modelIsSelected(a)));
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
- $("modelCount").textContent=(S.source==="family:china"||S.source.startsWith("family:cn:")?"国内真实目录 · ":"")+count+" 个模型 · 当前："+(S.provider==="free"?"免费自动":WORK_PROVIDER_SHORT[S.provider]||S.provider);
+ $("modelCount").textContent=count+" 个模型";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
  const signature=viewKey+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)).join("|");
