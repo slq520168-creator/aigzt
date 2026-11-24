@@ -230,8 +230,9 @@ async function saveUserProvider(env,user,body){
   verified=catalog.verified===true;
   const favorite=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(x=>x.id===id)).find(Boolean):
    ["novai","novai_pro"].includes(provider)?models.find(x=>x.free===true&&x.type==="text"):null;
-  const selected=models.find(x=>x.id===desired&&x.type==="text")||favorite||models.find(x=>x.type==="text")||models[0];
-  model=selected?.id||desired;
+  const selected=desired?models.find(x=>x.id===desired):favorite||models.find(x=>x.type==="text")||models[0];
+  model=desired||selected?.id||"";
+  if(desired&&!selected)warning="密钥已保存，所选模型未出现在当前目录；已保留原模型，请确认服务商权限。";
   await dbRun(env.DB,"UPDATE user_api_keys SET model_id=?,verified=? WHERE user_id=? AND provider=?",model,verified?1:0,user.id,provider);
  }catch(error){
   warning="密钥已加密保存，模型目录尚未验证："+truncate(error?.message||"服务商连接失败",120);
@@ -619,8 +620,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(!message.trim())throw Error("请输入消息或添加附件");
  const requestedModel=String(body.model||FREE_MODELS[0].id);
  // Existing chat selections from the old dev-only Cehpoint source use the new free auto router.
- const adaptedChatModel=provider==="groq"&&isAudioOnlyModel(requestedModel)?"openai/gpt-oss-20b":requestedModel;
- const model=provider==="free"&&/^free:(?:vireonix|vexa|openrouter|groq|cehpoint)$/.test(requestedModel)?"free:auto":adaptedChatModel;
+ const model=provider==="free"&&/^free:(?:vireonix|vexa|openrouter|groq|cehpoint)$/.test(requestedModel)?"free:auto":requestedModel;
  requireModelId(model);
  if(provider!=="free"&&isAudioOnlyModel(model))throw Object.assign(new Error("该模型只支持音频处理，不能用于文字聊天"),{status:400});
  if(provider==="free"&&!FREE_MODELS.some(m=>m.id===model))throw Error("免费模型选择无效");
@@ -648,7 +648,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   if(activeProject?.project_id)project=await dbGet(env.DB,"SELECT name,instructions FROM projects WHERE id=? AND user_id=?",activeProject.project_id,user.id);
   const former=activeProject?.project_id?
     await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.project_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 8").bind(user.id,activeProject.project_id,chatId).all():
-    {results:[]}; // Ordinary chats must not inherit unrelated raw conversation turns.
+    await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 6").bind(user.id,chatId).all();
   const contextParts=[];
   if(project){contextParts.push("项目："+project.name);if(project.instructions)contextParts.push("项目说明："+truncate(project.instructions,1500))}
   for(const n of notes.results||[])contextParts.push("用户明确保存的记忆："+truncate(n.note,250));
@@ -666,20 +666,15 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
  const custom=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
  const selectedMessages=custom?.instruction?[{role:"system",body:"此用户为当前所选模型保存的自定义回复要求：\n"+truncate(custom.instruction,1600)},...messages]:messages;
- let result,effectiveProvider=provider;
+ let result;
  try{
   if(provider==="free"){
    result=await freeText(env,selectedMessages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=chatOutputBudget(provider,model,replyLevel);
-    try{result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true)}
-    catch(error){
-     if(![404,429].includes(error?.upstreamStatus))throw error;
-     // An explicit HTTP rejection is safe to reroute; never duplicate an uncertain paid request.
-     result=await freeText(env,messages,mode,"free:auto",30000,false,replyLevel);
-     effectiveProvider="free";
-    }
+    // Explicit selections never fall back to another model, even on 404 or 429.
+    result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true);
   }
 
  }catch(e){
@@ -691,8 +686,8 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const images=Array.isArray(result.images)?result.images:[],remote=images.filter(x=>x.startsWith("https:")),temporary=images.filter(x=>x.startsWith("data:"));
  const storedReply=[result.content,...remote.map(x=>"![模型图片]("+x.replace(/[()]/g,ch=>encodeURIComponent(ch))+")"),...(!result.content&&!remote.length&&temporary.length?["图片已生成（仅当前会话展示）"]:[])].filter(Boolean).join("\n\n");
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
- await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",effectiveProvider,effectiveProvider==="free"?"free:auto":result.actualModel,stamp,chatId,user.id);
- return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model:effectiveProvider==="free"?"free:auto":result.actualModel,usedModel:result.actualModel,provider:effectiveProvider,incomplete:Boolean(result.incomplete)};
+ await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,stamp,chatId,user.id);
+ return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -2179,7 +2174,7 @@ async function main(req,env){
    if(isVideoOnlyProvider(provider))return response({ok:true,verified:false,models:[]});
    const catalog=await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext),model:row.model_id||undefined});
    if(catalog.verified&&catalog.models?.length){
-    const next=catalog.models.some(x=>x.id===row.model_id)?row.model_id:catalog.models.find(x=>x.type==="text")?.id||catalog.models[0].id;
+    const next=row.model_id||catalog.models.find(x=>x.type==="text")?.id||catalog.models[0].id;
     await dbRun(env.DB,"UPDATE user_api_keys SET verified=1,model_id=? WHERE user_id=? AND provider=?",next,user.id,provider);
    }
    return response(catalog);

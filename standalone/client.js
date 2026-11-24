@@ -349,9 +349,6 @@ async function fetchConnections(){
   flashError("密钥状态暂未同步："+humanError(e));
  }finally{S.connectionsLoading=false}
 }
-function chatTextModel(provider,model){
- return provider==="groq"&&/(?:^|[\/_-])whisper(?:$|[\/_-])/i.test(String(model||""))?"openai/gpt-oss-20b":model;
-}
 function isFreeModel(provider,model){
  if(provider==="free")return true;
  if(typeof model!=="string")return false;
@@ -377,7 +374,7 @@ function restoreChatModelSelection(){
    typeof saved.model==="string"&&saved.model.length>0&&saved.model.length<=180&&
    typeof saved.title==="string"&&saved.title.length<=240){
   S.provider=saved.provider;
-  S.model=saved.provider==="free"?"free:auto":chatTextModel(saved.provider,saved.model);
+  S.model=saved.provider==="free"?"free:auto":saved.model;
   S.modelTitle=saved.provider==="free"?"免费自动":saved.title;
   // Respect saved consent only after connections have loaded; login requests may finish in either order.
   S.allowPaid=S.connectionsLoaded===true&&Boolean(S.savedProviders[S.provider]?.consent);
@@ -395,7 +392,7 @@ async function useSavedConnection(){
  const button=$("useSavedKey");button.disabled=true;
  try{
   if(VIDEO_ONLY_PROVIDERS.has(provider)||S.videoPendingKeyReturn){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;openVideoCreate()}else if($("createDialog").open)syncVideoSelector();return}
-  let model=chatTextModel(provider,entry.model);
+  let model=S.provider===provider&&S.model?S.model:entry.model;
   if(!model){
    const manual=$("manualModel").value.trim();
    if(manual){
@@ -1469,6 +1466,7 @@ function appendMessageCopy(row,content){
   const reported=node("div","message-token-report",messageTokenText(row));
   reported.title="仅展示服务商实际报告的 Token；未返回则不估算";
   panel.append(reported);
+   if(row.dataset.usedModel){const modelReport=node("div","message-token-report","回复模型："+row.dataset.usedModel);modelReport.title="服务端记录的回复模型；不改变当前选定模型";panel.append(modelReport);}
   const current=Number(row.dataset.feedback||0);
   if(!image&&row.dataset.messageId){
    for(const [score,icon,name] of [[1,"thumbs-up","有帮助"],[-1,"thumbs-down","没有帮助"]]){
@@ -1727,14 +1725,14 @@ function setModel(row){
  }
  // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.
  const via=row.availableWith==="openrouter-key"?"openrouter":row.provider;
- if(via!=="free"&&!connected(via)){
-  hide("modelDialog");openKeyPanel(via);
-  $("keyStatus").textContent="获取并保存 "+via+" 的 API Key 后选择模型";
-  return;
- }
  S.provider=via;S.model=via==="free"?"free:auto":row.id;S.modelTitle=via==="free"?"免费自动":row.name||row.id;
  S.allowPaid=Boolean(S.savedProviders[via]?.consent);S.selectedFree=isFreeModel(via,S.model);
  rememberChatModelSelection();
+ if(via!=="free"&&!connected(via)){
+  updateModelTitle();hide("modelDialog");$("manualModel").value="";openKeyPanel(via);
+  $("keyStatus").textContent="已选定 "+row.id+"，请保存该服务商 API Key";
+  return;
+ }
  if(S.savedProviders[via])void api("/api/connections/"+via+"/selected",{model:row.id}).catch(e=>flashError(humanError(e)));
  updateModelTitle();hide("modelDialog");flashError("");
 }
@@ -2735,9 +2733,7 @@ async function sendMessage(){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",prompt,apiKey:undefined,confirmed});
    if(result.requestId)S.videoTask=result.requestId;
   }
-  if(submittedMode==="text"&&result.provider==="free"&&S.provider!=="free"&&result.model==="free:auto"){
-   setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
-  }
+  // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
    S.chatId=result.chatId;
@@ -3370,7 +3366,7 @@ async function beginOpenRouterOAuth(){
  const verifier=oauthBase64(crypto.getRandomValues(new Uint8Array(32)));
  const digest=new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier)));
  const state=oauthBase64(crypto.getRandomValues(new Uint8Array(16)));
- sessionStorage.setItem("aigzt:or-pkce",JSON.stringify({verifier,state,created:Date.now()}));
+ sessionStorage.setItem("aigzt:or-pkce",JSON.stringify({verifier,state,created:Date.now(),model:S.provider==="openrouter"?S.model:undefined}));
  const callback=new URL("/",location.origin);
  callback.searchParams.set("oauth_state",state);
  location.assign("https://openrouter.ai/auth?callback_url="+encodeURIComponent(callback.toString())+
@@ -3389,7 +3385,7 @@ async function finishOpenRouterOAuth(){
  if(!S.user){flashError("请先登录 AIGZT 后重新授权 OpenRouter");return}
  try{
   const result=await api("/api/openrouter/exchange",{code,verifier:saved.verifier});
-  const d=await api("/api/connections",{provider:"openrouter",apiKey:result.key,consent:false});
+  const d=await api("/api/connections",{provider:"openrouter",apiKey:result.key,model:saved.model||undefined,consent:false});
   S.savedProviders.openrouter={model:d.connection.model,consent:false,verified:!!d.connection.verified,updatedAt:d.connection.updatedAt};
   S.connected.openrouter=d.models||[];
   S.provider="openrouter";S.model=d.connection.model;S.modelTitle="OpenRouter · "+S.model;S.allowPaid=false;rememberChatModelSelection();updateModelTitle();
@@ -3432,7 +3428,8 @@ async function verifyKey(event){
  $("keyStatus").textContent="验证连接中…";
  try{
   const manualModel=$("manualModel").value.trim();
-  const data=await api("/api/connections",{provider:p,apiKey:key,model:manualModel||undefined,consent:$("allowPaid").checked});
+  const selectedModel=S.provider===p&&!VIDEO_ONLY_PROVIDERS.has(p)?S.model:"";
+  const data=await api("/api/connections",{provider:p,apiKey:key,model:manualModel||selectedModel||undefined,consent:$("allowPaid").checked});
   const rec=data.connection;
   if(!rec)throw Error("密钥保存失败");
   S.savedProviders[p]={model:rec.model||"",consent:!!rec.consent,verified:!!rec.verified,updatedAt:rec.updatedAt};
@@ -3446,7 +3443,7 @@ async function verifyKey(event){
   }
   if(!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn)S.allowPaid=!!rec.consent;
   updateModelTitle();refreshSourceChips();
-  refreshKeyPanel();$("keyStatus").textContent=rec.verified?"密钥已保存，下次打开直接使用":(data.warning||"密钥已保存，请选择官方模型 ID");
+  refreshKeyPanel();$("keyStatus").textContent=data.warning||(rec.verified?"密钥已保存，下次打开直接使用":"密钥已保存，请选择官方模型 ID");
   if(VIDEO_ONLY_PROVIDERS.has(p)||S.videoPendingKeyReturn){
    $("keyStatus").textContent=rec.consent?"视频密钥已加密保存并授权，可以返回视频页面。":"视频密钥已保存，但尚未授权收费调用。";
    if(rec.consent){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;openVideoCreate()}else if($("createDialog").open)syncVideoSelector()}

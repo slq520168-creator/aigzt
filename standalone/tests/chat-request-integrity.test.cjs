@@ -22,8 +22,10 @@ test("Groq reasoning budgets preserve selected reply level",()=>{
  assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","long"),8192);
  assert.equal(helpers.chatOutputBudget("openrouter","other/model","long"),2600);
 });
-test("ordinary chats do not query unrelated raw messages",()=>{
- assert.doesNotMatch(worker,/WHERE m\.user_id=\? AND c\.id<>\? ORDER BY m\.created_at DESC LIMIT 6/);
+test("memory switch retains current, project and ordinary cross-chat context",()=>{
+ assert.match(worker,/WHERE chat_id=\? AND user_id=\? ORDER BY created_at DESC LIMIT 12/);
+ assert.match(worker,/if\(preference\?\.memory_enabled!==0\)/);
+ assert.match(worker,/WHERE m\.user_id=\? AND c\.id<>\? ORDER BY m\.created_at DESC LIMIT 6/);
  assert.match(worker,/WHERE m\.user_id=\? AND c\.project_id=\?/);
 });
 test("chat transport is bounded by UTF-8 bytes",()=>{
