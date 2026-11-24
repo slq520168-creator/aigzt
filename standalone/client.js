@@ -117,6 +117,7 @@ function closeMenu(){
  $("menuBtn").setAttribute("aria-expanded","false");
 }
 function openMenu(){
+ closeMessageMore();
  // The composer must release the iOS keyboard before the independent drawer opens.
  const focused=document.activeElement;
  if(focused?.closest?.("#composerArea")&&focused.matches?.("input,textarea,[contenteditable]"))focused.blur();
@@ -1850,21 +1851,32 @@ function messageTokenText(row){
  if(Number.isSafeInteger(usage.reasoning)&&usage.reasoning>=0)text+=" · 推理 "+fmt(usage.reasoning);
  return text+" tokens";
 }
-// Explicit toggling avoids relying on Safari's implicit summary activation.
-function setMessageMoreOpen(more,open){
- if(open)for(const other of els(".message-more-wrap[open]"))if(other!==more)setMessageMoreOpen(other,false);
- more.open=Boolean(open);
- more.querySelector(".message-more-trigger")?.setAttribute("aria-expanded",String(more.open));
+// One non-modal inline menu. No native details/summary or positioned hit-test layer.
+let activeMessageMore=null;
+function setMessageMoreOpen(menu,open){
+ if(open&&activeMessageMore&&activeMessageMore!==menu)setMessageMoreOpen(activeMessageMore,false);
+ menu.panel.hidden=!open;
+ menu.trigger.setAttribute("aria-expanded",String(Boolean(open)));
+ menu.trigger.classList.toggle("is-active",Boolean(open));
+ if(open)activeMessageMore=menu;
+ else if(activeMessageMore===menu)activeMessageMore=null;
 }
-function wireMessageMore(more,trigger){
- trigger.addEventListener("click",event=>{event.preventDefault();event.stopPropagation();setMessageMoreOpen(more,!more.open)});
- more.addEventListener("toggle",()=>{trigger.setAttribute("aria-expanded",String(more.open));if(more.open)for(const other of els(".message-more-wrap[open]"))if(other!==more)setMessageMoreOpen(other,false)});
+function wireMessageMore(trigger,panel){
+ const menu={trigger,panel};
+ panel.hidden=true;trigger.type="button";
+ trigger.addEventListener("click",()=>setMessageMoreOpen(menu,panel.hidden));
+ return menu;
 }
 function closeOutsideMessageMore(event){
- for(const more of els(".message-more-wrap[open]"))if(!more.contains(event.target))setMessageMoreOpen(more,false);
+ const menu=activeMessageMore;if(!menu)return;
+ if(!menu.trigger.isConnected||(!menu.trigger.contains(event.target)&&!menu.panel.contains(event.target)))setMessageMoreOpen(menu,false);
+}
+function closeMessageMore(){
+ if(activeMessageMore)setMessageMoreOpen(activeMessageMore,false);
 }
 function appendMessageCopy(row,content){
  if(!row?.classList?.contains("message"))return;
+ if(activeMessageMore&&row.contains(activeMessageMore.trigger))closeMessageMore();
  row.querySelector(":scope > .message-copy-bar")?.remove();
  const text=String(content||""),image=row.querySelector("img.chat-generated-image");
  if(row.dataset.messageKind==="video")return;
@@ -1897,11 +1909,11 @@ function appendMessageCopy(row,content){
    play.setAttribute("aria-pressed","false");bar.append(play);
   }
  }
- const more=node("details","message-more-wrap"),trigger=node("summary","message-copy-btn message-more-trigger"),panel=node("div","message-more-panel");
+ const trigger=node("button","message-copy-btn message-more-trigger"),panel=node("div","message-more-panel");
  trigger.setAttribute("aria-label","更多消息操作");trigger.setAttribute("aria-expanded","false");trigger.title="更多消息操作";trigger.append(iconSlot("ellipsis"));
- wireMessageMore(more,trigger);
+ const more=wireMessageMore(trigger,panel);
  if(!user){
-  if(!image)panel.append(messageTool("file-text","下载 TXT",()=>{more.open=false;messageDownload(row,text,"txt")}));
+  if(!image)panel.append(messageTool("file-text","下载 TXT",()=>{setMessageMoreOpen(more,false);messageDownload(row,text,"txt")}));
   const reported=node("div","message-token-report",messageTokenText(row));
   reported.title="仅展示服务商实际报告的 Token；未返回则不估算";
   panel.append(reported);
@@ -1910,7 +1922,7 @@ function appendMessageCopy(row,content){
   if(!image&&row.dataset.messageId){
    for(const [score,icon,name] of [[1,"thumbs-up","有帮助"],[-1,"thumbs-down","没有帮助"]]){
     const feedback=messageTool(icon,name,b=>{
-     more.open=false;
+     setMessageMoreOpen(more,false);
      messageSetAction(row,"feedback",Number(row.dataset.feedback)===score?0:score,b);
     });
     feedback.dataset.action=score===1?"up":"down";feedback.classList.toggle("is-active",current===score);
@@ -1918,17 +1930,17 @@ function appendMessageCopy(row,content){
    }
    if(messageQuestion(row)){
     panel.append(messageTool("layers","换模型重问",()=>{
-     more.open=false;if(messageDraft(messageQuestion(row)))openModels();
+     setMessageMoreOpen(more,false);if(messageDraft(messageQuestion(row)))openModels();
     }));
    }
    if(row.dataset.incomplete==="1"){
     panel.append(messageTool("arrow-up","继续回答",()=>{
-     more.open=false;messageDraft("请从上一条未完成的回答中断处继续写完，不要重复已经写出的内容。",true,"text",row.dataset.messageId||null);
+     setMessageMoreOpen(more,false);messageDraft("请从上一条未完成的回答中断处继续写完，不要重复已经写出的内容。",true,"text",row.dataset.messageId||null);
     }));
    }
   }
  }
- if(!user){more.append(trigger,panel);bar.append(more);renderIcons(trigger);const stamp=Number(row.dataset.createdAt);if(stamp>0){const time=node("time","message-time",new Intl.DateTimeFormat("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false}).format(stamp));time.dateTime=new Date(stamp).toISOString();time.title=new Date(stamp).toLocaleString("zh-CN");bar.append(time)}}
+ if(!user){bar.append(trigger);renderIcons(trigger);const stamp=Number(row.dataset.createdAt);if(stamp>0){const time=node("time","message-time",new Intl.DateTimeFormat("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false}).format(stamp));time.dateTime=new Date(stamp).toISOString();time.title=new Date(stamp).toLocaleString("zh-CN");bar.append(time)}bar.append(panel)}
  const translated=row.querySelector(":scope > .message-translation");
  if(translated)row.append(bar,translated);else row.append(bar);
 }
@@ -2171,6 +2183,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  return row;
 }
 function newChat(keepDrawer=false){
+ closeMessageMore();
  if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
@@ -2188,6 +2201,7 @@ function startCoding(){
 }
 async function loadChat(id){
  if(S.busy)return;
+ closeMessageMore();
  if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  if(S.freeToolsMode)setFreeToolsMode(false);
@@ -4059,12 +4073,11 @@ function wire(){
  window.visualViewport?.addEventListener("resize",positionHistoryActions,{passive:true});
  $("actionsDialog").addEventListener("close",()=>{if(!$("actionsDialog").open)closeHistoryActions()});
  document.addEventListener("pointerdown",event=>{
-  closeOutsideMessageMore(event);
   if(historyActionAnchor&&!$("actionsDialog").contains(event.target)&&!historyActionAnchor.contains(event.target))closeHistoryActions();
  });
  // Capture click also covers iOS touch-generated clicks and keyboard activation.
  document.addEventListener("click",closeOutsideMessageMore,true);
- document.addEventListener("keydown",event=>{if(event.key==="Escape")for(const more of els(".message-more-wrap[open]"))setMessageMoreOpen(more,false)});
+ document.addEventListener("keydown",event=>{if(event.key==="Escape")closeMessageMore()});
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);

@@ -53,21 +53,29 @@ test("drawer opens only on deliberate outer edge swipe",()=>{
 });
 test("client syntax",()=>assert.doesNotThrow(()=>new Function(c)));
 
-test("message more opens, closes on second click, dismisses outside and switches rows",()=>{
- const code=c.slice(c.indexOf("function setMessageMoreOpen("),c.indexOf("function appendMessageCopy("));
- const rows=[];
- const helpers=new Function("els",code+";return {wireMessageMore,closeOutsideMessageMore};")(()=>rows.filter(r=>r.open));
+test("inline message more opens, closes on second click, dismisses outside and switches rows",()=>{
+ const code=c.slice(c.indexOf("let activeMessageMore=null;"),c.indexOf("function appendMessageCopy("));
+ const helpers=new Function(code+";return {wireMessageMore,closeOutsideMessageMore,closeMessageMore};")();
  function make(){
-  const events={},attrs={},trigger={addEventListener:(n,f)=>events[n]=f,setAttribute:(n,v)=>attrs[n]=v};
-  const row={open:false,querySelector:()=>trigger,addEventListener:(n,f)=>events[n]=f,contains:t=>t===trigger};
-  rows.push(row);helpers.wireMessageMore(row,trigger);
-  return {row,trigger,attrs,click:()=>events.click({preventDefault(){},stopPropagation(){}})};
+  const events={},attrs={},trigger={isConnected:true,addEventListener:(n,f)=>events[n]=f,setAttribute:(n,v)=>attrs[n]=v,contains:x=>x===trigger,classList:{toggle(){}}};
+  const panel={hidden:false,contains:x=>x===panel};
+  helpers.wireMessageMore(trigger,panel);
+  return {panel,trigger,attrs,click:()=>events.click()};
  }
  const a=make(),b=make();
- a.click();assert.equal(a.row.open,true);assert.equal(a.attrs["aria-expanded"],"true");
- a.click();assert.equal(a.row.open,false);assert.equal(a.attrs["aria-expanded"],"false");
- a.click();b.click();assert.equal(a.row.open,false);assert.equal(b.row.open,true);
- helpers.closeOutsideMessageMore({target:b.trigger});assert.equal(b.row.open,true);
- helpers.closeOutsideMessageMore({target:{}});assert.equal(b.row.open,false);
- assert.match(c,/event\.key==="Escape".*setMessageMoreOpen/);
+ a.click();assert.equal(a.panel.hidden,false);assert.equal(a.attrs["aria-expanded"],"true");
+ a.click();assert.equal(a.panel.hidden,true);assert.equal(a.attrs["aria-expanded"],"false");
+ a.click();b.click();assert.equal(a.panel.hidden,true);assert.equal(b.panel.hidden,false);
+ helpers.closeOutsideMessageMore({target:b.trigger});assert.equal(b.panel.hidden,false);
+ helpers.closeOutsideMessageMore({target:b.panel});assert.equal(b.panel.hidden,false);
+ helpers.closeOutsideMessageMore({target:{}});assert.equal(b.panel.hidden,true);
+ b.click();helpers.closeMessageMore();assert.equal(b.panel.hidden,true);
+ assert.match(c,/event\.key==="Escape".*closeMessageMore/);
+});
+test("message menu is a normal button and in-flow panel, never a floating details layer",()=>{
+ assert.match(c,/const trigger=node\("button","message-copy-btn message-more-trigger"\)/);
+ assert.doesNotMatch(c,/node\("details","message-more-wrap"\)/);
+ assert.match(s,/\.message-more-panel\{flex:0 0 100%;order:1;/);
+ assert.match(s,/\.message-more-panel\[hidden\]\{display:none\}/);
+ assert.doesNotMatch(s,/\.message-more-panel\{[^}]*position:absolute/);
 });
