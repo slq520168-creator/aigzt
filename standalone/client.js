@@ -1947,7 +1947,7 @@ function setModel(row){
  if(row.type!=="text"&&!(row.type==="image"&&row.availableWith==="openrouter-key"&&row.outputImages)){
   if(row.type==="audio")return;
   hide("modelDialog");
-  if(row.type==="image"){setComposerMode("image");$("prompt").focus()}else openVideoCreate();
+  if(row.type==="image"){setComposerMode("image");$("prompt").focus({preventScroll:true})}else openVideoCreate(true);
   return;
  }
  // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.
@@ -2027,13 +2027,7 @@ function chooseMiniTool(action){
   $("prompt").placeholder=isFrameVideo?"添加首帧和尾帧两张图，描述过渡动作…":"添加参考图，描述画面需要的动作…";
  }
  syncMiniTools();updateComposerModel();
- const images=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
- const needed=isFrameVideo?2:1;
- if(S.user&&images.length<needed){
-  // Expose the native attachment picker without reopening the tool list.
-  $("attachMenu").hidden=false;
-  $("photosAction").focus({preventScroll:true});
- }else $("prompt").focus({preventScroll:true});
+ $("prompt").focus({preventScroll:true});
 }
 
 function setComposerMode(mode){
@@ -3540,8 +3534,9 @@ function selectVideoModel(provider,model){
  syncVideoSelector();updateComposerModel();syncMiniTools();
  if(S.videoTask)$("createStatus").textContent="此服务商有一条已保存的视频任务，可以查询状态。";
 }
-function openVideoCreate(){
+function openVideoCreate(returnToChat=false){
  if(!S.user){show("authDialog");return}
+ $("createDialog").dataset.returnToChat=returnToChat===true?"1":"0";
  try{
   const prev=JSON.parse(sessionStorage.getItem("aigzt:video-selection:"+S.user.id)||"null");
   if(prev&&VIDEO_OPTIONS[prev.provider]?.includes(prev.model)){
@@ -3589,7 +3584,7 @@ async function queryVideo(){
  try{
   const response=await api("/api/video/status",{provider,requestId:id});
   if(S.videoTask!==id||S.videoTaskProvider!==provider)return;
-  $("createStatus").textContent=response.status==="completed"?(response.temporaryUrl?"视频生成完成（第三方下载链接可能过期）":"视频已保存到你的媒体空间"):
+  $("createStatus").textContent=response.status==="completed"?(response.temporaryUrl?"视频生成完成（第三方下载链接可能过期）":"视频生成完成，可保存到本机"):
    response.status==="failed"?response.error||"免费来源视频生成失败":"视频仍在排队或生成中，稍后手动查询即可。";
   if(response.url){
    const video=node("video");video.controls=true;video.playsInline=true;video.src=response.url;video.preload="metadata";
@@ -3857,7 +3852,7 @@ function wire(){
  for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
- $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="video")openVideoCreate();else if(S.composerMode==="image"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});
+ $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="video")openVideoCreate(true);else if(S.composerMode==="image"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);
@@ -3892,13 +3887,22 @@ function wire(){
  $("drawCancel").addEventListener("click",stopDrawBatch);
  drawPrefs();wireImageViewer();
  $("createDialog").addEventListener("close",()=>{
+  delete $("createDialog").dataset.returnToChat;
   stopDrawBatch();$("drawResults").replaceChildren();
   $("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;
   $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
  });
  $("refreshVideo").addEventListener("click",()=>void queryVideo());
  for(const button of els("#videoModelGrid [data-video-provider][data-video-model]")){
-  button.addEventListener("click",()=>selectVideoModel(button.dataset.videoProvider,button.dataset.videoModel));
+  button.addEventListener("click",()=>{
+   const provider=button.dataset.videoProvider,model=button.dataset.videoModel;
+   if(!VIDEO_OPTIONS[provider]?.includes(model))return;
+   selectVideoModel(provider,model);
+   if($("createDialog").dataset.returnToChat==="1"){
+    hide("createDialog");hideAttachMenu();closeMenu();
+    setComposerMode("video");$("prompt").focus({preventScroll:true});
+   }
+  });
  }
  for(const button of els("#videoRatio [data-ratio]")){
   button.addEventListener("click",()=>{if(S.videoProvider==="grok")return;S.videoRatio=button.dataset.ratio;

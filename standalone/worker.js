@@ -1415,7 +1415,7 @@ async function imageV4Pending(env,job,ref){
 // A generated image is not a failed generation if its download is temporarily unavailable.
 async function imageV4Deliver(env,user,job,ref,url){
  let result;
- try{result=await saveKreaImage(env,user.id,url,ref.v>=5)}
+ try{result=await saveKreaImage(env,user.id,url,true)}
  catch(error){
   if(error?.message==="非可信图片来源"||(ref.deliveryFailures||0)>=2)
    return imageV4Move(env,job,ref,ref.stage+1);
@@ -1468,7 +1468,7 @@ async function imageV4Status(env,user,job,ref){
    return imageV4Move(env,job,ref,ref.stage+1);
   if(stage==="vexa"){
    try{
-    const result=await imageVexaRender(env,user.id,ref,ref.v>=5);
+    const result=await imageVexaRender(env,user.id,ref,true);
     return imageTransientComplete(env,job,result);
    }catch(error){return imageV4Move(env,job,ref,ref.stage+1,error?.message||"来源连接失败")}
   }
