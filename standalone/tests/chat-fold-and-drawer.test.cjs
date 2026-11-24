@@ -19,24 +19,31 @@ test("seven distinct gradients replace forced gray",()=>{
 function run(type,x,dx,dy,mode="chat",selection=""){
  const code=c.slice(c.indexOf("function wireDrawerGestures(){"),c.indexOf("function flashError("));
  const make=new Function("window","document","Element","$","S","drawerPageOrder","openMenu","closeMenu","hide","setFreeToolsMode","setWorkMode",code+";return wireDrawerGestures;");
- const handlers={};let opens=0,back=0;
- class E{constructor(t){this.type=t;this.scrollWidth=100;this.clientWidth=100;this.parentElement=null}closest(sel){return this.type==="message"&&sel.includes(".message")?this:null}}
+ const handlers={};let opens=0,back=0,claimed=0;
+ class E{constructor(t){this.type=t;this.scrollWidth=100;this.clientWidth=100;this.parentElement=null}closest(sel){return ((this.type==="bubble"&&sel.split(",").includes(".bubble"))||(this.type==="toolbar"&&sel.split(",").includes(".message-copy-bar"))||(this.type==="avatar"&&sel.split(",").includes(".avatar-ai"))||(this.type==="row"&&sel.split(",").includes(".message")))?this:null}}
  const body=new E("body"),target=new E(type);target.parentElement=body;
  const w={matchMedia:()=>({matches:true}),innerWidth:390,getComputedStyle:()=>({overflowX:"visible"}),getSelection:()=>({toString:()=>selection}),addEventListener(){}};
  const d={body,querySelector:()=>null,addEventListener:(n,f)=>handlers[n]=f};
  make(w,d,E,id=>id==="imageViewer"?{hidden:true}:{classList:{contains:()=>false}},{freeToolsMode:mode==="tools",workMode:false},[],()=>opens++,()=>{},()=>back++,()=>back++,()=>back++)();
  const t=(a,b)=>({identifier:1,clientX:a,clientY:b});
  handlers.touchstart({touches:[t(x,120)],target});
- handlers.touchmove({touches:[t(x+dx*.6,120+dy*.6)],target});
+ handlers.touchmove({touches:[t(x+dx*.6,120+dy*.6)],target,cancelable:true,preventDefault(){claimed++}});
  handlers.touchend({touches:[],changedTouches:[t(x+dx,120+dy)],target});
- return {opens,back};
+ return {opens,back,claimed};
 }
 test("drawer opens only on deliberate outer edge swipe",()=>{
- assert.equal(run("message",5,140,0).opens,0);
- assert.equal(run("message",150,120,0).opens,0);
- assert.equal(run("gutter",5,130,0).opens,1);
- assert.equal(run("gutter",18,130,0).opens,0);
- assert.equal(run("gutter",5,130,70).opens,0);
+ assert.equal(run("bubble",5,140,0).opens,0);
+ assert.equal(run("bubble",150,120,0).opens,0);
+ assert.equal(run("toolbar",25,120,0).opens,0);
+ assert.equal(run("gutter",5,65,0).opens,1);
+ assert.equal(run("gutter",18,65,0).opens,1);
+ assert.equal(run("avatar",32,75,10).opens,1);
+ assert.equal(run("row",42,65,0).opens,1);
+ assert.equal(run("row",45,140,0).opens,0);
+ assert.equal(run("gutter",18,130,70).opens,0);
+ assert.equal(run("gutter",18,0,100).claimed,0);
+ assert.equal(run("avatar",32,75,10).claimed,1);
+ assert.equal(run("bubble",18,130,0).claimed,0);
  assert.equal(run("gutter",5,130,0,"chat","selected").opens,0);
  assert.equal(run("gutter",5,130,0,"tools").back,1);
 });

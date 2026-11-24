@@ -123,7 +123,7 @@ function openMenu(){
 function wireDrawerGestures(){
  let gesture=null;
  const isMobile=()=>window.matchMedia("(max-width:900px)").matches;
- const edgeWidth=24,minDistance=75,drawerEdgeWidth=12,drawerOpenDistance=90;
+ const edgeWidth=24,minDistance=75,drawerEdgeWidth=44,drawerOpenDistance=60;
  const excluded="input,textarea,select,[contenteditable='true'],[role='slider'],.chat-table-scroll,table,pre,code,img,video,canvas,.iv-stage,.iv-thumbs,.source-chips,.model-region-links,.work-progress,.free-tool-filters,.tool-tray,.attachment-preview";
  function blockedTarget(target){
   if(!(target instanceof Element))return false;
@@ -159,10 +159,11 @@ function wireDrawerGestures(){
    if(target instanceof Element&&target.closest("button,a,summary,label"))return;
    action=S.freeToolsMode?"tools":"work";direction=left?1:-1;
   }else{
-   // Chat messages own their gestures; only the outer left gutter opens the drawer.
+   // The mobile message list has only 7px of outer padding. Include its
+    // avatar/blank gutter, not the reply bubble or actionable content.
     if(touch.clientX>drawerEdgeWidth)return;
     const startElement=target instanceof Element?target:target?.parentElement;
-    if(startElement?.closest(".message,.bubble,.message-copy-bar,.message-translation,button,a,summary,label"))return;
+    if(startElement?.closest(".bubble,.message-copy-bar,.message-translation,button,a,summary,label"))return;
     if(window.getSelection?.()?.toString())return;
     action="open";direction=1;
   }
@@ -172,9 +173,13 @@ function wireDrawerGestures(){
   if(!gesture)return;
   if(event.touches.length!==1||event.touches[0].identifier!==gesture.id){gesture=null;return}
   const touch=event.touches[0],dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
-  if(gesture.action==="open"&&(Math.abs(dy)>32||(Math.abs(dy)>12&&Math.abs(dy)>Math.abs(dx)*.55))){gesture=null;return;}
-   if((Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx))||dx*gesture.direction< -16)gesture=null;
- },{passive:true});
+  if(gesture.action==="open"){
+   if(Math.abs(dy)>42||(Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx)*.7)){gesture=null;return;}
+   // Claim only a confirmed horizontal drag; ordinary scrolling is untouched.
+   if(dx>16&&dx>Math.abs(dy)*1.7&&event.cancelable)event.preventDefault();
+  }
+  if((Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx))||dx*gesture.direction< -16)gesture=null;
+ },{passive:false});
  document.addEventListener("touchend",event=>{
   const origin=gesture;gesture=null;
   if(!origin||event.touches.length!==0||event.changedTouches.length!==1||!isMobile()||!$("imageViewer").hidden)return;
@@ -182,7 +187,7 @@ function wireDrawerGestures(){
   if(touch.identifier!==origin.id||activePage()!==origin.page)return;
   const dx=touch.clientX-origin.x,dy=touch.clientY-origin.y;
   const opening=origin.action==="open";
-   if(dx*origin.direction<(opening?drawerOpenDistance:minDistance)||Math.abs(dx)<Math.abs(dy)*(opening?2:1.5)||(opening&&Math.abs(dy)>32))return;
+   if(dx*origin.direction<(opening?drawerOpenDistance:minDistance)||Math.abs(dx)<Math.abs(dy)*(opening?1.7:1.5)||(opening&&Math.abs(dy)>42))return;
    if(opening&&window.getSelection?.()?.toString())return;
   if(origin.action==="page"){if(origin.page.open)hide(origin.page.id);return}
   if(document.querySelector("dialog[open]"))return;
