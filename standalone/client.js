@@ -3346,9 +3346,9 @@ function renderModels(){
   const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model),unlisted:true};
   if(modelMatches(active))visible.unshift(active);
  }
- // Successful and presently authorized routes first, then estimated capability; failed routes stay last.
+ // The current selection always leads matching results, followed by successful routes and capability.
  const ranks=new Map(visible.map(m=>[m,modelOrdering(m)]));
- visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return x.group-y.group||y.tier.score-x.tier.score||Number(modelIsSelected(b))-Number(modelIsSelected(a))||y.health.last-x.health.last||Number(b.free===true)-Number(a.free===true)||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
+ visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(b.free===true)-Number(a.free===true)||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  $("modelCount").textContent=count+" 个模型 · 常用成功优先 · 能力分层参考";
  $("moreModels").hidden=count<=shown.length;
