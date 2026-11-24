@@ -124,6 +124,11 @@ a{color:inherit}
 .message.assistant>.message-copy-bar{grid-column:2;grid-row:2;justify-content:flex-start;margin-top:0}
 .bubble{max-width:min(99%,1000px);overflow-wrap:anywhere;white-space:pre-wrap;min-width:0;font-size:var(--aigzt-chat-text-size,14px)}
 .message.user .bubble{padding:10px 16px;border-radius:19px 19px 5px 19px;background:#f1f3f4}
+.user-message-text{line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.user-message-text.is-collapsed{max-height:8.75em;overflow:hidden}
+.user-message-toggle{display:block;width:fit-content;margin:5px 0 0;padding:2px 0;border:0;background:transparent;color:#4065a1;font:inherit;font-size:.86em;line-height:1.4;font-weight:600;cursor:pointer;touch-action:manipulation}
+.user-message-toggle[hidden]{display:none}
+.user-message-toggle:focus-visible{outline:2px solid #5d8ddd;outline-offset:3px}
 .message.assistant .bubble{flex:1;white-space:normal;line-height:1.62;min-width:0}
 .message.assistant .bubble.chat-revealing{white-space:pre-wrap}
 .message-retry-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-start;margin-top:7px;min-height:27px}
@@ -153,7 +158,6 @@ a{color:inherit}
 .message-more-panel .message-copy-btn{width:32px;height:32px;min-width:32px;min-height:32px;background:#f4f7fa}
 .message-copy-btn:hover,.message-copy-btn:focus-visible{background:#e9eef1;color:#24495f}
 .message-copy-btn>.ui-icon,.message-copy-btn>.ui-icon svg{display:block;width:17px;height:17px;flex:none}
-.message-copy-btn svg{stroke:#63727e!important}
 .message.user .message-copy-btn{color:#697681}
 .message.user>.message-copy-bar{margin-top:0;min-height:22px;padding-right:3px}
 .message-translation{max-width:100%;min-width:0;box-sizing:border-box;margin-top:2px;padding:8px 11px;border-left:2px solid #a9becf;border-radius:0 8px 8px 0;background:#f7f9fc;font-size:var(--aigzt-chat-text-size,14px);color:#425465;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto;user-select:text}
