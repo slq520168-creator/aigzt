@@ -3082,6 +3082,11 @@ async function sendMessage(continueFrom=null){
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
    S.chatId=result.chatId;
+   if(submittedMode==="text"){
+    if(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined)){recordModelOutcome(requestProvider,requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel))}
+    else if(result.primaryFailure)recordModelOutcome(requestProvider,requestModel,false,result.primaryFailure);
+    if(result.freeFallback===true)recordModelOutcome("free","free:auto",true);
+   }
    if(submittedMode==="text"&&result.freeFallback===true&&S.provider===requestProvider&&S.model===requestModel){setFreeDefault(false);rememberChatModelSelection();updateModelTitle()}
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
@@ -3093,6 +3098,7 @@ async function sendMessage(continueFrom=null){
   }
   await fetchChats();void fetchMe();
  }catch(e){
+   if(submittedMode==="text"&&["MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","AUTH","ACCESS","UPSTREAM_NETWORK","UPSTREAM_EMPTY","FREE_FALLBACK_FAILED"].includes(e?.code))recordModelOutcome(requestProvider,requestModel,false,e.code);
    if(submittedMode==="text"&&requestProvider!=="free"&&["MODEL_RETIRED","MODEL_UNAVAILABLE"].includes(e?.code)){
     unavailableChatModels.set(chatModelKey(requestProvider,requestModel),{code:e.code,at:Date.now()});
     if(e.code==="MODEL_UNAVAILABLE")void refreshConnectedModelCatalog(requestProvider);
@@ -3136,6 +3142,68 @@ async function sendMessage(continueFrom=null){
 // Keep confirmed failures scoped to the current account, provider and exact model.
 const unavailableChatModels=new Map();
 const chatModelKey=(provider,model)=>String(S.user?.id||"")+"\0"+provider+"\0"+model;
+let modelHistoryOwner=null,modelHistoryRecords={},modelHistoryLoaded=false,modelHistoryPending=null;
+function modelHistoryStorage(owner){return "aigzt:model-health:v1:"+owner}
+function ensureModelHistory(){
+ const owner=String(S.user?.id||"");
+ if(owner===modelHistoryOwner)return;
+ modelHistoryOwner=owner;modelHistoryRecords={};modelHistoryLoaded=false;modelHistoryPending=null;
+ if(owner){try{const saved=JSON.parse(localStorage.getItem(modelHistoryStorage(owner))||"{}");if(saved&&typeof saved==="object"&&!Array.isArray(saved))modelHistoryRecords=saved}catch{}}
+}
+function modelHistoryKey(provider,model){return provider+"\0"+model}
+function saveModelHistory(){
+ if(!modelHistoryOwner)return;
+ const rows=Object.entries(modelHistoryRecords).sort((a,b)=>Math.max(b[1].success||0,b[1].failure||0)-Math.max(a[1].success||0,a[1].failure||0)).slice(0,160);
+ modelHistoryRecords=Object.fromEntries(rows);
+ try{localStorage.setItem(modelHistoryStorage(modelHistoryOwner),JSON.stringify(modelHistoryRecords))}catch{}
+}
+function recordModelOutcome(provider,model,success,code="",at=Date.now(),legacy=false){
+ ensureModelHistory();if(!modelHistoryOwner||!provider||!model)return;
+ const key=modelHistoryKey(provider,model),row=modelHistoryRecords[key]||{};
+ if(success){if(at>(row.success||0)){row.success=at;row.legacy=legacy}}
+ else if(at>(row.failure||0)){row.failure=at;row.code=code}
+ modelHistoryRecords[key]=row;saveModelHistory();
+}
+function modelHealth(provider,model,now=Date.now()){
+ ensureModelHistory();
+ const r=modelHistoryRecords[modelHistoryKey(provider,model)]||{};
+ const failed=(r.failure||0)>(r.success||0);
+ const ttl=["BILLING","BILLING_LIMIT","QUOTA","AUTH","ACCESS","CONSENT_REQUIRED"].includes(r.code)?6*3600000:15*60000;
+ return {success:!failed&&!!r.success,recentFailure:failed&&now-r.failure<ttl,last:r.success||0,legacy:!!r.legacy};
+}
+async function loadModelHistory(){
+ ensureModelHistory();const owner=modelHistoryOwner;if(!owner||modelHistoryLoaded||modelHistoryPending)return;
+ const pending=api("/api/model-history");modelHistoryPending=pending;
+ try{const data=await pending;if(modelHistoryOwner!==owner||String(S.user?.id||"")!==owner)return;
+  for(const r of data.models||[])if(typeof r.provider==="string"&&typeof r.model==="string"&&Number.isFinite(r.at))recordModelOutcome(r.provider,r.model,true,"",r.at,true);
+  modelHistoryLoaded=true;if($("modelDialog").open)renderModels();
+ }catch{/* The local success history remains available if the bounded legacy read fails. */}
+ finally{if(modelHistoryPending===pending)modelHistoryPending=null}
+}
+// Product tier is a transparent estimate, not a cross-vendor benchmark. Do not infer capability from price.
+function modelCapability(m){
+ const id=String(m.id||"").toLowerCase().replace(/:free$/,"").replace(/-\d{4}-\d{2}-\d{2}$/,"");
+ const name=id.split("/").pop()||id;
+ if(m.type!=="text"||id==="free:auto"||id==="openrouter/free")return {score:0,label:""};
+ if(/\b(?:embedding|rerank|moderation|whisper|tts)\b/.test(name))return {score:0,label:""};
+ if(/(?:^|[-_.])(?:nano|tiny|lite|1b|2b|3b|4b|7b|8b)(?:$|[-_.])/.test(name))return {score:1,label:"轻量"};
+ if(/(?:^|[-_.])(?:mini|flash|haiku|small|fast|turbo)(?:$|[-_.])/.test(name))return {score:2,label:"轻快"};
+ if(/(?:^|[-_.])(?:pro|opus|ultra|flagship|reasoner|thinking|reasoning|astra|max|r1)(?:$|[-_.])/.test(name)||/^o[134](?:$|-)/.test(name))return {score:4,label:"高阶"};
+ if(/^(?:gpt-[56](?:[.-]|$)|claude-(?:sonnet|[45])|gemini-[23]|grok-[345]|deepseek-(?:v[34]|r1)|qwen[345]|glm-[45]|kimi-k[23]|minimax-m[23]|mimo-v[23])/.test(name))return {score:3,label:"主流"};
+ return {score:0,label:"未评级"};
+}
+function modelSortGroup({blocked,recentFailure,success,ready,freeAuto}){
+ if(blocked||recentFailure)return 4;
+ if(success&&ready)return 0;
+ if(freeAuto)return 1;
+ if(ready)return 2;
+ return 3;
+}
+function modelOrdering(m){
+ const p=modelRoute(m),health=modelHealth(p,m.id),ready=p==="free"||m.builtinVideo||connected(p)&&(isFreeModel(p,m.id)||S.savedProviders[p]?.consent===true);
+ const blocked=!!unavailableChatModel(p,m.id);
+ return {group:modelSortGroup({blocked,recentFailure:health.recentFailure,success:health.success,ready,freeAuto:p==="free"}),health,tier:modelCapability(m),ready};
+}
 function unavailableChatModel(provider,model){
  const entry=unavailableChatModels.get(chatModelKey(provider,model));
  if(!entry)return null;
@@ -3254,7 +3322,8 @@ function modelMatches(m){
    ||family==="international"&&["openrouter","openai","claude","grok","gemini","groq","cerebras","novai","novai_pro"].includes(m.provider)
    ||re[family]?.test(id);
   if(!groupMatch)return false;
- }else if(S.source==="connected"){if(!connected(modelRoute(m)))return false}
+ }else if(S.source==="recent"){if(modelOrdering(m).group!==0)return false}
+ else if(S.source==="connected"){if(!connected(modelRoute(m)))return false}
  else if(S.source.startsWith("route:")){if(providerRoute(modelRoute(m))!==S.source.slice(6))return false}
  else if(S.source==="free"){if(!m.free)return false}
  else if(S.source!=="all"&&modelRoute(m)!==S.source)return false;
@@ -3277,14 +3346,14 @@ function renderModels(){
   const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model),unlisted:true};
   if(modelMatches(active))visible.unshift(active);
  }
- // Rank actual routes, never model author names; preserve explicit selection and payment consent.
- const directRank=m=>providerRoute(modelRoute(m))==="official"?3:providerRoute(modelRoute(m))==="free"?2:1;
- visible.sort((a,b)=>Number(b.free===true)-Number(a.free===true)||directRank(b)-directRank(a)||Number(Boolean(S.savedProviders[modelRoute(b)]?.verified))-Number(Boolean(S.savedProviders[modelRoute(a)]?.verified))||Number(modelIsSelected(b))-Number(modelIsSelected(a)));
+ // Successful and presently authorized routes first, then estimated capability; failed routes stay last.
+ const ranks=new Map(visible.map(m=>[m,modelOrdering(m)]));
+ visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return x.group-y.group||y.tier.score-x.tier.score||Number(modelIsSelected(b))-Number(modelIsSelected(a))||y.health.last-x.health.last||Number(b.free===true)-Number(a.free===true)||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
- $("modelCount").textContent=count+" 个模型";
+ $("modelCount").textContent=count+" 个模型 · 常用成功优先 · 能力分层参考";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
- const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)).join("|");
+ const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
  if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelDialog"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
@@ -3293,10 +3362,13 @@ function renderModels(){
   const via=item.availableWith==="openrouter-key"?"openrouter":item.provider,selected=modelIsSelected(item);
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
-  const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id);
+  const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id),rank=ranks.get(item);
   const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"密钥已验证":saved?"待验证":item.free?"免费 · 需连接":"需连接");
   const priceLabel=item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号额度 / 可能收费";
-  title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),node("span","price-tag"+(item.free?" free":""),priceLabel),tag);
+  title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),node("span","price-tag"+(item.free?" free":""),priceLabel));
+  if(rank.health.recentFailure)title.append(node("span","price-tag","近期异常"));
+  else if(rank.group===0)title.append(node("span","price-tag free",rank.health.legacy?"历史成功匹配":"已成功使用"));
+  if(rank.tier.label)title.append(node("span","price-tag",rank.tier.label));title.append(tag);
   const owner=domesticGroupFor(item);
   info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image"].includes(item.type)||(item.type==="video"&&VIDEO_OPTIONS[item.provider]?.includes(item.id));
@@ -3348,7 +3420,7 @@ function refreshSourceChips(){
 function openModels(){
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
- show("modelDialog");renderModels();void loadCatalog();
+ S.modelPage=0;show("modelDialog");renderModels();$("modelDialog").scrollTop=0;void loadModelHistory();void loadCatalog();
  if(S.source==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
  else if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);

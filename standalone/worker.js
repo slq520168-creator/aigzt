@@ -835,7 +835,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
  const custom=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
  const selectedMessages=custom?.instruction?[{role:"system",body:"此用户为当前所选模型保存的自定义回复要求：\n"+truncate(custom.instruction,1600)},...messages]:messages;
- let result,freeFallback=false;
+ let result,freeFallback=false,primaryFailure=null,primarySucceeded=false;
  const requestStarted=Date.now(),remaining=()=>50000-(Date.now()-requestStarted);
  let emitted=false;
  const forward=typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null;
@@ -849,7 +849,9 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
     const outputLimit=chatOutputBudget(provider,model,replyLevel);
     const reserve=body.freeFallback!==false&&!body.outputImages&&!body.imageOnly;
     result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],reserve?Math.min(24000,remaining()):remaining());
+    primarySucceeded=true;
    }catch(e){
+    primaryFailure=typeof e?.code==="string"?e.code:"UPSTREAM_ERROR";
     if(!canUseFreeChatFallback(body,e,emitted,remaining()))throw e;
     // No second paid request: use only preconfigured free routes with the same stored message.
     try{result=await freeChatAnswer(env,selectedMessages,mode,replyLevel,nativeFiles,remaining(),forward);freeFallback=true}
@@ -881,7 +883,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const storedReply=[result.content,...remote.map(x=>"![模型图片]("+x.replace(/[()]/g,ch=>encodeURIComponent(ch))+")"),...(!result.content&&!remote.length&&temporary.length?["图片已生成（仅当前会话展示）"]:[])].filter(Boolean).join("\n\n");
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,stamp,chatId,user.id);
- return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,incomplete:Boolean(result.incomplete)};
+ return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,primarySucceeded:provider==="free"||primarySucceeded,primaryFailure,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -892,7 +894,7 @@ function chatStream(req,env,user){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
-    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,freeFallback:result.freeFallback===true,usage:result.usage||null,incomplete:result.incomplete});
+    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,freeFallback:result.freeFallback===true,primarySucceeded:result.primarySucceeded===true,primaryFailure:result.primaryFailure||null,usage:result.usage||null,incomplete:result.incomplete});
    }catch(e){send({type:"error",error:e?.message||"回复未完成",code:e?.code||null,upstreamStatus:e?.upstreamStatus||null})}
    finally{controller.close()}
   }
@@ -2662,6 +2664,18 @@ async function main(req,env){
   return response({ok:true,chats:r.results||[]});
  }
 
+ if(path==="/api/model-history"&&req.method==="GET"){
+  requireUser(user);
+  // Bounded recent chat metadata only. Legacy records are accepted only when the last actual assistant model exactly matches the stored selection.
+  const r=await env.DB.prepare("SELECT c.provider,c.model,c.updated_at,(SELECT m.model FROM messages m WHERE m.chat_id=c.id AND m.user_id=c.user_id AND m.role='assistant' ORDER BY m.created_at DESC LIMIT 1) AS actual FROM (SELECT id,user_id,provider,model,updated_at FROM chats WHERE user_id=? ORDER BY updated_at DESC LIMIT 40) c").bind(user.id).all();
+  const seen=new Set(),models=[];
+  for(const x of r.results||[]){
+   if(!HOSTS[x.provider]||!validModelIdentifier(x.model)||x.actual!==x.model)continue;
+   const key=x.provider+"\0"+x.model;if(seen.has(key))continue;seen.add(key);
+   models.push({provider:x.provider,model:x.model,at:x.updated_at});
+  }
+  return response({ok:true,models});
+ }
  if(path==="/api/chats"&&req.method==="GET"){
   const project=url.searchParams.get("project"),archived=url.searchParams.get("archived")==="1",cursor=url.searchParams.get("cursor");
   if(project&&!/^[0-9a-f-]{36}$/i.test(project))return fail("项目编号无效",400);
