@@ -2387,6 +2387,34 @@ async function workAdvance(env,user,id){
  }
 }
 
+// Voice recording is ephemeral: no database write, no object storage, no paid-key fallback.
+async function transcribeVoice(req,env,user){
+ requireUser(user);
+ if(!env.GROQ_FREE_KEY)return fail("本站语音识别线路尚未配置",503);
+ const max=1500000,len=Number(req.headers.get("content-length")||0);
+ if(len>max)return fail("录音文件过大",413);
+ const type=(req.headers.get("content-type")||"").split(";")[0].toLowerCase();
+ const ext=({"audio/mp4":"m4a","audio/m4a":"m4a","audio/x-m4a":"m4a","video/mp4":"mp4","audio/webm":"webm","video/webm":"webm","audio/ogg":"ogg","audio/wav":"wav","audio/mpeg":"mp3"})[type];
+ if(!ext||!req.body)return fail("不支持的录音格式",415);
+ const reader=req.body.getReader(),chunks=[];let size=0;
+ try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>max){await reader.cancel();return fail("录音文件过大",413)}chunks.push(value)}}finally{reader.releaseLock()}
+ if(size<64)return fail("录音为空",400);
+ const form=new FormData();form.append("file",new Blob(chunks,{type}),"voice."+ext);
+ form.append("model","whisper-large-v3-turbo");form.append("response_format","json");form.append("temperature","0");
+ const language=String(req.headers.get("x-voice-lang")||"").split("-")[0];
+ if(["zh","en","ja"].includes(language))form.append("language",language);
+ const timer=new AbortController(),timeout=setTimeout(()=>timer.abort(),15000);
+ try{
+  const upstream=await fetch("https://api.groq.com/openai/v1/audio/transcriptions",{method:"POST",headers:{authorization:"Bearer "+env.GROQ_FREE_KEY},body:form,signal:timer.signal});
+  if(!upstream.ok)return fail(upstream.status===429?"语音识别额度暂时用完，请稍后重试":"语音识别线路暂时不可用",upstream.status===429?429:502);
+  const data=await upstream.json();
+  const text=typeof data.text==="string"?data.text.trim():"";
+  if(!text)return fail("未识别到有效语句，请重试",422);
+  return response({ok:true,text});
+ }catch{return fail("语音识别连接失败或超时，请重试",502)}
+ finally{clearTimeout(timeout)}
+}
+
 async function main(req,env){
  const url=new URL(req.url),path=url.pathname;
  if(req.method==="GET"&&(path==="/"||path==="/index.html"))return staticResponse(HTML,"text/html; charset=utf-8");
@@ -2497,6 +2525,7 @@ async function main(req,env){
  if(transientVideo&&req.method==="GET")return fvTransientMedia(req,env,user,transientVideo[1]);
  const freeVideoFile=path.match(/^\/api\/video\/media\/([0-9a-f-]{36})$/i);
  if(freeVideoFile&&req.method==="GET")return fvMedia(req,env,user,freeVideoFile[1]);
+ if(path==="/api/voice/transcribe"&&req.method==="POST")return transcribeVoice(req,env,user);
  if(path==="/api/chat/stream"&&req.method==="POST")return chatStream(req,env,user);
   if(path==="/api/chat"&&req.method==="POST")return response(await chat(req,env,user));
 

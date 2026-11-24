@@ -1285,8 +1285,8 @@ async function revealCompletedReply(row,reply){
 }
 
 
-const VOICE_CHAT_ENABLED=false; // Keep two-way voice conversation hidden.
-const MESSAGE_READ_ALOUD_ENABLED=false; // Paused until the user explicitly re-enables playback.
+const VOICE_CHAT_ENABLED=true;
+const MESSAGE_READ_ALOUD_ENABLED=true;
 const REPLY_LEVELS={short:"简短",standard:"标准",long:"详细"};
 let replyLevel="standard";
 function closeReplyLevel(){
@@ -1381,9 +1381,10 @@ function wireDictation(){
  $("voiceInput").addEventListener("click",startDictation);
  document.addEventListener("visibilitychange",()=>{if(document.hidden)stopDictation(true)});
 }
-const voiceSession={active:false,pending:false,listening:false,reading:false,resumePending:false,recognition:null,token:0,button:null,voice:"",lang:"zh-CN",rate:1,lastReply:""};
+const voiceSession={active:false,pending:false,listening:false,reading:false,resumePending:false,recognition:null,token:0,turn:0,button:null,voice:"",lang:"zh-CN",rate:1,lastReply:"",utterance:null,primer:null,primed:false,watchdog:null,recorder:null,stream:null,recordTimer:null,request:null};
 function sayStatus(t){$("voiceStatus").textContent=t}
 function voiceSave(){try{localStorage.setItem("aigzt:voice:v1",JSON.stringify({voice:voiceSession.voice,lang:voiceSession.lang,rate:voiceSession.rate}))}catch{}}
+function voiceLoad(){try{const x=JSON.parse(localStorage.getItem("aigzt:voice:v1")||"null");if(x){if(typeof x.voice==="string")voiceSession.voice=x.voice;if(["zh-CN","zh-TW","en-US","ja-JP"].includes(x.lang))voiceSession.lang=x.lang;if([0.85,1,1.15,1.3].includes(Number(x.rate)))voiceSession.rate=Number(x.rate)}}catch{}}
 function voiceChoices(){
  if(!window.speechSynthesis)return;
  const sel=$("voiceSelect"),voices=window.speechSynthesis.getVoices();
@@ -1391,96 +1392,188 @@ function voiceChoices(){
  for(const v of voices)sel.add(new Option(v.name+" ("+v.lang+")",v.voiceURI));
  sel.value=voices.some(v=>v.voiceURI===voiceSession.voice)?voiceSession.voice:"";
 }
+function voicePlaybackButton(b,playing){
+ if(!b)return;
+ if(b.classList.contains("message-copy-btn")){b.classList.toggle("is-active",playing);b.title=playing?"停止播放":"播放回复";b.setAttribute("aria-label",b.title)}
+ else b.textContent=playing?"停止播放":"播放回答";
+ b.setAttribute("aria-pressed",String(playing));
+}
+function voiceReady(label="继续说话"){
+ $("voiceStart").disabled=false;$("voiceStart").textContent=label;
+}
 function voiceCancel(){
  voiceSession.token++;voiceSession.reading=false;
- if(voiceSession.button){
-  const b=voiceSession.button;
-  if(b.classList.contains("message-copy-btn")){b.classList.remove("is-active");b.title="播放回复";b.setAttribute("aria-label","播放回复")}
-  else b.textContent="朗读";
-  b.setAttribute("aria-pressed","false");voiceSession.button=null
- }
- try{window.speechSynthesis?.cancel()}catch{}
+ clearTimeout(voiceSession.watchdog);voiceSession.watchdog=null;
+ voicePlaybackButton(voiceSession.button,false);voiceSession.button=null;voiceSession.utterance=null;
+ try{const synth=window.speechSynthesis;if(synth?.speaking||synth?.pending||synth?.paused)synth.cancel()}catch{}
+}
+function voicePrime(){
+ const synth=window.speechSynthesis;
+ if(!synth||typeof window.SpeechSynthesisUtterance!=="function"||voiceSession.primed||voiceSession.reading)return;
+ try{
+  const u=new window.SpeechSynthesisUtterance("。");u.volume=0;u.lang=voiceSession.lang;
+  voiceSession.primer=u;
+  u.onstart=()=>{voiceSession.primed=true};
+  u.onend=()=>{voiceSession.primed=true;voiceSession.primer=null};
+  u.onerror=()=>{voiceSession.primer=null};
+  synth.speak(u);
+ }catch{}
 }
 function speechContent(v){return String(v||"").replace(/\x60{3}[\s\S]*?\x60{3}/g,"代码已省略").replace(/!\[[^\]]*\]\([^)]+\)/g,"").replace(/\[([^\]]+)\]\([^)]+\)/g,"$1").replace(/https?:\/\/\S+/g,"链接").replace(/[*_#|~]+/g," ").trim()}
+function voiceChunks(text){
+ const out=[];let part="";
+ for(const ch of text){part+=ch;if(part.length>=130||(/[。！？!?；;\n]/.test(ch)&&part.length>=35)){if(part.trim())out.push(part.trim());part=""}}
+ if(part.trim())out.push(part.trim());return out;
+}
+function voiceLanguage(text){
+ if(/[\u3040-\u30ff]/.test(text))return "ja-JP";
+ if(/[\u3400-\u9fff]/.test(text))return voiceSession.lang==="zh-TW"?"zh-TW":"zh-CN";
+ if(/[A-Za-z]/.test(text))return "en-US";
+ return voiceSession.lang;
+}
 function voiceSpeak(value,button=null,continueAfter=false){
- if(!window.speechSynthesis||typeof SpeechSynthesisUtterance!=="function"){sayStatus("浏览器不支持朗读");return false}
- const t=speechContent(value);if(!t)return false;
- voiceCancel();const token=voiceSession.token,synth=window.speechSynthesis,voice=synth.getVoices().find(v=>v.voiceURI===voiceSession.voice);
- voiceSession.reading=true;voiceSession.button=button;
- if(button){
-  if(button.classList.contains("message-copy-btn")){button.classList.add("is-active");button.title="停止播放";button.setAttribute("aria-label","停止播放")}
-  else button.textContent="停止朗读";
-  button.setAttribute("aria-pressed","true")
- }
- let pos=0;sayStatus("正在朗读…");
+ const synth=window.speechSynthesis,t=speechContent(value);
+ if(!synth||typeof window.SpeechSynthesisUtterance!=="function"||!t)return false;
+ voiceCancel();const token=voiceSession.token,lang=voiceLanguage(t),voices=synth.getVoices();
+ const selected=voices.find(v=>v.voiceURI===voiceSession.voice);
+ const voice=selected||voices.find(v=>v.lang.toLowerCase()===lang.toLowerCase())||voices.find(v=>v.lang.split("-")[0]===lang.split("-")[0]);
+ const chunks=voiceChunks(t);let index=0;
+ voiceSession.reading=true;voiceSession.button=button;voicePlaybackButton(button,true);
+ sayStatus("正在准备播报…");
+ const fail=()=>{
+  if(token!==voiceSession.token)return;
+  voiceCancel();if(voiceSession.active)voiceReady();
+  if(button?.classList.contains("message-copy-btn"))flashError("设备未能开始或完成播报，请检查媒体音量后再次点击");
+  else sayStatus("设备未能完成播报，点击播放回答重试");
+ };
  const next=()=>{
   if(token!==voiceSession.token)return;
-  if(pos>=t.length){
-   voiceSession.reading=false;voiceSession.button=null;
-   if(button){
-    if(button.classList.contains("message-copy-btn")){button.classList.remove("is-active");button.title="播放回复";button.setAttribute("aria-label","播放回复")}
-    else button.textContent="朗读";
-    button.setAttribute("aria-pressed","false")
-   }
-   if(continueAfter&&voiceSession.active){if(/iPhone|iPad|iPod/i.test(navigator.userAgent))sayStatus("播报结束，点击开始说话可继续");else{sayStatus("播报结束，继续收听");voiceListen(true)}}
+  clearTimeout(voiceSession.watchdog);voiceSession.watchdog=null;
+  if(index>=chunks.length){
+   voiceSession.reading=false;voiceSession.utterance=null;voicePlaybackButton(button,false);voiceSession.button=null;
+   if(continueAfter&&voiceSession.active){voiceReady();sayStatus("播报结束，点击继续说话")}
+   else sayStatus("播报结束");
    return;
   }
-  const u=new SpeechSynthesisUtterance(t.slice(pos,pos+140));pos+=140;
-  u.lang=voice?.lang||voiceSession.lang;u.rate=voiceSession.rate;if(voice)u.voice=voice;
-  u.onend=next;u.onerror=()=>{if(token===voiceSession.token){voiceCancel();if(button?.classList.contains("message-copy-btn"))flashError("播放中断，请检查设备音量或静音设置");else sayStatus("播报中断，请手动继续")}};
-  try{synth.speak(u)}catch{voiceCancel();if(button?.classList.contains("message-copy-btn"))flashError("播放失败，请检查设备音量");else sayStatus("播放失败，请检查设备音量")}
+  const u=new window.SpeechSynthesisUtterance(chunks[index++]);
+  u.lang=voice?.lang||lang;u.rate=voiceSession.rate;if(voice)u.voice=voice;
+  voiceSession.utterance=u;
+  u.onstart=()=>{
+   if(token!==voiceSession.token)return;
+   voiceSession.primed=true;sayStatus("正在播报…");clearTimeout(voiceSession.watchdog);
+   voiceSession.watchdog=setTimeout(fail,Math.max(25000,u.text.length*650));
+  };
+  u.onend=next;u.onerror=fail;
+  voiceSession.watchdog=setTimeout(fail,6000);
+  try{if(synth.paused)synth.resume();synth.speak(u)}catch{fail()}
  };
- next();return true;
+ next();return token===voiceSession.token;
+}
+function voiceReleaseMic(){
+ clearTimeout(voiceSession.recordTimer);voiceSession.recordTimer=null;
+ const stream=voiceSession.stream;voiceSession.stream=null;
+ if(stream)for(const track of stream.getTracks())track.stop();
 }
 function voiceStop(){
- voiceSession.active=false;voiceSession.pending=false;voiceSession.listening=false;voiceSession.resumePending=false;
+ voiceSession.active=false;voiceSession.pending=false;voiceSession.listening=false;voiceSession.resumePending=false;voiceSession.turn++;
+ voiceSession.request?.abort();voiceSession.request=null;
+ const recorder=voiceSession.recorder;voiceSession.recorder=null;
+ if(recorder?.state==="recording")try{recorder.stop()}catch{}
+ voiceReleaseMic();
  const rec=voiceSession.recognition;voiceSession.recognition=null;
  if(rec)try{rec.abort()}catch{}
- voiceCancel();$("voiceStart").disabled=false;$("voiceStart").textContent="开始说话";sayStatus("已停止对话");
+ voiceCancel();voiceReady("开始说话");sayStatus("已停止对话");
+}
+function voiceSendTranscript(text,turn){
+ if(turn!==voiceSession.turn||!voiceSession.active)return;
+ const transcript=String(text||"").trim();
+ if(!transcript){voiceReady("重新说话");sayStatus("没有识别到语句，请重新说话");return}
+ $("voiceHeard").textContent=transcript;
+ if(S.busy||$("prompt").value.trim()||S.attachments.length){voiceReady();sayStatus("聊天已有请求或草稿，已保留原输入");return}
+ $("prompt").value=transcript;settlePromptSize();voiceSession.pending=true;$("voiceStart").disabled=true;$("voiceStart").textContent="等待回答…";
+ sayStatus("正在等待 AI 回复…");void sendMessage();
+}
+function voiceRecordSupported(){return typeof window.MediaRecorder==="function"&&!!navigator.mediaDevices?.getUserMedia}
+function voiceRecognitionSupported(){return voiceRecordSupported()||!!(window.SpeechRecognition||window.webkitSpeechRecognition)}
+async function voiceRecord(turn){
+ $("voiceStart").disabled=true;$("voiceStart").textContent="开启麦克风…";sayStatus("正在开启麦克风");
+ try{
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true},video:false});
+  if(turn!==voiceSession.turn||!voiceSession.active){for(const track of stream.getTracks())track.stop();return}
+  voiceSession.stream=stream;
+  const mime=["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"].find(x=>window.MediaRecorder.isTypeSupported?.(x));
+  const recorder=new window.MediaRecorder(stream,mime?{mimeType:mime,audioBitsPerSecond:64000}:{audioBitsPerSecond:64000});
+  const chunks=[];let failed=false;
+  voiceSession.recorder=recorder;voiceSession.listening=true;
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+  recorder.onerror=()=>{failed=true;if(turn!==voiceSession.turn)return;voiceSession.recorder=null;voiceSession.listening=false;voiceReleaseMic();voiceReady("重新说话");sayStatus("录音中断，请重新说话")};
+  recorder.onstop=async()=>{
+   if(turn!==voiceSession.turn||voiceSession.recorder!==recorder)return;
+   voiceSession.recorder=null;voiceSession.listening=false;voiceReleaseMic();
+   if(failed)return;
+   const audio=new Blob(chunks,{type:recorder.mimeType||chunks[0]?.type||"audio/mp4"});
+   if(!audio.size){voiceReady("重新说话");sayStatus("未录到声音，请重试");return}
+   if(audio.size>1500000){voiceReady("重新说话");sayStatus("录音文件过大，请缩短语句");return}
+   const request=new AbortController();voiceSession.request=request;
+   $("voiceStart").disabled=true;$("voiceStart").textContent="识别中…";sayStatus("正在识别语音…");
+   const timeout=setTimeout(()=>request.abort(),18000);
+   try{
+    const response=await fetch("/api/voice/transcribe",{method:"POST",headers:{"content-type":audio.type||"audio/mp4","x-voice-lang":voiceSession.lang},body:audio,credentials:"same-origin",cache:"no-store",signal:request.signal});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||!data?.ok)throw Error(data?.error||"语音识别服务暂时不可用");
+    voiceSendTranscript(data.text,turn);
+   }catch(e){if(turn===voiceSession.turn&&voiceSession.active){voiceReady("重新说话");sayStatus(e?.name==="AbortError"?"语音识别超时，请重试":String(e?.message||"识别失败，请重试"))}}
+   finally{clearTimeout(timeout);if(voiceSession.request===request)voiceSession.request=null}
+  };
+  recorder.start();
+  $("voiceStart").disabled=false;$("voiceStart").textContent="结束并发送";$("voiceHeard").textContent="正在录音…";sayStatus("正在收听，点击结束并发送");
+  voiceSession.recordTimer=setTimeout(()=>{if(turn===voiceSession.turn&&recorder.state==="recording")recorder.stop()},30000);
+ }catch(e){
+  if(turn!==voiceSession.turn)return;
+  voiceSession.recorder=null;voiceSession.listening=false;voiceReleaseMic();voiceReady("重新说话");
+  sayStatus(e?.name==="NotAllowedError"?"请在浏览器设置中允许麦克风":"无法开启录音，请检查麦克风权限");
+ }
+}
+function voiceNativeListen(turn){
+ const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!Speech){voiceReady();sayStatus("当前浏览器不支持录音或语音识别");return}
+ const rec=new Speech();voiceSession.recognition=rec;voiceSession.listening=true;rec.lang=voiceSession.lang;rec.interimResults=true;rec.continuous=false;
+ let text="",failed=false;
+ rec.onresult=e=>{if(turn!==voiceSession.turn)return;let partial="";text="";for(const item of Array.from(e.results)){const v=item[0]?.transcript||"";if(item.isFinal)text+=v;else partial+=v}$("voiceHeard").textContent=text+partial};
+ rec.onerror=e=>{if(turn!==voiceSession.turn)return;failed=true;sayStatus(e.error==="not-allowed"?"麦克风权限未开放":"识别中断，请重新说话")};
+ rec.onend=()=>{if(turn!==voiceSession.turn||voiceSession.recognition!==rec)return;voiceSession.recognition=null;voiceSession.listening=false;clearTimeout(voiceSession.recordTimer);voiceSession.recordTimer=null;voiceReady();if(!failed)voiceSendTranscript(text,turn)};
+ try{rec.start();$("voiceStart").disabled=false;$("voiceStart").textContent="结束并发送";sayStatus("正在收听…");voiceSession.recordTimer=setTimeout(()=>{if(voiceSession.recognition!==rec)return;voiceSession.recognition=null;voiceSession.listening=false;try{rec.abort()}catch{};voiceReady("重新说话");sayStatus("识别未响应，请重新说话")},30000)}
+ catch{voiceSession.recognition=null;voiceSession.listening=false;voiceReady("重新说话");sayStatus("无法开启语音识别")}
 }
 function voiceListen(auto=false){
- const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(!Speech){sayStatus("浏览器不支持语音识别，可使用键盘听写");return}
+ if(voiceSession.listening){
+  const recorder=voiceSession.recorder,rec=voiceSession.recognition;
+  $("voiceStart").disabled=true;$("voiceStart").textContent="识别中…";
+  try{if(recorder?.state==="recording")recorder.stop();else if(rec)rec.stop()}catch{voiceStop()}
+  return;
+ }
  if(!S.user){sayStatus("请先登录");return}
  if(S.workMode||S.freeToolsMode){sayStatus("请返回聊天模式");return}
- if(S.busy||voiceSession.pending){if(auto&&voiceSession.active)voiceSession.resumePending=true;sayStatus("等待上一轮回复完成");return}
- if(voiceSession.listening)return;
+ if(S.busy||voiceSession.pending||voiceSession.request){sayStatus("等待上一轮回复完成");return}
+ if($("prompt").value.trim()||S.attachments.length){sayStatus("输入框已有草稿，请先处理");return}
  if(S.provider!=="free"&&!connected(S.provider)){sayStatus("模型未连接，请先选择可用模型");return}
- if(S.provider!=="free"&&!isFreeModel(S.provider,S.model)&&!S.allowPaid){sayStatus("当前模型未授权使用额度，请先在连接设置确认");return}
- voiceSession.resumePending=false;stopDictation(true);voiceCancel();voiceSession.active=true;voiceSession.listening=true;
- $("voiceStart").disabled=true;$("voiceStart").textContent="正在收听…";
- const rec=new Speech();voiceSession.recognition=rec;rec.lang=voiceSession.lang;rec.interimResults=true;rec.continuous=false;
- let text="",failed=false;
- rec.onresult=e=>{
-  let partial="";text="";
-  for(let i=0;i<e.results.length;i++){const v=e.results[i]?.[0]?.transcript||"";if(e.results[i].isFinal)text+=v;else partial+=v}
-  $("voiceHeard").textContent=text+partial||"正在收听";
- };
- rec.onerror=e=>{failed=true;$("voiceStart").disabled=false;$("voiceStart").textContent="重新说话";sayStatus(e.error==="not-allowed"?"麦克风权限未开放":"识别中断："+e.error)};
- rec.onend=()=>{
-  if(voiceSession.recognition!==rec)return;
-  voiceSession.recognition=null;voiceSession.listening=false;
-  $("voiceStart").disabled=false;$("voiceStart").textContent="继续说话";
-  if(!voiceSession.active)return;
-  if(!text.trim()){if(!failed)sayStatus("没听到完整语句，请重新点击说话");return}
-  if($("prompt").value.trim()||S.attachments.length){sayStatus("输入框已有草稿，已保留，请先处理");return}
-  $("prompt").value=text.trim();settlePromptSize();voiceSession.pending=true;sayStatus("正在等待 AI 回复…");void sendMessage();
- };
- try{rec.start();sayStatus(auto?"正在尝试自动收听…":"正在收听…");$("voiceHeard").textContent="正在收听…"}
- catch{voiceSession.recognition=null;voiceSession.listening=false;$("voiceStart").disabled=false;$("voiceStart").textContent="重新说话";sayStatus("无法开启语音识别，请检查麦克风权限")}
+ if(S.provider!=="free"&&!isFreeModel(S.provider,S.model)&&!S.allowPaid){sayStatus("当前模型未授权使用额度");return}
+ stopDictation(true);voiceCancel();voiceSession.active=true;voiceSession.resumePending=false;
+ const turn=++voiceSession.turn;
+ if(voiceRecordSupported())void voiceRecord(turn);else voiceNativeListen(turn);
 }
 function voiceOpen(){
- try{const x=JSON.parse(localStorage.getItem("aigzt:voice:v1")||"null");if(x){if(typeof x.voice==="string")voiceSession.voice=x.voice;if(["zh-CN","zh-TW","en-US","ja-JP"].includes(x.lang))voiceSession.lang=x.lang;if([0.85,1,1.15,1.3].includes(Number(x.rate)))voiceSession.rate=Number(x.rate)}}catch{}
- $("voiceLang").value=voiceSession.lang;$("voiceRate").value=String(voiceSession.rate);
+ voiceLoad();$("voiceLang").value=voiceSession.lang;$("voiceRate").value=String(voiceSession.rate);
  if(S.workMode)setWorkMode(false);if(S.freeToolsMode)setFreeToolsMode(false);
- stopDictation(true);if(S.composerMode!=="text")setComposerMode("text");voiceChoices();show("voiceDialog");
- $("voiceStart").disabled=!(window.SpeechRecognition||window.webkitSpeechRecognition);$("voiceStart").textContent="开始说话";
+ stopDictation(true);if(S.composerMode!=="text")setComposerMode("text");voiceChoices();show("voiceDialog");voicePrime();
+ $("voiceStart").disabled=!voiceRecognitionSupported();$("voiceStart").textContent="开始说话";
  $("voiceReplay").disabled=!voiceSession.lastReply;
- sayStatus(window.SpeechRecognition||window.webkitSpeechRecognition?"点击开始说话":"当前浏览器不支持语音识别，可使用系统键盘听写");
+ sayStatus(voiceRecognitionSupported()?"点击开始说话":"当前浏览器不支持录音，可使用系统键盘听写");
 }
 function voiceWire(){
+ voiceLoad();
  $("voiceChatOpen").addEventListener("click",voiceOpen);
- $("voiceReplay").addEventListener("click",()=>{if(voiceSession.lastReply)voiceSpeak(voiceSession.lastReply,null,false)});
+ $("voiceReplay").addEventListener("click",()=>{if(voiceSession.reading){voiceCancel();voiceReady();return}if(voiceSession.lastReply&&!voiceSpeak(voiceSession.lastReply,$("voiceReplay"),true))sayStatus("当前设备不支持播报")});
  $("voiceStart").addEventListener("click",()=>voiceListen());
  $("voiceStop").addEventListener("click",voiceStop);
  $("voiceDialog").addEventListener("close",voiceStop);
@@ -1488,8 +1581,7 @@ function voiceWire(){
  $("voiceLang").addEventListener("change",e=>{voiceSession.lang=e.target.value;voiceSave();voiceChoices()});
  $("voiceRate").addEventListener("change",e=>{voiceSession.rate=Number(e.target.value);voiceSave()});
  window.speechSynthesis?.addEventListener?.("voiceschanged",voiceChoices);
- // Dictation and opt-in voice conversation use separate microphone lifecycles.
- document.addEventListener("visibilitychange",()=>{if(document.hidden&&voiceSession.active)voiceStop()});
+ document.addEventListener("visibilitychange",()=>{if(document.hidden&&(voiceSession.active||voiceSession.reading))voiceStop()});
 }
 
 async function copyMessageText(value,button){
@@ -3198,7 +3290,7 @@ async function sendMessage(continueFrom=null){
   }
   if(VOICE_CHAT_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
    voiceSession.pending=false;voiceSession.lastReply=result.reply;$("voiceReply").textContent=result.reply;$("voiceReplay").disabled=false;
-   if(!voiceSpeak(result.reply,null,true))sayStatus("本设备无法朗读，请手动点击开始说话");
+   if(!voiceSpeak(result.reply,$("voiceReplay"),true)){voiceReady();sayStatus("本设备无法自动播报，可点击播放回答重试")}
   }
   await fetchChats();void fetchMe();
  }catch(e){
@@ -3208,7 +3300,7 @@ async function sendMessage(continueFrom=null){
     if(e.code==="MODEL_UNAVAILABLE")void refreshConnectedModelCatalog(requestProvider);
    }
    setPortraitState(loading,submittedMode==="text"?"idle":"error");
-   if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
+   if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;voiceReady();sayStatus("回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
   // Show status in the assistant reply; retain all streamed content.
   const bubble=loadingBubble,status=node("span","message-send-pending");
