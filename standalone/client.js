@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
- allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",historyExpanded:false,projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",workModelRegion:"推荐",busy:false,code:false,
  authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"freetext",videoModel:"wan2.2-ti2v",videoTaskProvider:"freetext",videoImageId:null,videoEndImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -111,6 +111,7 @@ function show(id){
 }
 function hide(id){if($(id).open)$(id).close()}
 function closeMenu(){
+ if(historyActionAnchor)closeHistoryActions();
  $("shell").classList.remove("menu-open");
  $("sideShade").hidden=true;
  $("menuBtn").setAttribute("aria-expanded","false");
@@ -462,12 +463,6 @@ function renderHistory(){
  if($("navChat").hidden!==navHidden)$("navChat").hidden=navHidden;
  const count=rows.length?String(rows.length):"";
  if($("chatCount").textContent!==count)$("chatCount").textContent=count;
- const moreHidden=normal.length<=6;
- if($("historyToggle").hidden!==moreHidden)$("historyToggle").hidden=moreHidden;
- const label=S.historyExpanded?"收起":"显示更多";
- if($("historyToggle").firstChild.textContent!==label)$("historyToggle").firstChild.textContent=label;
- const expanded=String(S.historyExpanded);
- if($("historyToggle").getAttribute("aria-expanded")!==expanded)$("historyToggle").setAttribute("aria-expanded",expanded);
  if(pinHeading.hidden===hasPinned)pinHeading.hidden=!hasPinned;
  if(pinned.hidden===hasPinned)pinned.hidden=!hasPinned;
  const existing=new Map([...pinned.children,...recent.children].filter(el=>el.dataset.chatId).map(el=>[el.dataset.chatId,el]));
@@ -477,7 +472,8 @@ function renderHistory(){
   select.append(iconSlot("message-circle"),node("span","history-title",""));
   select.addEventListener("click",()=>void loadChat(x.id));
   const more=node("button","history-more");more.type="button";more.title="聊天操作";
-  more.append(iconSlot("ellipsis"));more.addEventListener("click",()=>openChatActions(x.id));
+  more.setAttribute("aria-haspopup","dialog");more.setAttribute("aria-expanded","false");
+   more.append(iconSlot("ellipsis"));more.addEventListener("click",event=>{event.stopPropagation();openChatActions(x.id,more)});
   row.append(select,more);renderIcons(row);return row;
  };
  const update=x=>{
@@ -509,8 +505,9 @@ function renderHistory(){
  const top=scroller.scrollTop;
  reconcile(pinned,hasPinned?rows.filter(x=>x.pinned_at):[],"");
  const empty=!S.user?"登录后查看聊天记录":!rows.length?(S.archivedView?"暂无归档聊天":"暂无聊天记录"):"";
- reconcile(recent,S.historyExpanded?normal:normal.slice(0,6),empty);
+ reconcile(recent,normal,empty);
  if(scroller.scrollTop!==top)scroller.scrollTop=top;
+ if(historyActionAnchor)positionHistoryActions();
 }
 async function fetchChats(){
  const seq=++chatFetchSerial,uid=S.user?.id||"",project=S.activeProjectId||"",archived=!!S.archivedView;
@@ -582,10 +579,45 @@ async function deleteProject(){
   S.editProjectId=null;hide("projectDialog");await fetchProjects();await fetchChats()
  }catch(e){flashError(humanError(e))}
 }
-function actionItem(icon,label,job){
- return iconButton(icon,label,async()=>{hide("actionsDialog");try{await job()}catch(e){flashError(humanError(e))}});
+let historyActionAnchor=null;
+function closeHistoryActions(){
+ const dialog=$("actionsDialog"),anchor=historyActionAnchor;
+ historyActionAnchor=null;
+ if(anchor)anchor.setAttribute("aria-expanded","false");
+ if(dialog.open)dialog.close();
+ dialog.classList.remove("history-anchored");
+ for(const key of ["left","right","top","max-height","width"])dialog.style.removeProperty(key);
 }
-function openChatActions(chatId=S.chatId){
+function historyMenuPosition(anchor,drawer,menuHeight,viewportHeight){
+ const left=drawer.left+8,right=drawer.right-8,width=Math.min(224,Math.max(0,right-left));
+ const maxHeight=Math.max(60,viewportHeight-16),height=Math.min(menuHeight,maxHeight);
+ const below=viewportHeight-8-anchor.bottom,above=anchor.top-8;
+ const preferred=below>=height||below>=above?anchor.bottom+4:anchor.top-height-4;
+ return {left:Math.max(left,Math.min(anchor.right-width,right-width)),top:Math.max(8,Math.min(preferred,viewportHeight-height-8)),width,maxHeight};
+}
+function positionHistoryActions(){
+ const anchor=historyActionAnchor,dialog=$("actionsDialog");
+ if(!anchor||!dialog.open)return;
+ if(!anchor.isConnected||!$("shell").classList.contains("menu-open")){closeHistoryActions();return}
+ const a=anchor.getBoundingClientRect(),d=$("sidebar").getBoundingClientRect(),scroller=$("sidebarChatScroll").getBoundingClientRect();
+ if(a.bottom<=scroller.top||a.top>=scroller.bottom){closeHistoryActions();return}
+ const height=window.visualViewport?.height||window.innerHeight;
+ const pos=historyMenuPosition(a,d,dialog.scrollHeight+2,height);
+ Object.assign(dialog.style,{left:pos.left+"px",top:pos.top+"px",right:"auto",width:pos.width+"px",maxHeight:pos.maxHeight+"px"});
+}
+function showHistoryActions(anchor){
+ const dialog=$("actionsDialog");
+ historyActionAnchor=anchor;anchor.setAttribute("aria-expanded","true");
+ dialog.classList.add("history-anchored");
+ if(!dialog.open)dialog.show();
+ positionHistoryActions();
+}
+function actionItem(icon,label,job){
+ return iconButton(icon,label,async()=>{const fromDrawer=!!historyActionAnchor;closeHistoryActions();try{await job();if(fromDrawer&&!$("shell").classList.contains("menu-open")&&!document.querySelector("dialog[open]"))openMenu()}catch(e){flashError(humanError(e))}});
+}
+function openChatActions(chatId=S.chatId,anchor=null){
+ if(anchor&&historyActionAnchor===anchor&&$("actionsDialog").open){closeHistoryActions();return}
+ closeHistoryActions();
  S.actionChatId=chatId;
  const list=$("chatActionList");list.replaceChildren();
  if(!chatId){list.append(actionItem("square-pen","新聊天",async()=>newChat()),actionItem("search","搜索聊天",async()=>show("searchDialog")),actionItem("folder","新建项目",async()=>openProject()));show("actionsDialog");return}
@@ -593,12 +625,35 @@ function openChatActions(chatId=S.chatId){
  list.append(
   actionItem("share","分享 / 导出聊天",async()=>exportChat(chatId)),
   actionItem("pin",item.pinned_at?"取消置顶":"置顶聊天",async()=>{await api("/api/chats/"+chatId+"/pin",{pinned:!item.pinned_at});await fetchChats()}),
-  actionItem("folder","添加到项目",async()=>openMoveDialog(chatId)),
-  actionItem("square-pen","重命名",async()=>{const name=prompt("聊天名称",item.title||"新对话");if(name?.trim()){await api("/api/chats/"+chatId+"/rename",{title:name.trim()});await fetchChats()}}),
+  anchor?iconButton("folder","添加到项目",()=>showHistoryProjects(chatId,anchor)):actionItem("folder","添加到项目",async()=>openMoveDialog(chatId)),
+  anchor?iconButton("square-pen","重命名",()=>showHistoryRename(chatId,item.title,anchor)):actionItem("square-pen","重命名",async()=>{const name=prompt("聊天名称",item.title||"新对话");if(name?.trim()){await api("/api/chats/"+chatId+"/rename",{title:name.trim()});await fetchChats()}}),
   actionItem("archive",item.archived_at?"恢复聊天":"归档聊天",async()=>{await api("/api/chats/"+chatId+"/archive",{archived:!item.archived_at});if(S.chatId===chatId)newChat();await fetchChats()}),
   actionItem("trash","删除聊天",async()=>{if(!confirm("永久删除这段聊天及消息？"))return;await api("/api/chats/"+chatId+"/delete",{});if(S.chatId===chatId)newChat();await fetchChats()})
  );
- show("actionsDialog");
+ if(anchor)showHistoryActions(anchor);else show("actionsDialog");
+}
+function showHistoryProjects(chatId,anchor){
+ const list=$("chatActionList");list.replaceChildren();
+ list.append(iconButton("message-circle","不属于任何项目",()=>void assign(null)));
+ for(const p of S.projects)list.append(iconButton("folder",p.name,()=>void assign(p.id)));
+ list.append(iconButton("arrow-up","返回聊天操作",()=>{closeHistoryActions();openChatActions(chatId,anchor)}));
+ positionHistoryActions();
+ async function assign(projectId){
+  try{await api("/api/chats/"+chatId+"/project",{projectId});closeHistoryActions();await fetchChats();await fetchProjects()}
+  catch(e){flashError(humanError(e))}
+ }
+}
+function showHistoryRename(chatId,title,anchor){
+ const list=$("chatActionList"),form=node("form","history-inline-rename"),input=node("input"),save=node("button","action-row","保存名称");
+ list.replaceChildren();input.value=title||"新对话";input.maxLength=120;input.setAttribute("aria-label","聊天名称");save.type="submit";
+ form.append(input,save);list.append(form,iconButton("arrow-up","取消",()=>{closeHistoryActions();openChatActions(chatId,anchor)}));
+ form.addEventListener("submit",async event=>{
+  event.preventDefault();const name=input.value.trim();if(!name)return;
+  save.disabled=true;
+  try{await api("/api/chats/"+chatId+"/rename",{title:name});closeHistoryActions();await fetchChats()}
+  catch(e){flashError(humanError(e));save.disabled=false}
+ });
+ positionHistoryActions();input.focus({preventScroll:true});input.select();
 }
 async function exportChat(id){
  const d=await api("/api/chats/"+id),title=d.chat?.title||"聊天";
@@ -3523,12 +3578,18 @@ function syncInstalledPwaLayout(){
 function wire(){
  syncInstalledPwaLayout();
  wireDrawerGestures();
+ $("sidebarChatScroll").addEventListener("scroll",positionHistoryActions,{passive:true});
+ window.addEventListener("resize",positionHistoryActions,{passive:true});
+ window.visualViewport?.addEventListener("resize",positionHistoryActions,{passive:true});
+ $("actionsDialog").addEventListener("close",()=>{if(!$("actionsDialog").open)closeHistoryActions()});
+ document.addEventListener("pointerdown",event=>{
+  if(historyActionAnchor&&!$("actionsDialog").contains(event.target)&&!historyActionAnchor.contains(event.target))closeHistoryActions();
+ });
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
- $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;S.historyExpanded=false;newChat();void fetchChats();renderProjects()});
- $("historyToggle").addEventListener("click",()=>{S.historyExpanded=!S.historyExpanded;renderHistory()});
+ $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
