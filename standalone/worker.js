@@ -1099,6 +1099,10 @@ const IM_IMAGE_STAGES_FAST=Object.freeze(["krea","vexa","rio","glm"]); // New v6
 // New v9 jobs: use a real fast image model first. Legacy v4–v6 stage indices must not change.
 const ZIMAGE_FAST="https://mrfakename-z-image-turbo.hf.space";
 const IM_IMAGE_STAGES_QUICK=Object.freeze(["zimage","vexa","krea","glm"]);
+ // Preserve all previous job indices. Restore the existing Rio source for new jobs.
+ const IMAGE_STAGES_V10=Object.freeze(["rio","zimage","vexa","krea","glm"]);
+ function imageStages(ref){return ref.v===10?IMAGE_STAGES_V10:ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES}
+ function imageStageRemaining(ref){return Math.max(0,50000-(Date.now()-Number(ref.stageAt||Date.now())))}
 function imageShape(shape){return Object.hasOwn(KREA_SHAPES,shape)?KREA_SHAPES[shape]:KREA_SHAPES.portrait}
 function imageStyledPrompt(prompt,style){
  const suffix=Object.hasOwn(KREA_STYLES,style)?KREA_STYLES[style]:KREA_STYLES["portrait-master"];
@@ -1145,7 +1149,7 @@ async function submitKrea(req,env,user){
  // Persist first, then schedule exactly one upstream submission on status read.
  // Existing v6 jobs and their stage positions remain compatible with deployment restarts.
  const now=Date.now(),id=crypto.randomUUID();
- const ref={v:9,stage:0,phase:"new",id:"",taskId:"",p:prompt,s:shape,t:style,seed:Math.floor(Math.random()*2147483647),stageAt:now};
+ const ref={v:10,stage:0,phase:"new",id:"",taskId:"",p:prompt,s:shape,t:style,seed:Math.floor(Math.random()*2147483647),stageAt:now};
  await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND charged_day='image-unmetered' ORDER BY created_at ASC LIMIT 24)",user.id,now-3600000).catch(()=>{});
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-unmetered')",id,user.id,JSON.stringify(ref),now);
  return {ok:true,pending:true,jobId:id,model:"免费快速作图"};
@@ -1158,13 +1162,13 @@ async function failKreaJob(env,job,message){
   // Preserve the task marker for a neutral retry after reload.
  }
 }
-async function queryGradioImageEvent(env,provider,eid){
+async function queryGradioImageEvent(env,provider,eid,timeoutMs=10500){
  const host=provider==="glm"?GLM_IMAGE:provider==="qwen"?QWEN_EDIT_HOST:provider==="zimage"?ZIMAGE_FAST:KREA,
   endpoint=provider==="glm"||provider==="qwen"?"infer":provider==="zimage"?"generate_image":"generate";
  let resp;
- try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
+ try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(Math.max(1000,Math.min(45000,timeoutMs)))})}
  catch{return {status:"pending"}}
- if(!resp.ok)return [401,403,404,410,422].includes(resp.status)?{status:"failed",error:"生成任务已失效或来源拒绝"}:{status:"pending"};
+ if(!resp.ok)return [401,403,404,410,422,429].includes(resp.status)?{status:"failed",error:"上游 HTTP "+resp.status}:{status:"pending"};
  const reader=resp.body?.getReader();if(!reader)return{status:"pending"};
  const decoder=new TextDecoder();let buffer="",size=0,url="",error="";
  function consume(chunk){
@@ -1175,10 +1179,16 @@ async function queryGradioImageEvent(env,provider,eid){
    try{
     const result=JSON.parse(value);
     url=findImageUrl(result);
-    if(provider==="qwen"&&!url){
-     const path=String(result?.[0]?.path||"");
-     if(/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)&&!path.includes(".."))
-      url=QWEN_EDIT_HOST+"/gradio_api/file="+path;
+    if(!url){
+     const findPath=v=>{
+      if(Array.isArray(v)){for(const x of v){const p=findPath(x);if(p)return p}return ""}
+      if(v&&typeof v==="object"){
+       const path=String(v.path||"");
+       if(/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)&&!path.includes(".."))return path;
+       for(const x of Object.values(v)){const p=findPath(x);if(p)return p}
+      }return "";
+     };
+     const path=findPath(result);if(path)url=host+"/gradio_api/file="+path;
     }
     if(!url)error="未返回图片";
    }catch{error="图片结果无效"}
@@ -1205,7 +1215,7 @@ function imagePending(job){
  let delay=12;
  try{
   const ref=JSON.parse(job.external_id||"{}");
-  if([4,5,6,9].includes(ref.v)&&Number.isFinite(ref.stageAt)){
+  if([4,5,6,9,10].includes(ref.v)&&Number.isFinite(ref.stageAt)){
    // End a source at its 50-second boundary, without high-frequency polling.
    delay=Math.max(1,Math.min(7,Math.ceil((ref.stageAt+50000-Date.now())/1000)));
   }
@@ -1232,12 +1242,12 @@ async function imageRioSubmit(env,endpoint,data){
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(id))throw Error("Rio 没有任务编号");
  return id;
 }
-async function imageRioRead(env,endpoint,eventId){
+async function imageRioRead(env,endpoint,eventId,timeoutMs=10500){
  let res;
  try{res=await fetch(RIO_IMAGE+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eventId),{
-  headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(10500)})}
+  headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(Math.max(1000,Math.min(45000,timeoutMs)))})}
  catch{return {status:"pending"}}
- if([401,403,404,410,422].includes(res.status))return {status:"failed",error:"Rio 任务无效或来源拒绝"};
+ if([401,403,404,410,422,429].includes(res.status))return {status:"failed",error:"Rio 任务无效或来源拒绝"};
  if(!res.ok||!res.body)return {status:"pending"};
  const reader=res.body.getReader(),decoder=new TextDecoder();
  let buffer="",size=0,result=null,fail=false;
@@ -1278,18 +1288,21 @@ async function imageVexaRender(env,uid,ref,temporary=false){
  await env.MEDIA.put(uid+"/"+mid,a,{httpMetadata:{contentType:mime},customMetadata:{name:"生成图片"}});
  return mid;
 }
-async function imageV4Move(env,job,ref,nextStage){
- if(nextStage>=(ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES).length){
-  await failKreaJob(env,job,"免费作图来源均未成功");
+async function imageV4Move(env,job,ref,nextStage,reason="来源未返回有效图片"){
+ const stage=imageStages(ref)[ref.stage]||"unknown";
+ const failures=[...(Array.isArray(ref.failures)?ref.failures:[]),stage+":"+String(reason).slice(0,90)].slice(-5);
+ if(nextStage>=imageStages(ref).length){
+  await failKreaJob(env,job,"免费作图来源均未成功："+failures.join("; "));
   return response({ok:true,done:true,failed:true,error:"免费作图服务目前全部不可用"});
  }
- const next={...ref,stage:nextStage,phase:"new",id:"",taskId:"",stageAt:Date.now()};
- await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(next),job.id,job.user_id);
+ const next={...ref,failures,stage:nextStage,phase:"new",id:"",taskId:"",url:"",deliveryFailures:0,stageAt:Date.now()};
+ await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",imageRefV4(next),job.id,job.user_id,job.checked_at,job.external_id);
  return response({ok:true,done:false,pending:true,waitSeconds:1,startedAt:job.created_at});
 }
 async function imageV4Pending(env,job,ref){
- await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering'",imageRefV4(ref),Date.now(),job.id,job.user_id);
- return imagePending(job);
+ const justSubmitted=ref.id&&["event","run"].includes(ref.phase)&&JSON.parse(job.external_id).phase==="new";
+ await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=? WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",imageRefV4(ref),justSubmitted?0:Date.now(),job.id,job.user_id,job.checked_at,job.external_id);
+ return justSubmitted?response({ok:true,done:false,pending:true,waitSeconds:1,startedAt:job.created_at}):imagePending({...job,external_id:imageRefV4(ref)});
 }
 // A generated image is not a failed generation if its download is temporarily unavailable.
 async function imageV4Deliver(env,user,job,ref,url){
@@ -1304,26 +1317,26 @@ async function imageV4Deliver(env,user,job,ref,url){
 }
 async function imageTransientComplete(env,job,localImageUrl){
  // Return verified image bytes to the requesting browser once, never save image bytes to R2.
- const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering'",job.id,job.user_id);
+ const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",job.id,job.user_id,job.checked_at,job.external_id);
  if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付，请重新生成"});
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（本次会话临时展示，图片未保存）",job.message_id,job.user_id).catch(()=>{});
  return response({ok:true,done:true,image:localImageUrl,temporary:true,model:"免费作图"});
 }
 async function imageV4Complete(env,job,mediaId){
- const changed=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='recovering'",mediaId,Date.now(),job.id,job.user_id);
+ const changed=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",mediaId,Date.now(),job.id,job.user_id,job.checked_at,job.external_id);
  if(changed.meta?.changes&&job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","![生成图片](/api/files/"+mediaId+")",job.message_id,job.user_id);
  return response({ok:true,done:true,image:"/api/files/"+mediaId,model:"免费作图"});
 }
 async function imageV4Status(env,user,job,ref){
  const now=Date.now();
- if(now-job.created_at>(ref.v===9?215000:30*60000)){
+ if(now-job.created_at>(ref.v===10?275000:ref.v===9?215000:30*60000)){
   await failKreaJob(env,job,ref.v===9?"免费快速作图超时，请稍后重试":"作图超时");
   return response({ok:true,done:true,failed:true,error:ref.v===9?"免费来源排队过久，本次已停止等待":"作图超时"});
  }
  if(job.status==="recovering"){
   if(now-job.checked_at>50000){
    const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='recovering' AND checked_at=?",now,job.id,user.id,job.checked_at);
-   if(claimed.meta?.changes)return imageV4Move(env,job,ref,ref.stage+1);
+   if(claimed.meta?.changes)return imageV4Move(env,{...job,checked_at:now},ref,ref.stage+1);
   }
   return imagePending(job);
  }
@@ -1331,12 +1344,13 @@ async function imageV4Status(env,user,job,ref){
  // This atomic claim guarantees one Worker advances each 50-second stage.
  if(now-(ref.stageAt||now)>=50000){
   const next=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",now,job.id,user.id);
-  return next.meta?.changes?imageV4Move(env,job,ref,ref.stage+1):imagePending(job);
+  return next.meta?.changes?imageV4Move(env,{...job,checked_at:now},ref,ref.stage+1):imagePending(job);
  }
  if(now-(job.checked_at||0)<6800)return imagePending(job);
  const claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-6700);
  if(!claim.meta?.changes)return imagePending(job);
- const stage=(ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES)[ref.stage];
+ job={...job,checked_at:now};
+ const stage=imageStages(ref)[ref.stage];
  if(!stage){await failKreaJob(env,job,"作图任务阶段无效");return response({ok:true,done:true,failed:true,error:"作图任务状态异常"})}
  try{
   // Every source gets at most 50 seconds. Advance to another verified
@@ -1348,7 +1362,7 @@ async function imageV4Status(env,user,job,ref){
    try{
     const result=await imageVexaRender(env,user.id,ref,ref.v>=5);
     return ref.v>=5?imageTransientComplete(env,job,result):imageV4Complete(env,job,result);
-   }catch{return imageV4Move(env,job,ref,ref.stage+1)}
+   }catch(error){return imageV4Move(env,job,ref,ref.stage+1,error?.message||"来源连接失败")}
   }
   if(ref.phase==="deliver"&&typeof ref.url==="string")
    return imageV4Deliver(env,user,job,ref,ref.url);
@@ -1379,7 +1393,7 @@ async function imageV4Status(env,user,job,ref){
     const eventId=await imageRioSubmit(env,"get_task_status",[ref.taskId]);
     rioRef={...ref,id:eventId,phase:"rio-result"};
    }
-   const step=await imageRioRead(env,rioRef.phase==="rio-result"?"get_task_status":"run",rioRef.id);
+   const step=await imageRioRead(env,rioRef.phase==="rio-result"?"get_task_status":"run",rioRef.id,Math.max(1000,imageStageRemaining(ref)-3000));
    if(step.status==="pending")return imageV4Pending(env,job,rioRef);
    if(step.status==="failed")return imageV4Move(env,job,rioRef,rioRef.stage+1);
    const task=imageRioFindTask(step.data);
@@ -1391,16 +1405,16 @@ async function imageV4Status(env,user,job,ref){
    return imageV4Pending(env,job,{...rioRef,phase:"rio-poll",id:"",taskId:task.task_id});
   }
   // Krea, GLM and Z-Image use their verified Gradio generation endpoints.
-  const state=await queryGradioImageEvent(env,stage,ref.id);
+  const state=await queryGradioImageEvent(env,stage,ref.id,Math.max(1000,imageStageRemaining(ref)-3000));
   if(state.status==="pending")return imageV4Pending(env,job,ref);
-  if(state.status==="failed")return imageV4Move(env,job,ref,ref.stage+1);
+  if(state.status==="failed")return imageV4Move(env,job,ref,ref.stage+1,state.error||"生成失败");
   return imageV4Deliver(env,user,job,ref,state.url);
  }catch(error){
   // Unknown submit outcomes must not be submitted again while the original
   // source could still be running. Wait only until its 50-second boundary.
   if(error?.uncertain&&ref.phase==="new")
    return imageV4Pending(env,job,{...ref,phase:"unknown"});
-  return imageV4Move(env,job,ref,ref.stage+1);
+  return imageV4Move(env,job,ref,ref.stage+1,error?.message||"来源连接失败");
  }
 }
 
@@ -1414,7 +1428,7 @@ async function imageJobStatus(env,user,id){
   try{const ref=JSON.parse(job.external_id);
    if(ref.v===8&&ref.p==="qwenedit")return qwenEditStatus(env,user,job,ref);
    if(ref.v===7&&ref.p==="horde")return hordeStatus(env,user,job,ref);
-   if([4,5,6,9].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
+   if([4,5,6,9,10].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
   }catch(e){if(e?.status)throw e}
  }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
