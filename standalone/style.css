@@ -190,6 +190,10 @@ a{color:inherit}
 .composer:focus-within{border-color:#bfcbd0}
 .composer-model-line{display:flex;align-items:center;gap:6px;min-width:0;min-height:24px;max-width:100%;padding:0 2px 4px}
 .composer-model-line[hidden]{display:none}
+.composer-mode-exit{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;padding:4px;margin-left:auto;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer;touch-action:manipulation}
+.composer-mode-exit[hidden]{display:none}
+.composer-mode-exit .ui-icon,.composer-mode-exit .ui-icon svg{display:block;width:16px;height:16px}
+.composer-mode-exit:focus-visible{outline:2px solid #7aa9c7;outline-offset:1px}
 .composer-model-switch{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;padding:3px;border:1px solid #dce7ee;background:#f4f8fb;border-radius:8px;cursor:pointer}
 .composer-model-switch .ui-icon,.composer-model-switch .ui-icon svg{display:block;width:16px;height:16px}
 .composer-model-switch:hover,.composer-model-switch:focus-visible{border-color:#7aa9c7;background:#eaf4f9}

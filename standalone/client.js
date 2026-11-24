@@ -1931,10 +1931,11 @@ function updateComposerModel(){
  const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
  if(!line||!name||!switcher)return;
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
+ const exit=$("composerModeExit");if(exit)exit.hidden=!(imageMode||videoMode||S.code);
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
  const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
  name.textContent=imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(S.videoProvider==="freeloop"?"首尾帧视频":S.videoProvider==="freewan"?"图生视频":VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频"):S.code?"代码 · "+active:active;
- name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击视频可退出":S.code?"代码模式 · "+active:(work?"当前工作选择：":"当前聊天选择：")+active;
+ name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击 × 返回聊天":S.code?"代码模式 · "+active:(work?"当前工作选择：":"当前聊天选择：")+active;
  $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":work?"工作模型":"聊天模型";
  switcher.setAttribute("aria-label",videoMode?"选择视频模型":imageMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型");
  switcher.title=videoMode?"选择视频模型":imageMode?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
@@ -3853,6 +3854,12 @@ function wire(){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
  $("composerSwitchModel").addEventListener("click",()=>{hideAttachMenu();if(S.composerMode==="video")openVideoCreate(true);else if(S.composerMode==="image"){setComposerMode("text");$("prompt").focus()}else if(S.workMode)$("workModelChoose").click();else openModels()});
+ $("composerModeExit").addEventListener("click",()=>{
+  hideAttachMenu();
+  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
+  setComposerMode("text");
+  $("prompt").focus({preventScroll:true});
+ });
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);
