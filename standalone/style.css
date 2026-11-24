@@ -864,12 +864,9 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .free-tool-card:hover,.free-tool-card:active{border-color:#d8c2c4;background:#fffafa}
 .free-tool-card:focus-visible{outline:2px solid #c63c43;outline-offset:2px}
 .free-tool-icon{position:relative;display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:10px;background:#f1f5fb;border:1px solid #e6edf6;overflow:hidden}
-.free-tool-icon .free-tool-icon-fallback{display:grid;place-items:center;width:25px;height:25px}
-.free-tool-icon .free-tool-icon-fallback svg{width:21px;height:21px}
-.free-tool-logo{position:absolute;inset:0;margin:auto;display:block;width:32px;height:32px;object-fit:contain;border-radius:8px;opacity:0;transition:opacity .12s ease}
-.free-tool-icon.has-logo{background:#fff;border-color:#edf0f5}
-.free-tool-icon.has-logo .free-tool-logo{opacity:1}
-.free-tool-icon.has-logo .free-tool-icon-fallback{visibility:hidden}
+.free-tool-icon svg{display:block;flex:none}
+.free-tool-initials{font-size:13px;font-weight:800;letter-spacing:-.5px;line-height:1}
+.free-tool-tone-0{background:#eaf1ff;color:#315dc4}.free-tool-tone-1{background:#f3eaff;color:#7945bf}.free-tool-tone-2{background:#e4f6f2;color:#087b6d}.free-tool-tone-3{background:#fff0e0;color:#b3611c}.free-tool-tone-4{background:#e7f3ff;color:#1976b4}.free-tool-tone-5{background:#fce9ef;color:#b63c6b}.free-tool-tone-6{background:#e9f4de;color:#4d7928}.free-tool-tone-7{background:#edf0f5;color:#48566d}
 
 .free-tool-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;font-size:12px;font-weight:700;line-height:1.25;color:#293746;overflow-wrap:anywhere}
 .free-tool-function{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;font-size:10px;font-weight:600;line-height:1.25;color:#bd313d;overflow-wrap:anywhere}
