@@ -1089,9 +1089,34 @@ function appendReplyImage(target,raw,alt="模型返回的图片"){
  im.addEventListener("error",()=>{if(src.startsWith("https:")){const a=node("a","chat-inline-link","打开原图");a.href=src;a.target="_blank";a.rel="noopener noreferrer";im.replaceWith(a)}else im.remove()},{once:true});
  im.src=src;target.append(im);return true;
 }
+// Some models surround ordinary Markdown with a Markdown fence. Unwrap only prose,
+// never a language-tagged program or a genuine unlabelled code sample.
+function normalizeAssistantMarkdown(answer){
+ const lines=String(answer||"").replace(/\r\n?/g,"\n").split("\n"),out=[];
+ for(let i=0;i<lines.length;i++){
+  const open=lines[i].match(/^\s*(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
+  if(!open){out.push(lines[i]);continue}
+  const fence=open[1],lang=open[2].toLowerCase();
+  let end=i+1;
+  for(;end<lines.length;end++){
+   const close=lines[end].trim();
+   if(close.length>=fence.length&&Array.from(close).every(ch=>ch===fence[0]))break;
+  }
+  const body=lines.slice(i+1,end),heading=body.filter(x=>/^\s*#{1,6}\s+\S/.test(x)).length,
+   table=body.some((x,j)=>x.includes("|")&&/^\s*\|?\s*:?-{3,}:?\s*\|/.test(body[j+1]||"")),
+   bullets=body.filter(x=>/^\s*(?:[-*]|\d+\.)\s+\S/.test(x)).length,
+   prose=body.some(x=>/[\u3400-\u9fff]{5,}|[.!?。！？]\s*$/.test(x.trim())),
+   code=body.some(x=>/^\s*(?:def |class |function |const |let |var |import |export |SELECT\s|CREATE\s|<\/?\w|#!|package\s|public\s|private\s|return\s|if\s*\(|for\s*\(|while\s*\(|[A-Za-z_$][\w$]*\s*=\s*[^=])/.test(x));
+  const unwrap=["markdown","md","mdx"].includes(lang)||(!lang&&!code&&prose&&((table&&(heading>0||bullets>0))||heading>=2||(heading>0&&bullets>=2)));
+  if(unwrap)out.push(...body);
+  else{out.push(lines[i],...body);if(end<lines.length)out.push(lines[end])}
+  i=end;
+ }
+ return out;
+}
 function renderAssistantText(bubble,answer){
- const lines=String(answer||"").replace(/\r\n/g,"\n").split("\n");
- bubble.classList.remove("chat-revealing");bubble.replaceChildren();let paragraph=[],list=null,pre=null,code=null;
+ const lines=normalizeAssistantMarkdown(answer);
+ bubble.classList.remove("chat-revealing");bubble.replaceChildren();let paragraph=[],list=null,pre=null,code=null,activeFence=null;
  function inline(target,value){
   const pattern=/(!\[[^\]]*\]\((?:https:\/\/[^\s)]+|\/api\/files\/[0-9a-f-]{36})\)|\*\*[^*]+\*\*|\x60[^\x60]+\x60)/gi;
   let index=0,match;
@@ -1126,20 +1151,23 @@ function renderAssistantText(bubble,answer){
    if(heads&&divider&&heads.length===divider.length&&divider.every(cell=>/^:?-{3,}:?$/.test(cell))){
     flush();list=null;
     const wrapper=node("div","chat-table-scroll"),table=node("table","chat-markdown-table"),thead=node("thead"),header=node("tr"),tbody=node("tbody");
-    for(const item of heads){const th=node("th");inline(th,item);header.append(th)}
+    table.classList.toggle("chat-table-wide",heads.length>=3);
+    table.setAttribute("role","table");thead.setAttribute("role","rowgroup");tbody.setAttribute("role","rowgroup");header.setAttribute("role","row");
+    for(const item of heads){const th=node("th");th.setAttribute("scope","col");th.setAttribute("role","columnheader");inline(th,item);header.append(th)}
     thead.append(header);table.append(thead,tbody);
     let next=lineIndex+2;
     for(;next<lines.length;next++){
      const cells=markdownCells(lines[next]);if(!cells||cells.length!==heads.length)break;
-     const tr=node("tr");for(const item of cells){const td=node("td");inline(td,item);tr.append(td)}tbody.append(tr);
+     const tr=node("tr");tr.setAttribute("role","row");for(const [i,item] of cells.entries()){const td=node("td");td.setAttribute("role","cell");td.dataset.label=heads[i].replace(/\*\*|\x60/g,"");inline(td,item);tr.append(td)}tbody.append(tr);
     }
     wrapper.append(table);bubble.append(wrapper);lineIndex=next-1;continue;
    }
   }
-  if(/^\x60{3}/.test(trim)){
+  const fence=trim.match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
+  if(fence&&(!pre||(!fence[2]&&fence[1][0]===activeFence[0]&&fence[1].length>=activeFence.length))){
    flush();list=null;
-   if(pre){pre=null;code=null}
-   else{pre=node("pre","chat-code");code=node("code");
+   if(pre){pre=null;code=null;activeFence=null}
+   else{activeFence=fence[1];pre=node("pre","chat-code");code=node("code");
     const codeNode=code,button=node("button","chat-code-copy");button.type="button";button.title="复制代码";button.setAttribute("aria-label","复制代码");
     button.append(iconSlot("copy"));
     button.addEventListener("click",()=>{void copyMessageText(codeNode.textContent,button)});
@@ -1149,7 +1177,8 @@ function renderAssistantText(bubble,answer){
   }
   if(pre){code.append(document.createTextNode(original+"\n"));continue}
   if(!trim){flush();list=null;continue}
-  const heading=trim.match(/^(#{1,3})\s+(.+)$/);
+  if(/^(?:-{3,}|\*{3,}|_{3,})$/.test(trim)){flush();list=null;bubble.append(node("hr","chat-markdown-rule"));continue}
+  const heading=trim.match(/^(#{1,6})\s+(.+)$/);
   if(heading){flush();list=null;const h=node("h"+Math.min(4,heading[1].length+2));inline(h,heading[2]);bubble.append(h);continue}
   const bullet=trim.match(/^([-*]|\d+\.)\s+(.+)$/);
   if(bullet){
