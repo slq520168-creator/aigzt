@@ -2535,11 +2535,20 @@ async function main(req,env){
  }
 
  if(path==="/api/chats"&&req.method==="GET"){
-  const project=url.searchParams.get("project"),archived=url.searchParams.get("archived")==="1";
-  const query=project?"SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND project_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 100":
-   "SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 100";
-  const r=project&&/^[0-9a-f-]{36}$/.test(project)?await env.DB.prepare(query).bind(user.id,project).all():await env.DB.prepare("SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE user_id=? AND archived_at"+(archived?">0":"=0")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 100").bind(user.id).all();
-  return response({ok:true,chats:r.results||[]});
+  const project=url.searchParams.get("project"),archived=url.searchParams.get("archived")==="1",cursor=url.searchParams.get("cursor");
+  if(project&&!/^[0-9a-f-]{36}$/i.test(project))return fail("项目编号无效",400);
+  let after=null;
+  if(cursor){
+   if(cursor.length>150)return fail("聊天分页参数无效",400);
+   try{after=JSON.parse(cursor)}catch{return fail("聊天分页参数无效",400)}
+   if(!Array.isArray(after)||after.length!==3||!after.slice(0,2).every(n=>Number.isSafeInteger(n)&&n>=0)||typeof after[2]!=="string"||!/^[0-9a-f-]{36}$/i.test(after[2]))return fail("聊天分页参数无效",400);
+  }
+  const args=[user.id],where=["user_id=?","archived_at"+(archived?">0":"=0")];
+  if(project){where.push("project_id=?");args.push(project)}
+  if(after){where.push("(pinned_at,updated_at,id)<(?,?,?)");args.push(...after)}
+  const r=await env.DB.prepare("SELECT id,title,provider,model,updated_at,project_id,pinned_at,archived_at FROM chats WHERE "+where.join(" AND ")+" ORDER BY pinned_at DESC,updated_at DESC,id DESC LIMIT 101").bind(...args).all();
+  const rows=r.results||[],chats=rows.slice(0,100),last=chats[chats.length-1];
+  return response({ok:true,chats,nextCursor:rows.length>100&&last?JSON.stringify([last.pinned_at||0,last.updated_at,last.id]):null});
  }
  const hit=path.match(/^\/api\/chats\/([0-9a-f-]{36})(?:\/(delete|rename|pin|archive|project))?$/);
  if(hit){

@@ -452,7 +452,22 @@ async function fetchMe(){
  try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();setAuthUI()}
  catch(e){flashError("账号状态读取失败："+humanError(e))}
 }
-let chatFetchSerial=0;
+let chatFetchSerial=0,historyScope="",historyNextCursor=null,historyLoading=false;
+function chatHistoryScope(){return JSON.stringify([S.user?.id||"",S.activeProjectId||"",!!S.archivedView])}
+function chatHistoryUrl(cursor=null){
+ const params=new URLSearchParams();
+ if(S.activeProjectId)params.set("project",S.activeProjectId);
+ if(S.archivedView)params.set("archived","1");
+ if(cursor)params.set("cursor",cursor);
+ const query=params.toString();
+ return "/api/chats"+(query?"?"+query:"");
+}
+function mergeHistoryRows(previous,next){
+ const map=new Map(previous.map(x=>[x.id,x]));
+ for(const x of next)map.set(x.id,x);
+ return [...map.values()];
+}
+function currentHistoryRequest(seq,scope){return seq===chatFetchSerial&&scope===chatHistoryScope()}
 function renderHistory(){
  const recent=$("history"),pinned=$("pinnedHistory"),pinHeading=$("pinHeading"),scroller=$("sidebarChatScroll");
  const rows=S.chats||[],hasPinned=!S.archivedView&&rows.some(x=>!!x.pinned_at);
@@ -510,14 +525,39 @@ function renderHistory(){
  if(historyActionAnchor)positionHistoryActions();
 }
 async function fetchChats(){
- const seq=++chatFetchSerial,uid=S.user?.id||"",project=S.activeProjectId||"",archived=!!S.archivedView;
- if(!uid){S.chats=[];renderHistory();return}
+ const seq=++chatFetchSerial,scope=chatHistoryScope(),sameScope=historyScope===scope;
+ const targetCount=sameScope&&$("shell").classList.contains("menu-open")?Math.max(100,S.chats.length):100;
+ historyLoading=true;historyNextCursor=null;
+ if(!S.user){historyScope=scope;historyLoading=false;S.chats=[];renderHistory();return}
  try{
-  const url="/api/chats"+(project?"?project="+encodeURIComponent(project)+(archived?"&archived=1":""):archived?"?archived=1":"");
-  const data=await api(url);
-  if(seq!==chatFetchSerial||S.user?.id!==uid||(S.activeProjectId||"")!==project||!!S.archivedView!==archived)return;
-  S.chats=data.chats||[];renderHistory();
- }catch(e){if(seq===chatFetchSerial&&S.user?.id===uid)flashError("聊天列表读取失败："+humanError(e))}
+  let rows=[],cursor=null;
+  do{
+   const data=await api(chatHistoryUrl(cursor));
+   if(!currentHistoryRequest(seq,scope))return;
+   rows=mergeHistoryRows(rows,data.chats||[]);
+   const next=typeof data.nextCursor==="string"&&data.nextCursor!==cursor?data.nextCursor:null;
+   cursor=next;
+   if(!(data.chats||[]).length)cursor=null;
+  }while(cursor&&rows.length<targetCount);
+  if(!currentHistoryRequest(seq,scope))return;
+  historyScope=scope;historyNextCursor=cursor;
+  if(!sameScope)$("sidebarChatScroll").scrollTop=0;
+  S.chats=rows;renderHistory();
+ }catch(e){if(currentHistoryRequest(seq,scope))flashError("聊天列表读取失败："+humanError(e))}
+ finally{if(seq===chatFetchSerial)historyLoading=false}
+}
+async function loadOlderHistory(){
+ const scope=chatHistoryScope(),seq=chatFetchSerial,cursor=historyNextCursor,box=$("sidebarChatScroll");
+ if(!S.user||historyLoading||!cursor||historyScope!==scope||!$("shell").classList.contains("menu-open")||box.scrollHeight-box.clientHeight-box.scrollTop>120)return;
+ historyLoading=true;
+ try{
+  const data=await api(chatHistoryUrl(cursor));
+  if(!currentHistoryRequest(seq,scope))return;
+  S.chats=mergeHistoryRows(S.chats,data.chats||[]);
+  historyNextCursor=(data.chats||[]).length&&typeof data.nextCursor==="string"&&data.nextCursor!==cursor?data.nextCursor:null;
+  renderHistory();
+ }catch(e){if(currentHistoryRequest(seq,scope))flashError("旧聊天读取失败："+humanError(e))}
+ finally{if(seq===chatFetchSerial)historyLoading=false}
 }
 function renderProjects(){
  const box=$("projectsList");box.replaceChildren();box.hidden=!S.projectsExpanded;
@@ -613,7 +653,7 @@ function showHistoryActions(anchor){
  positionHistoryActions();
 }
 function actionItem(icon,label,job){
- return iconButton(icon,label,async()=>{const fromDrawer=!!historyActionAnchor;closeHistoryActions();try{await job();if(fromDrawer&&!$("shell").classList.contains("menu-open")&&!document.querySelector("dialog[open]"))openMenu()}catch(e){flashError(humanError(e))}});
+ return iconButton(icon,label,async()=>{closeHistoryActions();try{await job()}catch(e){flashError(humanError(e))}});
 }
 function openChatActions(chatId=S.chatId,anchor=null){
  if(anchor&&historyActionAnchor===anchor&&$("actionsDialog").open){closeHistoryActions();return}
@@ -627,8 +667,8 @@ function openChatActions(chatId=S.chatId,anchor=null){
   actionItem("pin",item.pinned_at?"取消置顶":"置顶聊天",async()=>{await api("/api/chats/"+chatId+"/pin",{pinned:!item.pinned_at});await fetchChats()}),
   anchor?iconButton("folder","添加到项目",()=>showHistoryProjects(chatId,anchor)):actionItem("folder","添加到项目",async()=>openMoveDialog(chatId)),
   anchor?iconButton("square-pen","重命名",()=>showHistoryRename(chatId,item.title,anchor)):actionItem("square-pen","重命名",async()=>{const name=prompt("聊天名称",item.title||"新对话");if(name?.trim()){await api("/api/chats/"+chatId+"/rename",{title:name.trim()});await fetchChats()}}),
-  actionItem("archive",item.archived_at?"恢复聊天":"归档聊天",async()=>{await api("/api/chats/"+chatId+"/archive",{archived:!item.archived_at});if(S.chatId===chatId)newChat();await fetchChats()}),
-  actionItem("trash","删除聊天",async()=>{if(!confirm("永久删除这段聊天及消息？"))return;await api("/api/chats/"+chatId+"/delete",{});if(S.chatId===chatId)newChat();await fetchChats()})
+  actionItem("archive",item.archived_at?"恢复聊天":"归档聊天",async()=>{await api("/api/chats/"+chatId+"/archive",{archived:!item.archived_at});if(S.chatId===chatId)newChat(Boolean(anchor));await fetchChats()}),
+  actionItem("trash","删除聊天",async()=>{if(!confirm("永久删除这段聊天及消息？"))return;await api("/api/chats/"+chatId+"/delete",{});if(S.chatId===chatId)newChat(Boolean(anchor));await fetchChats()})
  );
  if(anchor)showHistoryActions(anchor);else show("actionsDialog");
 }
@@ -1783,14 +1823,14 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  }
  return row;
 }
-function newChat(){
+function newChat(keepDrawer=false){
  if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
  S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
- $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();closeMenu();
+ $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();if(keepDrawer!==true)closeMenu();
 }
 function startCoding(){
  if(S.busy)return;
@@ -3584,7 +3624,7 @@ function syncInstalledPwaLayout(){
 function wire(){
  syncInstalledPwaLayout();
  wireDrawerGestures();
- $("sidebarChatScroll").addEventListener("scroll",positionHistoryActions,{passive:true});
+ $("sidebarChatScroll").addEventListener("scroll",()=>{positionHistoryActions();void loadOlderHistory()},{passive:true});
  window.addEventListener("resize",positionHistoryActions,{passive:true});
  window.visualViewport?.addEventListener("resize",positionHistoryActions,{passive:true});
  $("actionsDialog").addEventListener("close",()=>{if(!$("actionsDialog").open)closeHistoryActions()});
