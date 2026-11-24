@@ -71,12 +71,13 @@ function equal(a,b){
  for(let i=0;i<Math.max(a.length,b.length);i++)mismatch|=(a.charCodeAt(i)||0)^(b.charCodeAt(i)||0);
  return mismatch===0;
 }
-async function parseJSON(req){
+const CHAT_REQUEST_BYTES=256*1024;
+async function parseJSON(req,maxBytes=64000){
  const length=Number(req.headers.get("content-length")||"0");
- if(length>64000)throw Error("请求超过64KB安全上限");
+ if(length>maxBytes)throw Object.assign(Error("请求超过安全传输上限"),{status:413});
  if(!(req.headers.get("content-type")||"").includes("application/json"))throw Error("需要 JSON 请求");
  const text=await req.text();
- if(text.length>64000)throw Error("请求内容过大");
+ if(new TextEncoder().encode(text).byteLength>maxBytes)throw Object.assign(Error("请求超过安全传输上限"),{status:413});
  try{return JSON.parse(text)}catch{throw Error("请求数据格式不正确")}
 }
 const dbGet=(db,sql,...args)=>db.prepare(sql).bind(...args).first();
@@ -125,6 +126,23 @@ function validModelIdentifier(id){
 }
 function requireModelId(model){if(!validModelIdentifier(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
+// Preserve the full current user turn; bound only historical context.
+function chatProviderHistory(messages){
+ const newest=messages.findLastIndex(m=>m.role==="user");
+ return messages.map((m,i)=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?String(m.body||""):truncate(m.body,m.role==="system"?8000:3000)}));
+}
+function legacyQueryPrompt(history){
+ const current=history.findLast(m=>m.role==="user")?.content||"";
+ if(current.length>2797)return null;
+ const older=history.filter(m=>m.role!=="system").slice(0,-1).slice(-7).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n");
+ const room=Math.max(0,2796-current.length);
+ return (room&&older?older.slice(-room)+"\n":"")+"用户："+current;
+}
+function chatOutputBudget(provider,model,level){
+ if(level==="short")return 600;
+ if(provider==="groq"&&/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return level==="long"?8192:4096;
+ return level==="long"?2600:1200;
+}
 async function listModels(env){
  const availableFree=FREE_MODELS;
  try{
@@ -341,9 +359,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  }else if(provider==="gigachat")headers.authorization="Bearer "+await getGigaChatAccessToken(key);
  else headers.authorization="Bearer "+key;
  let target="https://"+host.host+(host.path||"/"),body;
- const newestUserIndex=messages.findLastIndex(m=>m.role==="user");
-// Keep the current user request intact within the existing 8000-character input limit.
-const history=messages.map((m,i)=>({role:m.role,content:truncate(m.body,i===newestUserIndex?8000:3000)}));
+ const history=chatProviderHistory(messages);
  if(provider==="gemini"){
   target="https://"+host.host+"/v1beta/models/"+model+":generateContent";
   body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}))};
@@ -472,7 +488,7 @@ async function freeRouteCatalog(env){
 async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard"){
  const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
  const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
- const history=messages.slice(-14).map(m=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:truncate(m.body,3000)}));
+ const history=chatProviderHistory(messages.slice(-14));
  const sources=freeSources(env);
  const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
  const started=Date.now();
@@ -485,9 +501,11 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   const remaining=timeBudget-(Date.now()-started);
   if(remaining<1500)break;
   const sourceState=states.get(source.id),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
-  const recent=history.filter(m=>m.role!=="system").slice(-8).map(m=>(m.role==="assistant"?"助手":"用户")+"："+m.content).join("\n").slice(-2800);
+  const recent=source.query?legacyQueryPrompt(history):null;
+  // Legacy prompt-only endpoints cannot receive a long request intact.
+  if(source.query&&recent===null){errors.push(source.id+" 上下文容量不足");continue;}
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
-   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
+   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:source.id==="groq"?chatOutputBudget("groq",source.model,replyLevel):replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
   let res;
   try{
    res=await fetch(source.endpoint,{
@@ -579,10 +597,10 @@ async function translateChatMessage(req,env,user){
 const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助手。区分事实、推断和未知，提出可验证的方法。不能假装已经联网检索。","imagePrompt":"你是图片提示词设计师。生成可直接使用的中英文画面提示词，包含主体、场景、镜头和风格。","group":"模拟虚构的多角色群聊，逐条标注说话人并维护设定。不得声称参与者是真人或真实群成员。","story":"你是中文小说创作助手，保持人物、时间线和视角一致，按照用户要求创作并支持接续。","character":"你是角色创作者，建立背景、外貌、性格、能力、目标和关系，保持一致。","adventure":"你是互动文字冒险主持人。保持状态，描述场景并等待玩家选择。","mentor":"你是学习导师。由浅入深解释原理，给出实例与练习，根据反馈调整。","debate":"你是辩论助手。公平展示正反两方论点、证据与弱点，不编造证据。","live":"你是直播策划助手，提供节目流程、直播脚本和互动问题，不声称已经真正开启直播。"});
 async function chat(req,env,user,onDelta=null){
  requireUser(user);
- const body=await parseJSON(req),provider=body.provider==="free"?"free":String(body.provider||"free");
+ const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
  const replyLevel=["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
  const typed=typeof body.message==="string"?body.message.trim():"";
-if(typed.length>8000)throw Object.assign(new Error("消息超过 8000 字符，请分段发送；本次未截断"),{status:413});
+// The bounded transport size is independent of model context capacity.
 const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(attachments.length>4)throw Error("一次最多四个附件");
  const lines=[],context=[];
@@ -630,7 +648,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   if(activeProject?.project_id)project=await dbGet(env.DB,"SELECT name,instructions FROM projects WHERE id=? AND user_id=?",activeProject.project_id,user.id);
   const former=activeProject?.project_id?
     await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.project_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 8").bind(user.id,activeProject.project_id,chatId).all():
-    await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 6").bind(user.id,chatId).all();
+    {results:[]}; // Ordinary chats must not inherit unrelated raw conversation turns.
   const contextParts=[];
   if(project){contextParts.push("项目："+project.name);if(project.instructions)contextParts.push("项目说明："+truncate(project.instructions,1500))}
   for(const n of notes.results||[])contextParts.push("用户明确保存的记忆："+truncate(n.note,250));
@@ -654,7 +672,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
    result=await freeText(env,selectedMessages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
-   const outputLimit=replyLevel==="short"?600:replyLevel==="long"?2600:1200;
+   const outputLimit=chatOutputBudget(provider,model,replyLevel);
     try{result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true)}
     catch(error){
      if(![404,429].includes(error?.upstreamStatus))throw error;
