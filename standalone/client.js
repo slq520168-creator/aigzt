@@ -1055,7 +1055,12 @@ function renderAssistantText(bubble,answer){
    const raw=match[0],bold=raw.startsWith("**");
    if(raw.startsWith("![")){const m=raw.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);if(!m||!appendReplyImage(target,m[2],m[1]))appendChatLinks(target,raw)}
    else if(bold){const strong=node("strong");appendChatLinks(strong,raw.slice(2,-2));target.append(strong)}
-   else target.append(node("code","",raw.slice(1,-1)));
+   else{
+    const value=raw.slice(1,-1),candidate=value.trim();
+    // A URL formatted as inline code is still a link. Keep actual code literal.
+    if(/^(?:https?:\/\/|www\.)[^\s<>"'\x60]+$/i.test(candidate)||/^(?:[a-z0-9-]+\.)+(?:com|net|org|io|ai|cn|app|online|dev|site|co|me|info|xyz)(?::\d{2,5})?(?:\/[^\s<>"'\x60]*)?$/i.test(candidate))appendChatLinks(target,candidate);
+    else target.append(node("code","",value));
+   }
    index=pattern.lastIndex;
   }
   if(index<value.length)appendChatLinks(target,value.slice(index));
