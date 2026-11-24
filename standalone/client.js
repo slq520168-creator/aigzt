@@ -135,7 +135,10 @@ function wireDrawerGestures(){
  function blockedTarget(target,replyEdge=false){
   if(!(target instanceof Element))return false;
   // A full-width reply can cover the whole left edge; only non-interactive text can start there.
-  const selector=replyEdge?excluded.replace(".chat-table-scroll,table,pre,code,",""):excluded;
+  // A photo or a folded user message can fill the entire edge. Keep tap/zoom intact;
+  // permit only an intentional single-finger edge swipe on the chat image itself.
+  const chatPhoto=replyEdge&&target.closest(".chat-generated-image,.chat-upload-image");
+  const selector=replyEdge?excluded.replace(".chat-table-scroll,table,pre,code,","").replace(chatPhoto?"img,":"\u0000",""):excluded;
   if(target.closest(selector))return true;
   // Only known horizontal surfaces need layout checks. Do not force layout through every ancestor.
   const horizontal=target.closest(".chat-table-scroll,pre,.bubble,.sidebar-chat-scroll");
@@ -178,6 +181,7 @@ function wireDrawerGestures(){
     const startElement=target instanceof Element?target:target?.parentElement;
     if(startElement?.closest(".message-copy-bar,.message-translation,button,a,summary,label"))return;
     if(startElement?.closest(".bubble")&&!replyEdge)return;
+    // Native image drag/selection must not preempt an edge drawer gesture.
     if(window.getSelection?.()?.toString())return;
     action="open";direction=1;
   }

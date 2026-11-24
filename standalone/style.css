@@ -109,7 +109,7 @@ a{color:inherit}
 #modelTitle{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .model-select .ui-icon{width:16px;height:16px;color:#708187}
 .model-select .ui-icon svg{width:16px;height:16px}
-.conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
+.conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom}
 .chat-scroll-arrows{position:absolute;right:7px;bottom:90px;z-index:4;display:flex;flex-direction:column;width:26px;border-radius:14px;background:rgba(100,110,120,.82);box-shadow:0 1px 5px rgba(20,30,40,.14);overflow:hidden}
 .chat-scroll-arrows[hidden]{display:none}
 .chat-scroll-arrows button{display:grid;place-items:center;width:26px;height:29px;padding:4px;border:0;background:transparent;color:#fff;touch-action:manipulation}
@@ -366,6 +366,7 @@ a{color:inherit}
 .iv-thumb.active{border-color:#fff}.iv-thumb img{max-width:100%;max-height:100%;object-fit:cover;border-radius:5px}
 html.image-viewing,body.image-viewing{overflow:hidden}
 .draw-photo img,.chat-generated-image,.chat-upload-image,.media-preview img,#savedFiles img{cursor:zoom-in}
+.chat-generated-image,.chat-upload-image{-webkit-user-drag:none;user-select:none}
 .draw-tile-actions a,.draw-tile-actions button{color:#376b86;text-decoration:none;font-size:13px}
 #drawCancel{align-self:flex-start;min-height:35px}
 @media(max-width:600px){.draw-gallery{gap:8px}.draw-photo{min-height:130px}.draw-tile-actions{gap:8px}}

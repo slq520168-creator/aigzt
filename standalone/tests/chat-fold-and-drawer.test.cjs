@@ -20,7 +20,7 @@ function run(type,x,dx,dy,mode="chat",selection=""){
  const code=c.slice(c.indexOf("function wireDrawerGestures(){"),c.indexOf("function flashError("));
  const make=new Function("window","document","Element","$","S","drawerPageOrder","openMenu","closeMenu","hide","setFreeToolsMode","setWorkMode",code+";return wireDrawerGestures;");
  const handlers={};let opens=0,back=0,claimed=0;
- class E{constructor(t){this.type=t;this.scrollWidth=100;this.clientWidth=100;this.parentElement=null}closest(sel){return ((this.type==="bubble"&&sel.split(",").includes(".bubble"))||(this.type==="toolbar"&&sel.split(",").includes(".message-copy-bar"))||(this.type==="avatar"&&sel.split(",").includes(".avatar-ai"))||(this.type==="row"&&sel.split(",").includes(".message")))?this:null}}
+ class E{constructor(t){this.type=t;this.scrollWidth=100;this.clientWidth=100;this.parentElement=null}closest(sel){return ((this.type==="bubble"&&sel.split(",").includes(".bubble"))||(this.type==="toolbar"&&sel.split(",").includes(".message-copy-bar"))||(this.type==="avatar"&&sel.split(",").includes(".avatar-ai"))||(this.type==="row"&&sel.split(",").includes(".message"))||(this.type==="photo"&&sel.split(",").some(v=>["img",".chat-generated-image",".bubble"].includes(v)))||(this.type==="video"&&sel.split(",").includes("video")))?this:null}}
  const body=new E("body"),target=new E(type);target.parentElement=body;
  const w={matchMedia:()=>({matches:true}),innerWidth:390,getComputedStyle:()=>({overflowX:"visible"}),getSelection:()=>({toString:()=>selection}),addEventListener(){}};
  const d={body,querySelector:()=>null,addEventListener:(n,f)=>handlers[n]=f};
@@ -88,4 +88,15 @@ test("confirmed right swipe opens before finger release, only once",()=>{
  assert.equal(run("bubble",150,150,0).claimed,0);
  assert.match(s,/transition:transform \.18s/);
  assert.doesNotMatch(s,/\.shell\.menu-open \.sidebar\{[^}]*box-shadow/);
+});
+
+test("edge swipe works over chat photos without opening on interior or vertical image gestures",()=>{
+ assert.equal(run("photo",12,75,0).beforeRelease,1);
+ assert.equal(run("photo",12,75,0).opens,1);
+ assert.equal(run("photo",80,140,0).opens,0);
+ assert.equal(run("photo",12,0,120).opens,0);
+ assert.equal(run("photo",12,0,120).claimed,0);
+ assert.equal(run("photo",12,5,0).opens,0);
+ assert.equal(run("video",12,140,0).opens,0);
+ assert.match(s,/\.conversation\{[^}]*touch-action:pan-y pinch-zoom/);
 });
