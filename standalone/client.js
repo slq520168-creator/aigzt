@@ -1601,8 +1601,8 @@ function inlineVideoJob(bubble,id){
     setPortraitState(bubble.closest(".message"),"error");
     return;
    }
-   hint.textContent="等待免费来源返回视频…";
-   delay=Math.max(15000,Math.min(60000,Number(r.waitSeconds||17)*1000));
+   hint.textContent=r.stage===1?"正在等待备用视频来源…":"等待免费来源返回视频…";
+   delay=Math.max(1000,Math.min(15000,Number(r.waitSeconds||8)*1000));
   }catch(error){
    if(!active())return;
    errors++;delay=Math.min(60000,17000*2**Math.min(errors,2));
@@ -3650,7 +3650,9 @@ function wire(){
   $("prompt").focus({preventScroll:true});
  });
  $("videoMode").addEventListener("click",()=>{
-  hideAttachMenu();setComposerMode(S.composerMode==="video"?"text":"video");
+  hideAttachMenu();
+  if(S.composerMode==="video")setComposerMode("text");
+  else{selectVideoModel("freetext",VIDEO_OPTIONS.freetext[0]);setComposerMode("video")}
   $("prompt").focus({preventScroll:true});
  });
  $("codeToggle").addEventListener("click",()=>{
