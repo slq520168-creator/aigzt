@@ -129,11 +129,13 @@ function openMenu(){
 function wireDrawerGestures(){
  let gesture=null;
  const isMobile=()=>window.matchMedia("(max-width:900px)").matches;
- const edgeWidth=24,minDistance=75,drawerEdgeWidth=44,drawerOpenDistance=60;
+ const edgeWidth=24,minDistance=75,drawerEdgeWidth=44,replyEdgeWidth=20,drawerOpenDistance=60;
  const excluded="input,textarea,select,[contenteditable='true'],[role='slider'],.chat-table-scroll,table,pre,code,img,video,canvas,.iv-stage,.iv-thumbs,.source-chips,.model-region-links,.work-progress,.free-tool-filters,.tool-tray,.attachment-preview";
- function blockedTarget(target){
+ function blockedTarget(target,replyEdge=false){
   if(!(target instanceof Element))return false;
-  if(target.closest(excluded))return true;
+  // A full-width reply can cover the whole left edge; only non-interactive text can start there.
+  const selector=replyEdge?excluded.replace(".chat-table-scroll,table,pre,code,",""):excluded;
+  if(target.closest(selector))return true;
   for(let el=target;el&&el!==document.body;el=el.parentElement){
    if(el.scrollWidth>el.clientWidth+2&&/^(auto|scroll|overlay)$/.test(window.getComputedStyle(el).overflowX))return true;
   }
@@ -147,9 +149,10 @@ function wireDrawerGestures(){
   gesture=null;
   if(!isMobile()||event.touches.length!==1||!$("imageViewer").hidden)return;
   const touch=event.touches[0],target=event.target,open=$("shell").classList.contains("menu-open");
-  if(blockedTarget(target))return;
   const left=touch.clientX<=edgeWidth,right=touch.clientX>=window.innerWidth-edgeWidth;
   const page=activePage();
+  const replyEdge=!page&&!open&&!S.freeToolsMode&&!S.workMode&&touch.clientX<=replyEdgeWidth;
+  if(blockedTarget(target,replyEdge))return;
   let action="",direction=0;
   if(page){
    if(!page.classList.contains("workspace-view")&&page.id!=="workModelDialog")return;
@@ -165,11 +168,12 @@ function wireDrawerGestures(){
    if(target instanceof Element&&target.closest("button,a,summary,label"))return;
    action=S.freeToolsMode?"tools":"work";direction=left?1:-1;
   }else{
-   // The mobile message list has only 7px of outer padding. Include its
-    // avatar/blank gutter, not the reply bubble or actionable content.
+   // Full-width replies no longer have an avatar column as a swipe gutter.
+    // Permit a deliberate right swipe from the outer 20px of text, not its interior.
     if(touch.clientX>drawerEdgeWidth)return;
     const startElement=target instanceof Element?target:target?.parentElement;
-    if(startElement?.closest(".bubble,.message-copy-bar,.message-translation,button,a,summary,label"))return;
+    if(startElement?.closest(".message-copy-bar,.message-translation,button,a,summary,label"))return;
+    if(startElement?.closest(".bubble")&&!replyEdge)return;
     if(window.getSelection?.()?.toString())return;
     action="open";direction=1;
   }
@@ -1846,6 +1850,19 @@ function messageTokenText(row){
  if(Number.isSafeInteger(usage.reasoning)&&usage.reasoning>=0)text+=" · 推理 "+fmt(usage.reasoning);
  return text+" tokens";
 }
+// Explicit toggling avoids relying on Safari's implicit summary activation.
+function setMessageMoreOpen(more,open){
+ if(open)for(const other of els(".message-more-wrap[open]"))if(other!==more)setMessageMoreOpen(other,false);
+ more.open=Boolean(open);
+ more.querySelector(".message-more-trigger")?.setAttribute("aria-expanded",String(more.open));
+}
+function wireMessageMore(more,trigger){
+ trigger.addEventListener("click",event=>{event.preventDefault();event.stopPropagation();setMessageMoreOpen(more,!more.open)});
+ more.addEventListener("toggle",()=>{trigger.setAttribute("aria-expanded",String(more.open));if(more.open)for(const other of els(".message-more-wrap[open]"))if(other!==more)setMessageMoreOpen(other,false)});
+}
+function closeOutsideMessageMore(event){
+ for(const more of els(".message-more-wrap[open]"))if(!more.contains(event.target))setMessageMoreOpen(more,false);
+}
 function appendMessageCopy(row,content){
  if(!row?.classList?.contains("message"))return;
  row.querySelector(":scope > .message-copy-bar")?.remove();
@@ -1881,8 +1898,8 @@ function appendMessageCopy(row,content){
   }
  }
  const more=node("details","message-more-wrap"),trigger=node("summary","message-copy-btn message-more-trigger"),panel=node("div","message-more-panel");
- trigger.setAttribute("aria-label","更多消息操作");trigger.title="更多消息操作";trigger.append(iconSlot("ellipsis"));
- more.addEventListener("toggle",()=>{if(more.open)for(const other of els(".message-more-wrap[open]"))if(other!==more)other.open=false});
+ trigger.setAttribute("aria-label","更多消息操作");trigger.setAttribute("aria-expanded","false");trigger.title="更多消息操作";trigger.append(iconSlot("ellipsis"));
+ wireMessageMore(more,trigger);
  if(!user){
   if(!image)panel.append(messageTool("file-text","下载 TXT",()=>{more.open=false;messageDownload(row,text,"txt")}));
   const reported=node("div","message-token-report",messageTokenText(row));
@@ -4042,9 +4059,12 @@ function wire(){
  window.visualViewport?.addEventListener("resize",positionHistoryActions,{passive:true});
  $("actionsDialog").addEventListener("close",()=>{if(!$("actionsDialog").open)closeHistoryActions()});
  document.addEventListener("pointerdown",event=>{
-  for(const more of els(".message-more-wrap[open]"))if(!more.contains(event.target))more.open=false;
+  closeOutsideMessageMore(event);
   if(historyActionAnchor&&!$("actionsDialog").contains(event.target)&&!historyActionAnchor.contains(event.target))closeHistoryActions();
  });
+ // Capture click also covers iOS touch-generated clicks and keyboard activation.
+ document.addEventListener("click",closeOutsideMessageMore,true);
+ document.addEventListener("keydown",event=>{if(event.key==="Escape")for(const more of els(".message-more-wrap[open]"))setMessageMoreOpen(more,false)});
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);

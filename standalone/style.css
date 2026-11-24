@@ -154,7 +154,7 @@ a{color:inherit}
 .message-copy-btn.is-active{color:#3567ae;background:#eaf2fe}
 .message-copy-btn:focus-visible,.message-more-trigger:focus-visible{outline:2px solid #5d8ddd;outline-offset:1px}
 .message-more-wrap{position:relative;display:inline-flex;align-items:center}
-.message-more-wrap>summary{list-style:none;cursor:pointer}
+.message-more-wrap>summary{list-style:none;cursor:pointer;touch-action:manipulation;position:relative;z-index:16}
 .message-more-wrap>summary::-webkit-details-marker{display:none}
 .message-more-panel{position:absolute;z-index:15;bottom:calc(100% + 4px);right:0;min-width:156px;max-width:min(78vw,260px);display:none;align-items:center;gap:5px;flex-wrap:wrap;padding:8px;border:1px solid #e2e8ed;border-radius:13px;background:#fff;box-shadow:0 8px 23px rgba(17,39,68,.13)}
 .message-more-wrap[open]>.message-more-panel{display:flex}
