@@ -1582,7 +1582,7 @@ function inlineVideo(bubble,id){
 }
 /* Local elapsed clock with bounded automatic server status checks.
  * Only the existing free job is queried; this never resubmits generation. */
-function inlineVideoJob(bubble,id){
+function inlineVideoJob(bubble,id,retry=false){
  bubble.dataset.videoTask=id;
  bubble.dataset.videoStarted=String(Date.now());
  const label=node("span","video-job-label","视频生成中 · 0:00");
@@ -1627,7 +1627,9 @@ function inlineVideoJob(bubble,id){
   polling=true;hint.textContent="正在确认视频状态…";
   let delay=17000;
   try{
-   const r=await api("/api/video/status",{provider:"free",requestId:id});
+   const path=retry?"/api/video/retry":"/api/video/status";
+   retry=false;
+   const r=await api(path,{provider:"free",requestId:id});
    if(!active())return;
    errors=0;
    if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.videoStarted=String(r.startedAt);
@@ -1639,6 +1641,7 @@ function inlineVideoJob(bubble,id){
      cleanup();
      if(row){appendMessage("assistant","[[aigzt:video:"+mediaId+"]]","免费视频",row,false,row.dataset.messageId);setPortraitState(row,"finished")}
      else inlineVideo(bubble,mediaId);
+     if(r.recovered){const target=row?.querySelector(".bubble")||bubble;target.append(node("span","video-job-hint","已恢复同一请求生成的视频"));}
      return;
     }
     if(external){
@@ -1648,10 +1651,12 @@ function inlineVideoJob(bubble,id){
     }
    }
    if(r.status==="failed"){
-    cleanup();frame.classList.add("video-job-failed");
+    cleanup();frame.remove();
     label.textContent="视频生成失败";hint.textContent=r.error||"免费来源暂不可用";
-    if(/^https:\/\/huggingface\.co\/spaces\/[\w-]+\/[\w-]+$/i.test(r.officialUrl||"")){
-     const fallback=node("a","chat-video-save","打开免费来源");fallback.href=r.officialUrl;fallback.target="_blank";fallback.rel="noopener noreferrer";bubble.append(fallback);
+    if(r.retryable){
+     const button=node("button","chat-video-save","重新生成");button.type="button";
+     button.addEventListener("click",()=>{button.disabled=true;inlineVideoJob(bubble,id,true)});
+     bubble.append(button);
     }
     setPortraitState(bubble.closest(".message"),"error");
     return;
@@ -2761,6 +2766,7 @@ async function sendMessage(){
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
  const submittedMode=S.composerMode;
+ const submittedVideoProvider=S.videoProvider,submittedVideoModel=S.videoModel,submittedVideoRatio=S.videoRatio;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  if(!S.user){show("authDialog");return}
  const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
@@ -2880,14 +2886,14 @@ async function sendMessage(){
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
    if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
-   if(freeVideo&&S.composerMode!=="video")setComposerMode("video");
+   if(freeVideo){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;if(S.composerMode!=="video")setComposerMode("video")}
    else if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage();
   });
   const detail=humanError(e);
   if(isImageMessage){status.append(retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
-  if(!isImageMessage){
+  if(!isImageMessage&&submittedMode==="text"){
    const alternate=messageTool("layers","切换免费模型",()=>{
     if(S.busy||S.workMode||S.freeToolsMode)return;
     setFreeDefault(false);rememberChatModelSelection();updateModelTitle();

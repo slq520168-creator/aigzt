@@ -1593,7 +1593,12 @@ const FV_BACKUPS=Object.freeze({
  freeloop:{url:"https://cakegreen-wan-2-2-first-last-frame.hf.space",official:"https://huggingface.co/spaces/cakegreen/Wan-2-2-first-last-frame",kind:"wan"}
 });
 const FV_ATTEMPT_MS=50000;
-function fvRoute(provider,stage){return stage===1?FV_BACKUPS[provider]:FREE_VIDEO[provider]}
+function fvRoute(provider,stage,request){
+ const backup=FV_BACKUPS[provider];
+ // Prefer a compatible alternate; when it cannot accept the entire prompt,
+ // a bounded second attempt on the original free source preserves the request.
+ return stage===1&&backup&&(!backup.maxPrompt||!request||request.prompt.length<=backup.maxPrompt)?backup:FREE_VIDEO[provider];
+}
 function fvArgs(provider,cfg,request,file,endFile){
  const {prompt,ratio}=request;
  if(cfg.kind==="ti2v")return [null,prompt,ratio==="9:16"?"480x832":"832x480",2];
@@ -1619,8 +1624,8 @@ async function fvCreate(env,user,b,provider,model,prompt){
  const request={prompt,ratio:b.ratio==="9:16"?"9:16":"16:9",imageId:b.imageId||null,endImageId:b.endImageId||null};
  let ref,lastError;
  for(let stage=0;stage<2;stage++){
-  const route=fvRoute(provider,stage);
-  if(!route||(route.maxPrompt&&prompt.length>route.maxPrompt))break;
+  const route=fvRoute(provider,stage,request);
+  if(!route)break;
   try{ref=await fvSubmitStage(env,user,provider,stage,request);break}
   catch(e){lastError=e;if(!e.retryable)throw e}
  }
@@ -1630,7 +1635,7 @@ async function fvCreate(env,user,b,provider,model,prompt){
  return {ok:true,provider,model,requestId:id,status:"pending",free:true};
 }
 async function fvSubmitStage(env,user,provider,stage,b){
- const cfg=fvRoute(provider,stage),attemptAt=Date.now(),deadline=attemptAt+FV_ATTEMPT_MS;
+ const cfg=fvRoute(provider,stage,b),attemptAt=Date.now(),deadline=attemptAt+FV_ATTEMPT_MS;
  const prompt=b.prompt;
  if(!cfg||(cfg.maxPrompt&&prompt.length>cfg.maxPrompt))throw fvError("备用来源不支持当前完整描述",400);
  const remaining=max=>{const left=deadline-Date.now();if(left<=0)throw Object.assign(fvError("免费来源处理超时"),{retryable:true});return Math.max(1,Math.min(max,left))};
@@ -1721,29 +1726,68 @@ async function fvSave(env,user,rawUrl,cfg){
  await env.MEDIA.put(user.id+"/"+id,bytes,{httpMetadata:{contentType:"video/mp4"},customMetadata:{name:"免费生成视频"}});
  return id;
 }
+// A standalone success may satisfy an identical failed chat request from
+// the same account. Reuse only a real, existing MP4; retain the failed job's audit trail.
+async function fvRecoverMatchingMedia(env,user,job,ref){
+ if(!job.message_id||!ref.request||/内容规则|授权|登录/.test(job.error||""))return null;
+ const match=await dbGet(env.DB,"SELECT media_id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status='complete' AND message_id IS NULL AND media_id IS NOT NULL AND created_at>=? AND created_at<=? AND json_extract(external_id,'$.p')=? AND json_extract(external_id,'$.request')=? ORDER BY created_at DESC LIMIT 1",user.id,job.created_at,job.created_at+180000,ref.p,JSON.stringify(ref.request));
+ if(!match||!fvId(match.media_id))return null;
+ const file=await env.MEDIA.head(user.id+"/"+match.media_id);
+ if(!file||file.httpMetadata?.contentType!=="video/mp4")return null;
+ return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+match.media_id,temporaryUrl:false,recovered:true};
+}
+async function fvRetry(req,env,user){
+ requireUser(user);
+ const b=await parseJSON(req),id=String(b.requestId||"");
+ if(!fvId(id))throw fvError("视频任务号无效",400);
+ const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error FROM image_jobs WHERE id=? AND user_id=? AND charged_day='video-free'",id,user.id);
+ if(!job||!job.message_id)throw fvError("聊天视频任务不存在",404);
+ if(job.status!=="failed")return fvStatus(env,user,id);
+ const ref=JSON.parse(job.external_id||"{}");
+ const recovered=await fvRecoverMatchingMedia(env,user,job,ref);if(recovered)return recovered;
+ if(!ref.request||!FREE_VIDEO[ref.p]||/内容规则|授权|登录/.test(job.error||""))throw fvError("此任务无法原位重试",409);
+ const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND id<>? AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,id,Date.now()-120000);
+ if(active)throw fvError("已有视频任务正在生成",409);
+ const now=Date.now(),claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='failed'",now,id,user.id);
+ if(!claim.meta?.changes)return {ok:true,status:"pending",waitSeconds:5,startedAt:now};
+ try{
+  const next=await fvSubmitStage(env,user,ref.p,0,ref.request);
+  await env.DB.batch([
+   env.DB.prepare("UPDATE image_jobs SET external_id=?,status='pending',created_at=?,checked_at=0,finished_at=NULL,error=NULL WHERE id=? AND user_id=? AND status='recovering'").bind(JSON.stringify(next),now,id,user.id),
+   env.DB.prepare("UPDATE messages SET body=? WHERE id=? AND user_id=?").bind("[[aigzt:video-job:"+id+"]]",job.message_id,user.id)
+  ]);
+  return {ok:true,status:"pending",waitSeconds:1,startedAt:now};
+ }catch(e){
+  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",String(e.message||"视频重试失败").slice(0,160),Date.now(),id,user.id);
+  throw e;
+ }
+}
 async function fvStatus(env,user,id){
  if(!fvId(id))throw fvError("视频任务号无效",400);
  const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error FROM image_jobs WHERE id=? AND user_id=? AND charged_day='video-free'",id,user.id);
  if(!job)throw fvError("视频任务不存在或没有权限",404);
- const ref=JSON.parse(job.external_id||"{}"),cfg=fvRoute(ref.p,Number(ref.stage)||0);
+ const ref=JSON.parse(job.external_id||"{}"),cfg=fvRoute(ref.p,Number(ref.stage)||0,ref.request);
  if(!cfg||!/^[a-z0-9_-]{8,128}$/i.test(ref.e||""))throw fvError("视频任务记录无效",422);
  if(job.status==="complete"&&fvId(job.media_id))return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+job.media_id,temporaryUrl:false};
  if(job.status==="complete"&&ref.url&&fvOutput(ref.url,cfg)===ref.url)return {ok:true,status:"completed",provider:ref.p,url:ref.url,temporaryUrl:true};
- if(job.status==="failed")return {ok:true,status:"failed",provider:ref.p,error:job.error||"免费视频生成失败",officialUrl:cfg.official};
+ if(job.status==="failed"){
+  const recovered=await fvRecoverMatchingMedia(env,user,job,ref);
+  if(recovered)return recovered;
+  return {ok:true,status:"failed",provider:ref.p,error:job.error||"免费视频生成失败",retryable:Boolean(ref.request&&job.message_id&&!/内容规则|授权|登录/.test(job.error||"")),officialUrl:cfg.official};
+ }
  const stage=Number(ref.stage)||0,attemptAt=Number(ref.attemptAt)||job.created_at,deadline=attemptAt+FV_ATTEMPT_MS;
  const pending=()=>({ok:true,status:"pending",waitSeconds:Math.max(1,Math.min(8,Math.ceil((deadline-Date.now())/1000))),startedAt:job.created_at,stage});
  const failJob=async(reason,status="pending")=>{
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status=?",reason,Date.now(),id,user.id,status);
-  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","免费视频未完成："+reason,job.message_id,user.id).catch(()=>{});
-  return {ok:true,status:"failed",error:reason,officialUrl:cfg.official};
+  // Keep the job marker in chat so failure, retry and recovery survive reload.
+  return {ok:true,status:"failed",error:reason,retryable:Boolean(ref.request&&job.message_id&&!/内容规则|授权|登录/.test(reason)),officialUrl:cfg.official};
  };
  if(job.status==="recovering"){
   if(Date.now()-Number(job.checked_at||0)>FV_ATTEMPT_MS)return failJob("备用来源提交超时","recovering");
   return {ok:true,status:"pending",waitSeconds:5,startedAt:job.created_at,stage:1};
  }
  const advance=async reason=>{
-  const backup=FV_BACKUPS[ref.p];
-  if(stage!==0||!ref.request||!backup||(backup.maxPrompt&&ref.request.prompt.length>backup.maxPrompt))return failJob(reason);
+  if(stage!==0||!ref.request||!fvRoute(ref.p,1,ref.request))return failJob(reason);
   const claimed=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",Date.now(),id,user.id);
   if(!claimed.meta?.changes)return pending();
   try{
@@ -2320,6 +2364,7 @@ async function main(req,env){
  if(fm&&req.method==="GET")return readFile(env,user,fm[1]);
  if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,env,user));
  if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,env,user));
+ if(path==="/api/video/retry"&&req.method==="POST")return response(await fvRetry(req,env,user));
  const freeVideoFile=path.match(/^\/api\/video\/media\/([0-9a-f-]{36})$/i);
  if(freeVideoFile&&req.method==="GET")return fvMedia(req,env,user,freeVideoFile[1]);
  if(path==="/api/chat/stream"&&req.method==="POST")return chatStream(req,env,user);
@@ -2502,7 +2547,7 @@ async function main(req,env){
   const c=await dbGet(env.DB,"SELECT id,title,pinned_at,archived_at,project_id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
   if(!c)return fail("聊天不存在",404);
   if(!cmd&&req.method==="GET"){
-   const r=await env.DB.prepare("SELECT m.id,m.role,m.body,m.model,m.created_at,m.usage_json,COALESCE(a.bookmarked,0) AS saved,COALESCE(a.feedback,0) AS feedback FROM messages m LEFT JOIN message_actions a ON a.message_id=m.id AND a.user_id=m.user_id WHERE m.chat_id=? AND m.user_id=? ORDER BY m.created_at ASC LIMIT 150").bind(chatId,user.id).all();
+   const r=await env.DB.prepare("SELECT m.id,m.role,CASE WHEN m.role='assistant' AND m.body LIKE '免费视频未完成:%' AND j.id IS NOT NULL THEN '[[aigzt:video-job:'||j.id||']]' ELSE m.body END AS body,m.model,m.created_at,m.usage_json,COALESCE(a.bookmarked,0) AS saved,COALESCE(a.feedback,0) AS feedback FROM messages m LEFT JOIN message_actions a ON a.message_id=m.id AND a.user_id=m.user_id LEFT JOIN image_jobs j ON j.message_id=m.id AND j.user_id=m.user_id AND j.charged_day='video-free' WHERE m.chat_id=? AND m.user_id=? ORDER BY m.created_at ASC LIMIT 150").bind(chatId,user.id).all();
    return response({ok:true,chat:c,messages:r.results||[]});
   }
   if(req.method==="POST"&&cmd==="delete"){
