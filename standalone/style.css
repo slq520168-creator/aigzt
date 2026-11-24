@@ -115,10 +115,10 @@ a{color:inherit}
 .messages{width:100%;max-width:1100px;margin:0 auto;padding:15px 16px 40px}
 .message{display:flex;gap:13px;align-items:flex-start;line-height:1.75;margin:15px 0 24px}
 .message.user{justify-content:flex-end;flex-direction:column;align-items:flex-end;gap:2px}
-.message.assistant{display:grid;grid-template-columns:36px minmax(0,1fr);column-gap:6px;row-gap:2px}
-.message.assistant>.avatar-ai{grid-column:1;grid-row:1}
-.message.assistant>.bubble{grid-column:2;grid-row:1;width:100%;min-width:0}
-.message.assistant>.message-copy-bar{grid-column:2;grid-row:2;justify-content:flex-start;margin-top:0}
+.message.assistant{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;row-gap:4px}
+.message.assistant>.avatar-ai{grid-column:1;grid-row:1;justify-self:start}
+.message.assistant>.bubble{grid-column:1;grid-row:2;width:100%;min-width:0;max-width:100%}
+
 .bubble{max-width:min(99%,1000px);overflow-wrap:anywhere;white-space:pre-wrap;min-width:0;font-size:var(--aigzt-chat-text-size,14px)}
 .message.user .bubble{padding:10px 16px;border-radius:19px 19px 5px 19px;background:#f1f3f4}
 .user-message-text{line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
@@ -138,7 +138,7 @@ a{color:inherit}
 .message-speak{font-size:11px;line-height:1.4;border:1px solid #cedce6;border-radius:7px;color:#356e93;background:#fff;padding:4px 8px;cursor:pointer}
 .message-speak[aria-pressed="true"]{background:#e7f4fc;border-color:#73accb;color:#135f87}
 .message-copy-bar{display:flex;justify-content:flex-end;align-items:center;gap:2px;min-height:34px;margin-top:2px;position:relative;max-width:100%;flex-wrap:wrap}
-.message.assistant>.message-copy-bar{grid-column:2;grid-row:2;justify-content:flex-start;width:fit-content;max-width:100%}
+.message.assistant>.message-copy-bar{grid-column:1;grid-row:3;justify-content:flex-start;width:fit-content;max-width:100%;margin-top:0}
 .message.user>.message-copy-bar{align-self:flex-end}
 .message-time{font-size:10px;color:#87939e;white-space:nowrap;margin-left:4px;font-variant-numeric:tabular-nums}
 .message-copy-btn{display:inline-grid;place-items:center;flex:none;width:33px;height:33px;min-width:33px;min-height:33px;border:0;border-radius:9px;padding:7px;line-height:1;color:#6b7784;background:transparent;cursor:pointer;touch-action:manipulation}
@@ -159,7 +159,7 @@ a{color:inherit}
 .message.user>.message-copy-bar{margin-top:0;min-height:22px;padding-right:3px}
 .message-translation{max-width:100%;min-width:0;box-sizing:border-box;margin-top:2px;padding:8px 11px;border-left:2px solid #a9becf;border-radius:0 8px 8px 0;background:#f7f9fc;font-size:var(--aigzt-chat-text-size,14px);color:#425465;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow-y:auto;user-select:text}
 .message-translation[hidden]{display:none!important}
-.message.assistant>.message-translation{grid-column:2;grid-row:3;align-self:start}
+.message.assistant>.message-translation{grid-column:1;grid-row:4;align-self:start}
 .message.user>.message-translation{align-self:flex-end;width:fit-content;max-width:100%;text-align:start}
 .draw-previous-section{margin-top:12px;padding-top:10px;border-top:1px solid #e3eaed}
 .message.assistant .bubble p{margin:0 0 12px;white-space:pre-wrap}
