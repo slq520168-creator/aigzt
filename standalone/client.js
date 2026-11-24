@@ -1969,6 +1969,8 @@ function updateModelTitle(){
  updateComposerModel();
 }
 function setModel(row){
+ const route=row.availableWith==="openrouter-key"?"openrouter":row.provider;
+ if(unavailableChatModel(route,row.id)){flashError("此模型当前不可调用，请选择其他模型");return}
  if(row.type!=="text"&&!(row.type==="image"&&row.availableWith==="openrouter-key"&&row.outputImages)){
   if(row.type==="audio")return;
   hide("modelDialog");
@@ -2915,7 +2917,7 @@ async function apiChatStream(payload,onDelta){
    const data=packet.split("\n").find(line=>line.startsWith("data:"));if(!data)continue;
    let event;try{event=JSON.parse(data.slice(5).trim())}catch{continue}
    if(event.type==="delta"&&typeof event.text==="string")onDelta(event.text);
-   else if(event.type==="error")throw Error(event.error||"回复中断");
+   else if(event.type==="error")throw Object.assign(Error(event.error||"回复中断"),{code:event.code||null,upstreamStatus:event.upstreamStatus||null});
    else if(event.type==="done")final=event;
   }
  }
@@ -2954,6 +2956,9 @@ async function sendMessage(continueFrom=null){
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
   flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
  }
+ if(submittedMode==="text"&&S.provider!=="free"&&unavailableChatModel(S.provider,S.model)){
+  flashError("此模型当前不可调用，请选择其他可用模型；草稿及附件已保留。");openModels();return;
+ }
  if(submittedMode==="text"&&S.provider!=="free"&&!connected(S.provider)){
   openKeyPanel(S.provider);return;
  }
@@ -2971,6 +2976,7 @@ async function sendMessage(continueFrom=null){
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
  const isNew=!S.chatId;
  const isFreeMessage=submittedMode==="text"&&S.provider==="free";
+ const requestProvider=S.provider,requestModel=S.model;
  const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
@@ -3039,6 +3045,10 @@ async function sendMessage(continueFrom=null){
   }
   await fetchChats();void fetchMe();
  }catch(e){
+   if(submittedMode==="text"&&requestProvider!=="free"&&["MODEL_RETIRED","MODEL_UNAVAILABLE"].includes(e?.code)){
+    unavailableChatModels.set(chatModelKey(requestProvider,requestModel),{code:e.code,at:Date.now()});
+    if(e.code==="MODEL_UNAVAILABLE")void refreshConnectedModelCatalog(requestProvider);
+   }
    setPortraitState(loading,"error");
    if(voiceSession.active&&voiceSession.pending){voiceSession.pending=false;sayStatus("回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
@@ -3074,19 +3084,53 @@ async function sendMessage(continueFrom=null){
  }
  finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
+// Keep confirmed failures scoped to the current account, provider and exact model.
+const unavailableChatModels=new Map();
+const chatModelKey=(provider,model)=>String(S.user?.id||"")+"\0"+provider+"\0"+model;
+function unavailableChatModel(provider,model){
+ const entry=unavailableChatModels.get(chatModelKey(provider,model));
+ if(!entry)return null;
+ if(entry.code!=="MODEL_RETIRED"&&Date.now()-entry.at>=15*60000){unavailableChatModels.delete(chatModelKey(provider,model));return null}
+ return entry;
+}
+let catalogRefreshAt=0,catalogRefreshPromise=null;
+const providerCatalogRefresh=new Map();
+async function refreshConnectedModelCatalog(provider){
+ if(!S.user?.id||!S.savedProviders[provider]||VIDEO_ONLY_PROVIDERS.has(provider)||provider==="free")return;
+ const owner=S.user.id,key=owner+"\0"+provider,old=providerCatalogRefresh.get(key);
+ if(old?.pending)return old.pending;
+ if(old&&Date.now()-old.at<15*60000)return;
+ const entry={at:Date.now(),pending:null};providerCatalogRefresh.set(key,entry);
+ entry.pending=(async()=>{
+  try{
+   const data=await api("/api/connections/"+provider+"/models",{});
+   if(S.user?.id!==owner||!data.verified||!Array.isArray(data.models)||!data.models.length)return;
+   S.connected[provider]=data.models;
+   for(const model of data.models){const k=chatModelKey(provider,model.id);const blocked=unavailableChatModels.get(k);if(blocked?.code==="MODEL_UNAVAILABLE")unavailableChatModels.delete(k)}
+   refreshSourceChips();if($("modelDialog").open)renderModels();
+  }catch{/* A catalog outage cannot invalidate an existing usable model. */}
+  finally{entry.pending=null}
+ })();
+ return entry.pending;
+}
 async function loadCatalog(){
- if(S.loadedCatalog)return;
- $("modelCount").textContent="模型目录";
- try{
-  const d=await api("/api/models");
-  S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
-  S.remoteModels=(d.models||[]).map(m=>({...m,provider:"openrouter"}));
-  S.loadedCatalog=true;
-  if(S.workMode)workModelHints();
- }catch(e){
-  S.freeModels=[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}];
- }
- renderModels();
+ if(catalogRefreshPromise)return catalogRefreshPromise;
+ if(S.loadedCatalog&&Date.now()-catalogRefreshAt<15*60000)return;
+ if(!S.loadedCatalog)$("modelCount").textContent="模型目录";
+ catalogRefreshAt=Date.now();
+ catalogRefreshPromise=(async()=>{
+  try{
+   const d=await api("/api/models");
+   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
+   if(!d.catalogError&&Array.isArray(d.models)&&d.models.length){
+    S.remoteModels=d.models.map(m=>({...m,provider:"openrouter"}));
+    S.loadedCatalog=true;
+   }
+   if(S.workMode)workModelHints();
+  }catch{/* Keep the last successful model directory. */}
+  finally{catalogRefreshPromise=null;renderModels()}
+ })();
+ return catalogRefreshPromise;
 }
 // Public catalog ownership is independent of the API gateway used to invoke the model.
 const CHINA_MODEL_GROUPS=[
@@ -3179,7 +3223,7 @@ function renderModels(){
  const models=allModels();renderChinaBrands(models);
  const visible=models.filter(modelMatches);
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
-  const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model)};
+  const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model),unlisted:true};
   if(modelMatches(active))visible.unshift(active);
  }
  visible.sort((a,b)=>Number(modelIsSelected(b))-Number(modelIsSelected(a)));
@@ -3187,7 +3231,7 @@ function renderModels(){
  $("modelCount").textContent=count+" 个模型";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
- const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)).join("|");
+ const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)).join("|");
  if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelDialog"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
@@ -3196,15 +3240,15 @@ function renderModels(){
   const via=item.availableWith==="openrouter-key"?"openrouter":item.provider,selected=modelIsSelected(item);
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
-  const saved=S.savedProviders[via],verified=!!saved?.verified;
-  const tag=node("span","price-tag"+(item.free?" free":""),selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
+  const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id);
+  const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"已连接":saved?"待验证":item.free?"免费 · 需连接":"需连接");
   title.append(tag);
   const owner=domesticGroupFor(item);
   info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+(WORK_PROVIDER_SHORT[via]||via)+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image"].includes(item.type)||(item.type==="video"&&VIDEO_OPTIONS[item.provider]?.includes(item.id));
-  const button=node("button","model-action",!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
-  button.disabled=!actionable||selected;
-  if(actionable)button.addEventListener("click",()=>setModel(item));
+  const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
+  button.disabled=!!blocked||!actionable||selected;
+  if(actionable&&!blocked)button.addEventListener("click",()=>setModel(item));
   row.append(info,button);list.append(row);
  }
  dialog.scrollTop=previousTop;
@@ -3234,12 +3278,7 @@ function activateSource(name){
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===name);
  renderModels();
  if(name==="family:china"||name.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
- if(S.savedProviders[name]&&S.connected[name]?.length<2){
-  void api("/api/connections/"+name+"/models",{}).then(result=>{
-   S.connected[name]=result.models||S.connected[name];
-   if(S.source===name)renderModels();
-  }).catch(e=>flashError(humanError(e)));
- }
+ if(S.savedProviders[name])void refreshConnectedModelCatalog(name);
 }
 function refreshSourceChips(){
  const container=$("sourceChips");
@@ -3255,6 +3294,8 @@ function openModels(){
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
  show("modelDialog");renderModels();void loadCatalog();
+ if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
+ else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
  if(S.source==="family:china"||S.source.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
 }
 function openKeyPanel(provider){

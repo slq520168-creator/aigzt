@@ -233,16 +233,16 @@ async function listModels(env){
   const upstream=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
   if(!upstream.ok)throw Error("OpenRouter 模型目录暂时不可用："+upstream.status);
   data=await upstream.json();
-  const rsp=new Response(JSON.stringify(data),{headers:{"content-type":"application/json","cache-control":"public,max-age=3600"}});
+  const rsp=new Response(JSON.stringify(data),{headers:{"content-type":"application/json","cache-control":"public,max-age=900"}});
   await cache.put(req,rsp).catch(()=>{});
  }
- const list=Array.isArray(data?.data)?data.data:[];
+ const list=Array.isArray(data?.data)?data.data.filter(m=>m.lifecycle!=="retired"&&m.active!==false):[];
  const models=list.filter(m=>typeof m.id==="string").map(m=>{
   const inMods=m.architecture?.input_modalities||[];
   const outMods=m.architecture?.output_modalities||[];
   const priceIn=m.pricing?.prompt??null,priceOut=m.pricing?.completion??null;
   const free=String(priceIn)==="0"&&String(priceOut)==="0";
-  const media=outMods.includes("video")?"video":outMods.includes("image")&&!outMods.includes("text")?"image":"text";
+  const media=outMods.includes("video")?"video":outMods.includes("image")&&!outMods.includes("text")?"image":outMods.length&&!outMods.includes("text")&&outMods.some(x=>x==="audio"||x==="music")?"audio":"text";
   return {id:m.id,name:m.name||m.id,provider:m.id.split("/")[0]||"其他",type:media,free,
    context:m.context_length||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",
    inputImages:inMods.includes("image"),inputFiles:inMods.includes("file"),outputImages:outMods.includes("image"),outputText:outMods.includes("text"),description:truncate(m.description,160)};
@@ -367,7 +367,7 @@ async function providerModels(body){
  }
  const json=await resp.json();
  let models=id==="gemini"?(json.models||[]).filter(x=>x.name?.startsWith("models/gemini-")).map(x=>({id:x.name.slice(7),name:x.displayName||x.name})):
-  (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired").map(x=>({
+  (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired"&&x.active!==false).map(x=>({
   id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":""),
   free:providerModelIsFree(id,x.id),
   inputImages:id==="groq"&&groqVisionModel(x.id),
@@ -420,6 +420,38 @@ function replyMedia(parts,images=[]){
   if(p?.type==="image"&&p.source?.type==="base64")add("data:"+p.source.media_type+";base64,"+p.source.data);
  }
  return {content,images,add};
+}
+// Distinguish explicit model retirement from a missing route or account entitlement.
+function classifyModelFailure(status,body){
+ const detail=body?.error&&typeof body.error==="object"?body.error:body||{};
+ const code=String(detail.code||detail.type||"").toLowerCase();
+ const message=String(detail.message||"").slice(0,1200).toLowerCase();
+ if([400,404,410].includes(status)){
+  if(["model_decommissioned","model_retired","model_discontinued"].includes(code)||/\bmodel\b.{0,120}\b(?:has been decommissioned|has been retired|has been discontinued|is decommissioned|is retired|is no longer supported)\b/.test(message))
+   return {code:"MODEL_RETIRED",message:"服务商已确认此模型停止服务，请选择其他模型"};
+  if(["model_not_found","model_not_available","invalid_model","model_access_denied"].includes(code))
+   return {code:"MODEL_UNAVAILABLE",message:"当前账号无法使用此模型，请核对服务商目录及权限"};
+  if(status===404||status===410)return {code:"UPSTREAM_ROUTE",message:"服务商接口或模型地址暂不可用，请核对接口及账号权限"};
+ }
+ if(status===401)return {code:"AUTH",message:"服务商授权已失效，请检查已保存的密钥"};
+ if(status===403)return {code:"ACCESS",message:"服务商访问受限，请检查账号权限或地区限制"};
+ if(status===429)return {code:"RATE_LIMIT",message:"服务商调用频率或额度已达上限，请稍后再试"};
+ if(status===402)return {code:"BILLING",message:"服务商需要充值，本次请求已停止"};
+ if(status===413)return {code:"CAPACITY",message:"所选模型请求容量超限（HTTP 413），请缩短输入或检查额度"};
+ return {code:"UPSTREAM_ERROR",message:"服务商暂无法完成请求（HTTP "+status+"）"};
+}
+async function externalModelFailure(res){
+ let payload=null;
+ // Read only a bounded error response, never expose raw upstream messages or credentials.
+ try{
+  const reader=res.body?.getReader();
+  if(reader){const decoder=new TextDecoder();let text="",size=0;
+   while(size<8192){const r=await reader.read();if(r.done)break;const chunk=r.value.subarray(0,8192-size);size+=chunk.length;text+=decoder.decode(chunk,{stream:true});}
+   await reader.cancel().catch(()=>{});try{payload=JSON.parse(text)}catch{}
+  }
+ }catch{}
+ const failure=classifyModelFailure(res.status,payload);
+ return Object.assign(new Error(failure.message),{code:failure.code,status:res.status===429?429:res.status===401||res.status===403?400:503,upstreamStatus:res.status});
 }
 async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false,inputParts=[]){
  requireModelId(model);
@@ -480,7 +512,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   }
  }catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503})}
  if(res.status>=300&&res.status<400)throw Error("上游跳转已拦截");
- if(!res.ok)throw Object.assign(new Error(res.status===401?"模型连接失败：密钥无效或已撤销":res.status===403?"模型连接失败：访问权限或地区限制":res.status===404?"所选模型已下线，请重新选择":res.status===429?"服务商调用频率或额度已达上限":res.status===402?"需要充值，已停止请求":res.status===413?"所选模型请求容量超限（HTTP 413），已保留原模型；请检查账号额度或缩短本次输入":"服务商连接失败 HTTP "+res.status),{status:res.status===429?429:res.status===401||res.status===403?400:503,upstreamStatus:res.status});
+ if(!res.ok)throw await externalModelFailure(res);
  if(streaming){
   if(!res.body)throw Error("上游没有返回流式数据");
   const reader=res.body.getReader(),decoder=new TextDecoder();
@@ -803,7 +835,7 @@ function chatStream(req,env,user){
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
     send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,usage:result.usage||null,incomplete:result.incomplete});
-   }catch(e){send({type:"error",error:e?.message||"回复未完成"})}
+   }catch(e){send({type:"error",error:e?.message||"回复未完成",code:e?.code||null,upstreamStatus:e?.upstreamStatus||null})}
    finally{controller.close()}
   }
  });
@@ -2364,7 +2396,8 @@ async function main(req,env){
    const catalog=await providerModels({provider,apiKey:await revealKey(env,user.id,provider,row.iv,row.ciphertext),model:row.model_id||undefined});
    if(catalog.verified&&catalog.models?.length){
     const next=row.model_id||catalog.models.find(x=>x.type==="text")?.id||catalog.models[0].id;
-    await dbRun(env.DB,"UPDATE user_api_keys SET verified=1,model_id=? WHERE user_id=? AND provider=?",next,user.id,provider);
+    // Directory verification does not imply the previously selected model is still available.
+    if(row.verified!==1||next!==row.model_id)await dbRun(env.DB,"UPDATE user_api_keys SET verified=1,model_id=? WHERE user_id=? AND provider=?",next,user.id,provider);
    }
    return response(catalog);
   }
