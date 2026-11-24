@@ -243,7 +243,7 @@ async function listModels(env){
   const inMods=m.architecture?.input_modalities||[];
   const outMods=m.architecture?.output_modalities||[];
   const priceIn=m.pricing?.prompt??null,priceOut=m.pricing?.completion??null;
-  const free=String(priceIn)==="0"&&String(priceOut)==="0";
+  const free=(m.id==="openrouter/free"||m.id.endsWith(":free"))&&priceIn!==null&&priceOut!==null&&Number(priceIn)===0&&Number(priceOut)===0;
   const media=outMods.includes("video")?"video":outMods.includes("image")&&!outMods.includes("text")?"image":outMods.length&&!outMods.includes("text")&&outMods.some(x=>x==="audio"||x==="music")?"audio":"text";
   return {id:m.id,name:m.name||m.id,provider:m.id.split("/")[0]||"其他",type:media,free,
    context:m.context_length||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",
@@ -625,11 +625,11 @@ async function freeRouteCatalog(env){
  // Do not expose provider names, failures or cooldowns to the public UI.
  return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard"){
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false){
  const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
  const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
  const history=chatProviderHistory(messages.slice(-14));
- const sources=freeSources(env);
+ const sources=freeSources(env).filter(s=>!authenticatedOnly||Boolean(s.key));
  const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
  const started=Date.now();
  const states=await freeRouteStates(env),now=Date.now();
@@ -740,6 +740,11 @@ async function translateChatMessage(req,env,user){
 }
 
 const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助手。区分事实、推断和未知，提出可验证的方法。不能假装已经联网检索。","imagePrompt":"你是图片提示词设计师。生成可直接使用的中英文画面提示词，包含主体、场景、镜头和风格。","group":"模拟虚构的多角色群聊，逐条标注说话人并维护设定。不得声称参与者是真人或真实群成员。","story":"你是中文小说创作助手，保持人物、时间线和视角一致，按照用户要求创作并支持接续。","character":"你是角色创作者，建立背景、外貌、性格、能力、目标和关系，保持一致。","adventure":"你是互动文字冒险主持人。保持状态，描述场景并等待玩家选择。","mentor":"你是学习导师。由浅入深解释原理，给出实例与练习，根据反馈调整。","debate":"你是辩论助手。公平展示正反两方论点、证据与弱点，不编造证据。","live":"你是直播策划助手，提供节目流程、直播脚本和互动问题，不声称已经真正开启直播。"});
+function canUseFreeChatFallback(body,error,emitted,remaining){
+ return body.freeFallback===true&&!emitted&&remaining>=1500&&!body.outputImages&&!body.imageOnly&&
+  (!Array.isArray(body.attachments)||body.attachments.length===0)&&
+  ["BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","LIMIT_UNKNOWN","AUTH","MODEL_UNAVAILABLE","MODEL_RETIRED"].includes(error?.code);
+}
 async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
@@ -822,15 +827,25 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
  const custom=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
  const selectedMessages=custom?.instruction?[{role:"system",body:"此用户为当前所选模型保存的自定义回复要求：\n"+truncate(custom.instruction,1600)},...messages]:messages;
- let result;
+ let result,freeFallback=false;
+ const requestStarted=Date.now();
  try{
   if(provider==="free"){
    result=nativePlan?await callExternal(nativePlan.provider,nativePlan.model,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",nativePlan.model,replyLevel),onDelta,false,false,nativePlan.parts):await freeText(env,selectedMessages,mode,model,40000,false,replyLevel);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=chatOutputBudget(provider,model,replyLevel);
-    // Explicit selections never fall back to another model, even on 404 or 429.
-    result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,onDelta,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[]);
+    // Only an explicitly enabled, zero-cost text fallback may follow a definitive rejection.
+    // Keep the same stored user turn and exact continuation; never retry uncertain timeouts or partial output.
+    let emitted=false;
+    try{
+     result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[]);
+    }catch(e){
+     const remaining=50000-(Date.now()-requestStarted);
+     if(!canUseFreeChatFallback(body,e,emitted,remaining))throw e;
+     try{result=await freeText(env,selectedMessages,mode,"free:auto",Math.min(remaining,25000),true,replyLevel,true);freeFallback=true}
+     catch(fallback){throw Object.assign(Error(e.message+"；免费备用线路暂不可用："+fallback.message),{status:503,code:"FREE_FALLBACK_FAILED"})}
+    }
   }
 
  }catch(e){
@@ -843,7 +858,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const storedReply=[result.content,...remote.map(x=>"![模型图片]("+x.replace(/[()]/g,ch=>encodeURIComponent(ch))+")"),...(!result.content&&!remote.length&&temporary.length?["图片已生成（仅当前会话展示）"]:[])].filter(Boolean).join("\n\n");
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,stamp,chatId,user.id);
- return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,incomplete:Boolean(result.incomplete)};
+ return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,incomplete:Boolean(result.incomplete)};
 }
 
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
@@ -854,7 +869,7 @@ function chatStream(req,env,user){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
     const result=await chat(req,env,user,token=>send({type:"delta",text:token}));
-    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,usage:result.usage||null,incomplete:result.incomplete});
+    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,freeFallback:result.freeFallback===true,usage:result.usage||null,incomplete:result.incomplete});
    }catch(e){send({type:"error",error:e?.message||"回复未完成",code:e?.code||null,upstreamStatus:e?.upstreamStatus||null})}
    finally{controller.close()}
   }

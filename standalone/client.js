@@ -3068,7 +3068,7 @@ async function sendMessage(continueFrom=null){
      });
     };
     try{result=await apiChatStream({chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
-      mode:S.code?"code":"general",outputImages:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages),imageOnly:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
+      mode:S.code?"code":"general",freeFallback:true,outputImages:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages),imageOnly:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
@@ -3086,6 +3086,7 @@ async function sendMessage(continueFrom=null){
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
    S.chatId=result.chatId;
+   if(submittedMode==="text"&&result.freeFallback===true&&S.provider===requestProvider&&S.model===requestModel){setFreeDefault(false);rememberChatModelSelection();updateModelTitle()}
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
     if(submittedMode==="text")setPortraitState(loading,"finished");
@@ -3117,17 +3118,18 @@ async function sendMessage(continueFrom=null){
    if(freeVideo){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;if(S.composerMode!=="video")setComposerMode("video")}
    else if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
-   loading.remove();sentRow.remove();settlePromptSize();void sendMessage();
+   loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom);
   });
   const detail=submittedMode==="text"&&requestProvider!=="free"?providerLabel(requestProvider)+"："+humanError(e):humanError(e);
   if(isImageMessage){status.append(retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage&&submittedMode==="text"){
-   const alternate=messageTool("layers","切换免费模型",()=>{
-    if(S.busy||S.workMode||S.freeToolsMode)return;
+   const alternate=messageTool("layers","免费线路重试",()=>{
+    if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
+    if(($("prompt").value.trim()||S.attachments.length)&&!confirm("重试会替换未发送的草稿及附件，继续吗？"))return;
     setFreeDefault(false);rememberChatModelSelection();updateModelTitle();
     if(S.composerMode!=="text")setComposerMode("text");
-    if(!$("prompt").value.trim()){$("prompt").value=prompt;settlePromptSize()}
-    $("prompt").focus();
+    $("prompt").value=prompt;S.attachments=attached.slice();renderAttachments();settlePromptSize();
+    loading.remove();sentRow.remove();void sendMessage(continueFrom);
    });
    status.append(alternate);
   }
@@ -3258,6 +3260,7 @@ function modelMatches(m){
   if(!groupMatch)return false;
  }else if(S.source==="connected"){if(!connected(modelRoute(m)))return false}
  else if(S.source.startsWith("route:")){if(providerRoute(modelRoute(m))!==S.source.slice(6))return false}
+ else if(S.source==="free"){if(!m.free)return false}
  else if(S.source!=="all"&&modelRoute(m)!==S.source)return false;
  if(S.filter==="free"&&!m.free)return false;
  if(S.filter==="text"&&m.type!=="text")return false;
@@ -3280,7 +3283,7 @@ function renderModels(){
  }
  // Rank actual routes, never model author names; preserve explicit selection and payment consent.
  const directRank=m=>providerRoute(modelRoute(m))==="official"?3:providerRoute(modelRoute(m))==="free"?2:1;
- visible.sort((a,b)=>directRank(b)-directRank(a)||Number(Boolean(S.savedProviders[modelRoute(b)]?.verified))-Number(Boolean(S.savedProviders[modelRoute(a)]?.verified))||Number(modelIsSelected(b))-Number(modelIsSelected(a)));
+ visible.sort((a,b)=>Number(b.free===true)-Number(a.free===true)||directRank(b)-directRank(a)||Number(Boolean(S.savedProviders[modelRoute(b)]?.verified))-Number(Boolean(S.savedProviders[modelRoute(a)]?.verified))||Number(modelIsSelected(b))-Number(modelIsSelected(a)));
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  $("modelCount").textContent=count+" 个模型";
  $("moreModels").hidden=count<=shown.length;
@@ -3296,7 +3299,8 @@ function renderModels(){
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
   const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id);
   const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"密钥已验证":saved?"待验证":item.free?"免费 · 需连接":"需连接");
-  title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),tag);
+  const priceLabel=item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号额度 / 可能收费";
+  title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),node("span","price-tag"+(item.free?" free":""),priceLabel),tag);
   const owner=domesticGroupFor(item);
   info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image"].includes(item.type)||(item.type==="video"&&VIDEO_OPTIONS[item.provider]?.includes(item.id));
