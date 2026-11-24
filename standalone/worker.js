@@ -884,7 +884,7 @@ async function mediaChat(req,env,user){
   await env.DB.batch(writes);
   return {ok:true,chatId,userMessageId,assistantMessageId,reply,model:"免费视频",pending:true,requestId:task.requestId};
  }
- const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt,style:b.style,shape:b.shape}:{prompt,model:"grok-imagine-video-1.5",apiKey:b.apiKey,confirmed:b.confirmed})});
+ const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt,style:b.style,shape:b.shape}:{prompt,provider:b.provider||"grok",model:b.model||"grok-imagine-video-1.5",ratio:b.ratio,apiKey:b.apiKey,confirmed:b.confirmed})});
  if(mode==="image"){
   // A chat image has its own task and messages. Never route it through the text-chat API.
   // Persist only task metadata and text; generated image bytes remain session-only.
@@ -905,7 +905,7 @@ async function mediaChat(req,env,user){
   return {ok:true,chatId,userMessageId,assistantMessageId:messageId,reply,model:result.model||"免费作图",pending:true,jobId:result.jobId};
  }
  const result=await createVideo(mediaReq,env,user);
- const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply="视频任务已提交："+result.requestId+"（请使用自己的Grok额度查询进度）";
+ const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply="[[aigzt:paid-video:"+result.provider+":"+result.requestId+"]]";
  if(!exists){const pid=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/.test(b.projectId)?b.projectId:null;
   if(pid&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",pid,user.id))throw Error("项目不存在");
   await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now,pid);}

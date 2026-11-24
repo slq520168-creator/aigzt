@@ -59,7 +59,7 @@
       <button type="button" id="topWork" class="top-mode-tab" role="tab" aria-selected="false" aria-controls="workBoard">工作</button>
      </div>
     </div>
-    <div class="top-right"><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerMore" aria-label="聊天操作"><span class="ui-icon" data-icon="ellipsis" aria-hidden="true"></span></button></div>
+    <div class="top-right"><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button></div>
    </header>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>输入任务，自动规划与执行</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
@@ -173,7 +173,6 @@
       <button type="button" class="composer-model-switch" id="composerSwitchModel" aria-label="切换聊天模型" title="切换模型"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button>
       <span class="composer-model-caption" id="composerModelCaption">聊天模型</span>
       <span class="composer-model-name" id="composerModelName" aria-live="polite" title="当前选择：免费自动">免费自动</span>
-      <button type="button" class="composer-mode-exit" id="composerModeExit" aria-label="退出工具，返回聊天" title="返回聊天" hidden><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button>
      </div>
      <div class="composer-inner">
       <button type="button" class="plus-tool icon-btn" id="attachButton" aria-label="添加附件或工具"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button>
@@ -414,35 +413,6 @@
  <fieldset class="draw-field"><legend>比例</legend><div id="drawShape" class="draw-choices draw-shape-options" data-value="portrait" role="group" aria-label="图片比例"><button type="button" class="draw-choice" data-value="square" aria-pressed="false">1:1</button><button type="button" class="draw-choice active" data-value="portrait" aria-pressed="true">3:4</button><button type="button" class="draw-choice" data-value="portrait916" aria-pressed="false">9:16</button><button type="button" class="draw-choice" data-value="landscape" aria-pressed="false">4:3</button><button type="button" class="draw-choice" data-value="landscape169" aria-pressed="false">16:9</button></div></fieldset>
  <fieldset class="draw-field"><legend>数量</legend><div id="drawCount" class="draw-choices draw-count-options" data-value="1" role="group" aria-label="生成数量"><button type="button" class="draw-choice active" data-value="1" aria-pressed="true">1 张</button><button type="button" class="draw-choice" data-value="2" aria-pressed="false">2 张</button><button type="button" class="draw-choice" data-value="4" aria-pressed="false">4 张</button></div></fieldset>
  </div>
- <div id="videoSettings" class="video-settings" hidden>
-  <div class="video-section-heading"><strong>视频模型</strong><span>3 个免费来源 · 个人 API 可选</span></div>
-  <div id="videoModelGrid" class="video-model-grid" role="group" aria-label="选择视频模型">
-    <button type="button" class="video-model-card selected" data-video-provider="freetext" data-video-model="wan2.2-ti2v" aria-pressed="true"><span class="video-card-title"><strong>Wan 文字生成视频</strong><span class="video-card-status">免费额度</span></span><small>输入描述生成视频 · 共享 ZeroGPU</small></button>
-    <button type="button" class="video-model-card" data-video-provider="freewan" data-video-model="wan2.2-i2v-fast" aria-pressed="true"><span class="video-card-title"><strong>Wan 2.2 图生视频</strong><span class="video-card-status">免费额度</span></span><small>上传图片生成运动画面 · 共享 ZeroGPU</small></button>
-    <button type="button" class="video-model-card" data-video-provider="freeloop" data-video-model="wan2.2-firstlast" aria-pressed="false"><span class="video-card-title"><strong>Wan 2.2 首尾帧</strong><span class="video-card-status">免费额度</span></span><small>首帧＋尾帧两张图 · 共享 ZeroGPU</small></button>
-   <button type="button" class="video-model-card selected" data-video-provider="grok" data-video-model="grok-imagine-video-1.5" aria-pressed="true"><span class="video-card-title"><strong>Grok Imagine 1.5</strong><span class="video-card-status">个人 API</span></span><small>xAI · 6 秒 / 720p</small></button>
-   <button type="button" class="video-model-card" data-video-provider="runway" data-video-model="gen4.5" aria-pressed="false"><span class="video-card-title"><strong>Runway Gen-4.5</strong><span class="video-card-status">个人 API</span></span><small>Runway · 官方视频模型</small></button>
-   <button type="button" class="video-model-card" data-video-provider="runway" data-video-model="veo3.1_fast" aria-pressed="false"><span class="video-card-title"><strong>Google Veo 3.1 Fast</strong><span class="video-card-status">个人 API</span></span><small>Runway 多厂商 API</small></button>
-   <button type="button" class="video-model-card" data-video-provider="runway" data-video-model="seedance2_fast" aria-pressed="false"><span class="video-card-title"><strong>Seedance 2 Fast</strong><span class="video-card-status">个人 API</span></span><small>Runway 多厂商 API</small></button>
-   <button type="button" class="video-model-card" data-video-provider="luma" data-video-model="ray-2" aria-pressed="false"><span class="video-card-title"><strong>Luma Ray 2</strong><span class="video-card-status">个人 API</span></span><small>Luma Dream Machine</small></button>
-   <button type="button" class="video-model-card" data-video-provider="luma" data-video-model="ray-flash-2" aria-pressed="false"><span class="video-card-title"><strong>Luma Ray Flash 2</strong><span class="video-card-status">个人 API</span></span><small>Luma Dream Machine</small></button>
-   <button type="button" class="video-model-card" data-video-provider="vidu" data-video-model="viduq3-turbo" aria-pressed="false"><span class="video-card-title"><strong>Vidu Q3 Turbo</strong><span class="video-card-status">个人 API</span></span><small>Vidu 视频 API</small></button>
-   <button type="button" class="video-model-card" data-video-provider="vidu" data-video-model="viduq3-pro" aria-pressed="false"><span class="video-card-title"><strong>Vidu Q3 Pro</strong><span class="video-card-status">个人 API</span></span><small>Vidu 视频 API</small></button>
-   <button type="button" class="video-model-card" data-video-provider="vidu" data-video-model="viduq2" aria-pressed="false"><span class="video-card-title"><strong>Vidu Q2</strong><span class="video-card-status">个人 API</span></span><small>Vidu 视频 API</small></button>
-  </div>
-  <div class="video-model-terms">
-    <label id="videoImageRow" class="video-image-upload"><span>图生视频参考图片</span><input type="file" id="videoImageInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif"><small id="videoImageName">文字生成可不上传；图生视频需上传 JPG、PNG 或 WebP</small></label>
-   <label id="videoEndImageRow" class="video-image-upload" hidden><span>结束画面（尾帧）</span><input type="file" id="videoEndImageInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif"><small id="videoEndImageName">请上传尾帧，与首帧不同</small></label>
-   <div id="videoRatio" class="video-ratio-choices" role="group" aria-label="视频画面比例">
-    <button type="button" data-ratio="16:9" class="active" aria-pressed="true">横屏 16:9</button>
-    <button type="button" data-ratio="9:16" aria-pressed="false">竖屏 9:16</button>
-   </div>
-   <p id="videoModelInfo" class="video-availability-note">视频生成使用个人 API Key，实际费用按服务商计费。</p>
-   <div class="video-key-row"><span id="videoConnectedStatus">正在检查 API 连接</span><button id="videoConnectKey" class="outline" type="button">连接 API Key</button></div>
-   <label class="check-row" id="videoConfirmRow" hidden><input id="confirmVideo" type="checkbox">我确认使用所选服务商的个人 API 额度，可能产生费用。</label>
-  </div>
-  <p class="video-availability-note">免费模型使用第三方共享计算额度，不保证随时可用；不会自动切换到收费模型。其他模型由用户自行连接授权。</p>
- </div>
  <div class="draw-main-action">
    <button class="primary full" id="createButton">生成免费图片</button>
    <time class="draw-stopwatch" id="drawElapsed" aria-label="本批图片生成耗时" hidden>00:00</time>
@@ -457,8 +427,6 @@
    <div class="draw-result-head"><h3>上一轮图片 · 对比</h3></div>
    <div class="draw-gallery" id="drawPrevious"></div>
   </section>
-  <div class="media-preview" id="mediaPreview"></div>
-  <button id="refreshVideo" class="outline full" hidden>查询视频任务</button>
  </dialog>
 <div id="imageViewer" class="image-viewer" hidden role="dialog" aria-modal="true" aria-label="图片查看" tabindex="-1">
  <div class="iv-header"><span id="ivCounter"></span><button type="button" id="ivClose" aria-label="关闭图片"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div>
