@@ -1191,6 +1191,19 @@ function renderAssistantText(bubble,answer){
  }
  flush();
 }
+// Position the new text turn once; do not chase its growing end while reading.
+function positionNewTextReply(row,question,viewport){
+ if(!row?.isConnected||!viewport||viewport.hidden||viewport.clientHeight<=0)return;
+ const height=viewport.clientHeight;
+ const oldMinHeight=row.style.minHeight,oldAlignContent=row.style.alignContent;
+ row.dataset.readFromStart="1";
+ row.style.minHeight=Math.max(0,height-24)+"px";
+ row.style.alignContent="start";
+ const questionRect=question.getBoundingClientRect();
+ const anchor=questionRect.height<=height*.35?question:row;
+ viewport.scrollTop+=anchor.getBoundingClientRect().top-viewport.getBoundingClientRect().top-12;
+ return ()=>{row.style.minHeight=oldMinHeight;row.style.alignContent=oldAlignContent};
+}
 async function revealCompletedReply(row,reply){
  const bubble=row?.querySelector(".bubble");if(!bubble||!row.isConnected)return;
  const viewport=$("conversation"),letters=Array.from(String(reply||""));
@@ -1202,7 +1215,7 @@ async function revealCompletedReply(row,reply){
   const frame=()=>{
    if(!row.isConnected){resolve();return}
    const next=Math.min(letters.length,index+batch);
-   const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<155;
+   const nearBottom=row.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<155;
    bubble.append(document.createTextNode(letters.slice(index,next).join("")));
    index=next;if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
    if(index>=letters.length)resolve();else requestAnimationFrame(frame);
@@ -1984,7 +1997,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   const viewport=$("conversation");
  if(viewport&&!viewport.hidden){
   const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<150;
-  if(nearBottom||role==="user")viewport.scrollTop=viewport.scrollHeight;
+  if(row.dataset.readFromStart!=="1"&&(nearBottom||role==="user"))viewport.scrollTop=viewport.scrollHeight;
  }
  return row;
 }
@@ -3067,6 +3080,8 @@ async function sendMessage(continueFrom=null){
  dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);
  if(isImageMessage)showChatImageWaiting(loadingBubble,waitLabel);
  else loadingBubble.replaceChildren(status);
+ const textReading=submittedMode==="text"&&!(requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages));
+ const releaseReadingSpace=textReading?positionNewTextReply(loading,sentRow,$("conversation")):null;
  const startedAt=Date.now();
  const imageTimer=isImageMessage?window.setInterval(()=>{
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
@@ -3087,7 +3102,7 @@ async function sendMessage(continueFrom=null){
       scheduled=false;if(!active||!loading.isConnected)return;
       if(!pending)return;
       if(bubble.querySelector(".thinking-status")){bubble.classList.add("chat-revealing");bubble.replaceChildren()}
-      const nearBottom=viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
+      const nearBottom=loading.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
       bubble.textContent+=pending;pending="";
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
      });
@@ -3166,7 +3181,7 @@ async function sendMessage(continueFrom=null){
   }
   bubble.append(status);if(submittedMode!=="text"&&!isImageMessage)status.title=humanError(e);flashError("");
  }
- finally{if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
+ finally{releaseReadingSpace?.();if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
 // Keep confirmed failures scoped to the current account, provider and exact model.
 const unavailableChatModels=new Map();
