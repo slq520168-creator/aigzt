@@ -1665,7 +1665,6 @@ function updateChatActiveModel(){
  "选定模型 ID："+S.model+" · "+(S.savedProviders[S.provider]?.verified?"连接已保存":"连接尚待验证");
 }
 function updateComposerModel(){
- syncMiniTools();
  const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
  if(!line||!name||!switcher)return;
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
@@ -1736,9 +1735,6 @@ function syncMobileHeight(){
 
 /* Tool selections live exclusively in the + menu. */
 function syncMiniTools(){
- const label=$("selectedToolName"),clear=$("clearComposerTool");
- const current=S.composerMode==="image"?(S.miniToolChoice==="image-edit"?"图生图":"作图"):S.composerMode==="video"?(S.videoProvider==="freeloop"?"首尾帧":S.videoProvider==="freewan"?"图生视频":"视频"):S.code?"代码":"";
- if(label)label.textContent=current||"工具";if(clear)clear.hidden=!current;
  const active={
   miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",
   miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan",
@@ -3545,15 +3541,13 @@ function wire(){
  $("modelInstructionSave").addEventListener("click",()=>void saveModelInstruction());
  $("savedMessagesBtn").addEventListener("click",()=>void toggleSavedMessages());
  
- $("attachButton").addEventListener("click",()=>{if($("attachMenu").hidden){closeComposerTools();$("attachMenu").hidden=false}else hideAttachMenu()});
+ $("attachButton").addEventListener("click",()=>{if($("attachMenu").hidden){$("attachMenu").hidden=false}else hideAttachMenu()});
  // Native <label for=file-input> activation is a real iPhone user gesture.
  for(const id of ["cameraAction","photosAction","filesAction"]){
   // Leave native label's default activation untouched until the OS picker opens.
   $(id).addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$(id).click()}});
  }
- $("toolsAction").addEventListener("click",()=>{const tray=$("toolTray"),opening=tray.hidden;$("attachMenu").hidden=true;tray.hidden=!opening;$("toolsAction").setAttribute("aria-expanded",String(opening))});
- $("clearComposerTool").addEventListener("click",()=>{S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");setComposerMode("text");closeComposerTools();$("prompt").focus({preventScroll:true})});
- document.addEventListener("click",e=>{if(!$("toolTray").hidden&&!$("toolTray").contains(e.target)&&!$("composerToolSelector").contains(e.target))closeComposerTools()});
+ $("toolsAction").addEventListener("click",()=>{const tray=$("toolTray");tray.hidden=!tray.hidden;$("toolsAction").setAttribute("aria-expanded",String(!tray.hidden))});
  for(const id of ["attachmentInput","cameraInput","photosInput"]){$(id).addEventListener("change",e=>{hideAttachMenu();void uploadSelected(Array.from(e.target.files||[]));e.target.value=""})}
  $("imageMode").addEventListener("click",()=>{
   hideAttachMenu();setComposerMode(S.composerMode==="image"?"text":"image");
@@ -3644,8 +3638,7 @@ function wire(){
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();
 }
-function closeComposerTools(){$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false")}
-function hideAttachMenu(){$("attachMenu").hidden=true;closeComposerTools()}
+function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false")}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}

@@ -237,9 +237,9 @@ a{color:inherit}
 .attach-menu button,.attach-menu label{display:flex;align-items:center;gap:14px;text-align:left;padding:11px 13px;border-radius:12px;font-size:15px;cursor:pointer}
 .attach-menu button:hover,.attach-menu label:hover,.attach-menu label:focus-visible{background:#f2f5f6}
 .native-media-file-input{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;padding:0!important;opacity:0!important;clip-path:inset(50%)!important;pointer-events:none!important}
-.composer-tool-selector{display:flex;align-items:center;gap:3px;margin:3px 2px 0;min-height:20px}.composer-tool-selector button{display:inline-flex;align-items:center;gap:4px;padding:2px 5px;color:#526b7c;font-size:11px;background:transparent;border:0;border-radius:6px}.composer-tool-selector .ui-icon,.composer-tool-selector svg{width:13px;height:13px}.tool-tray{display:flex;flex-direction:row;gap:6px;overflow-x:auto;white-space:nowrap;scrollbar-width:none;padding:5px 2px 2px;border-top:1px solid #eff1f2}
+.tool-tray{display:flex;flex-direction:column;gap:3px;max-height:min(34vh,300px);overflow-y:auto;overscroll-behavior:contain;padding-top:4px;border-top:1px solid #eff1f2}
 .subtle{display:inline-flex;align-items:center;gap:3px;padding:5px 4px;font-size:11px;color:#435a63;border-radius:8px}
-.tool-tray button{display:inline-flex;align-items:center;gap:3px;flex:none;padding:5px 7px;font-size:11px;background:transparent;border:0;color:#435a63;white-space:nowrap;border-radius:7px}.tool-tray button .ui-icon,.tool-tray button svg{width:14px;height:14px}
+.tool-tray button{width:100%;justify-content:flex-start;background:transparent;border:0;color:#435a63;white-space:nowrap}
 .tool-tray button.active{background:#edf2f7;color:#234667}
 .tool-tray button:focus-visible{outline:2px solid #749ccb;outline-offset:-2px}
 .subtle:hover,.subtle.active{background:#edf2f7;color:#234667}
