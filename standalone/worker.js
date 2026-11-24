@@ -129,7 +129,7 @@ function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
 // Preserve the full current user turn; bound only historical context.
 function chatProviderHistory(messages){
  const newest=messages.findLastIndex(m=>m.role==="user");
- return messages.map((m,i)=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?String(m.body||""):truncate(m.body,m.role==="system"?8000:3000)}));
+ return messages.map((m,i)=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?String(m.body||""):m.role==="assistant"&&String(m.body||"").length>3000?String(m.body).slice(0,900)+"\n[中间内容省略]\n"+String(m.body).slice(-2080):truncate(m.body,m.role==="system"?8000:3000)}));
 }
 function groqVisionModel(model){
  return ["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(model);
@@ -732,10 +732,17 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   chatId=crypto.randomUUID();
   await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,message.slice(0,36),provider,model,Date.now(),Date.now(),projectId);
  }
+ let continuation=null;
+ if(body.continueFrom!=null){
+  if(!body.chatId||typeof body.continueFrom!=="string"||!/^[0-9a-f-]{36}$/i.test(body.continueFrom)||attachments.length)throw Object.assign(new Error("续写目标无效"),{status:400});
+  continuation=await dbGet(env.DB,"SELECT body FROM messages WHERE id=? AND chat_id=? AND user_id=? AND role='assistant'",body.continueFrom,chatId,user.id);
+  if(!continuation||!String(continuation.body||"").trim())throw Object.assign(new Error("找不到所选回复"),{status:404});
+ }
  const messageId=crypto.randomUUID();
  await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
  const previous=await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT 12").bind(chatId,user.id).all();
  const messages=(previous.results||[]).reverse();
+ if(continuation&&messages.length){const last=messages[messages.length-1];if(last.role==="user")last.body=message+"\n\n所选回复的原文结尾（引用，供定位续写位置）：\n"+String(continuation.body).slice(-1800);}
  // Bounded cross-chat context, explicit memory notes and project instructions.
  const preference=await dbGet(env.DB,"SELECT memory_enabled FROM user_preferences WHERE user_id=?",user.id);
  if(preference?.memory_enabled!==0){

@@ -1470,13 +1470,13 @@ function messageQuestion(row){
  while(previous&&!previous.classList.contains("user"))previous=previous.previousElementSibling;
  return String(previous?.dataset.sourceText||"");
 }
-function messageDraft(content,send=false,mode="text"){
+function messageDraft(content,send=false,mode="text",continueFrom=null){
  if(S.busy||S.workMode||S.freeToolsMode)return false;
  const text=String(content||"").trim(),input=$("prompt");if(!text)return false;
  if(input.value.trim()&&input.value.trim()!==text&&!confirm("替换当前未发送的草稿？"))return false;
  if(send&&/\[文件：/.test(text)){flashError("原消息包含附件，请重新选择文件后发送");return false}
  input.value=text;setComposerMode(mode);settlePromptSize();
- if(send)void sendMessage();else input.focus();
+ if(send)void sendMessage(continueFrom);else input.focus();
  return true;
 }
 function retryMessage(row){
@@ -1667,7 +1667,7 @@ function appendMessageCopy(row,content){
    }
    if(row.dataset.incomplete==="1"){
     panel.append(messageTool("arrow-up","继续回答",()=>{
-     more.open=false;messageDraft("请从上一条未完成的回答中断处继续写完，不要重复已经写出的内容。",true);
+     more.open=false;messageDraft("请从上一条未完成的回答中断处继续写完，不要重复已经写出的内容。",true,"text",row.dataset.messageId||null);
     }));
    }
   }
@@ -2901,7 +2901,7 @@ async function apiChatStream(payload,onDelta){
  if(!final?.chatId||typeof final.reply!=="string")throw Error("回复中断，未收到完整结果");
  return final;
 }
-async function sendMessage(){
+async function sendMessage(continueFrom=null){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
@@ -2989,7 +2989,7 @@ async function sendMessage(){
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
      });
     };
-    try{result=await apiChatStream({chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,attachments:attached.map(x=>x.id),
+    try{result=await apiChatStream({chatId:S.chatId,provider:S.provider,model:S.model,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
       mode:S.code?"code":"general",outputImages:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages),imageOnly:S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:S.allowPaid,apiKey:undefined},onDelta);}
     finally{active=false;pending="";}
    }
