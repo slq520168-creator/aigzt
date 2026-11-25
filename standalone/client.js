@@ -1135,17 +1135,6 @@ function normalizeAssistantMarkdown(answer){
  }
  return out;
 }
-// Copy the literal contents of a complete inline Markdown code span, including double backticks.
-function assistantCopyValue(value){
- const raw=String(value||"").trim();
- const match=raw.match(/^(\x60+)([^\x60][\s\S]*?)\1$/);
- return match?match[2].replace(/^ ([\s\S]*) $/,"$1"):raw;
-}
-function assistantPartCopy(value,label="复制此段"){
- const b=messageTool("copy",label,button=>copyMessageText(button.dataset.copyValue,button));
- b.dataset.copyValue=String(value);
- return b;
-}
 function renderAssistantText(bubble,answer){
  const lines=normalizeAssistantMarkdown(answer);
  bubble.classList.remove("chat-revealing");bubble.replaceChildren();let paragraph=[],list=null,pre=null,code=null,activeFence=null;
@@ -1158,7 +1147,7 @@ function renderAssistantText(bubble,answer){
    if(raw.startsWith("![")){const m=raw.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);if(!m||!appendReplyImage(target,m[2],m[1]))appendChatLinks(target,raw)}
    else if(bold){const strong=node("strong");appendChatLinks(strong,raw.slice(2,-2));target.append(strong)}
    else{
-    const value=assistantCopyValue(raw),candidate=value.trim();
+    const fence=raw.match(/^\x60+/)[0],value=raw.slice(fence.length,-fence.length),candidate=value.trim();
     // A URL formatted as inline code is still a link. Keep actual code literal.
     if(/^(?:https?:\/\/|www\.)[^\s<>"'\x60]+$/i.test(candidate)||/^(?:[a-z0-9-]+\.)+(?:com|net|org|io|ai|cn|app|online|dev|site|co|me|info|xyz)(?::\d{2,5})?(?:\/[^\s<>"'\x60]*)?$/i.test(candidate))appendChatLinks(target,candidate);
     else target.append(node("code","",value));
@@ -1168,19 +1157,7 @@ function renderAssistantText(bubble,answer){
   if(index<value.length)appendChatLinks(target,value.slice(index));
  }
  function flush(){
-  if(paragraph.length){
-   const p=node("p"),value=paragraph.join("\n"),previous=bubble.lastElementChild;
-   const isPromptLabel=t=>/^(?:(?:英文|中文|正向|负向|反向|English|Chinese|Positive|Negative)\s*)?(?:Prompt|提示词)(?:\s*[（(][^）)]*[）)])?\s*[:：]?$/i.test(String(t||"").replace(/\*\*/g,"").trim());
-   const span=value.trim().match(/^(\x60+)[^\x60][\s\S]*?\1$/);
-   if(span||isPromptLabel(previous?.textContent)||isPromptLabel(paragraph[0])&&paragraph.length>1){
-    const separateLabel=isPromptLabel(paragraph[0])&&paragraph.length>1;
-    if(separateLabel){const label=node("p");inline(label,paragraph[0]);bubble.append(label)}
-    const body=separateLabel?paragraph.slice(1).join("\n"):value;
-    const pre=node("pre","chat-code"),code=node("code"),button=assistantPartCopy(assistantCopyValue(body),"复制提示词");
-    code.textContent=assistantCopyValue(body);button.classList.add("chat-code-copy");pre.append(button,code);bubble.append(pre);
-   }else{inline(p,value);bubble.append(p)}
-   paragraph=[];
-  }
+  if(paragraph.length){const p=node("p");inline(p,paragraph.join("\n"));bubble.append(p);paragraph=[]}
  }
  function markdownCells(value){
   const line=String(value||"").trim();if(!line.includes("|"))return null;
@@ -1199,13 +1176,12 @@ function renderAssistantText(bubble,answer){
     table.setAttribute("role","table");thead.setAttribute("role","rowgroup");tbody.setAttribute("role","rowgroup");header.setAttribute("role","row");
     for(const item of heads){const th=node("th");th.setAttribute("scope","col");th.setAttribute("role","columnheader");inline(th,item);header.append(th)}
     thead.append(header);table.append(thead,tbody);
-    const copyRows=[heads.map(assistantCopyValue)];
     let next=lineIndex+2;
     for(;next<lines.length;next++){
      const cells=markdownCells(lines[next]);if(!cells||cells.length!==heads.length)break;
-     const tr=node("tr");tr.setAttribute("role","row");copyRows.push(cells.map(assistantCopyValue));for(const [i,item] of cells.entries()){const td=node("td");td.setAttribute("role","cell");td.dataset.label=heads[i].replace(/\*\*|\x60/g,"");inline(td,item);if(item.trim())td.append(assistantPartCopy(assistantCopyValue(item),"复制"+td.dataset.label));tr.append(td)}tbody.append(tr);
+     const tr=node("tr");tr.setAttribute("role","row");for(const [i,item] of cells.entries()){const td=node("td");td.setAttribute("role","cell");td.dataset.label=heads[i].replace(/\*\*|\x60/g,"");inline(td,item);tr.append(td)}tbody.append(tr);
     }
-    const toolbar=node("div","message-copy-bar");toolbar.append(assistantPartCopy(copyRows.map(row=>row.join("\t")).join("\n"),"复制整表"));wrapper.append(toolbar,table);bubble.append(wrapper);lineIndex=next-1;continue;
+    wrapper.append(table);bubble.append(wrapper);lineIndex=next-1;continue;
    }
   }
   const fence=trim.match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
@@ -1213,9 +1189,9 @@ function renderAssistantText(bubble,answer){
    flush();list=null;
    if(pre){pre=null;code=null;activeFence=null}
    else{activeFence=fence[1];pre=node("pre","chat-code");code=node("code");
-    const button=node("button","chat-code-copy");button.type="button";button.title="复制代码";button.dataset.originalTitle="复制代码";button.classList.add("message-copy-btn");button.setAttribute("aria-label","复制代码");
+    const codeNode=code,button=node("button","chat-code-copy");button.type="button";button.title="复制代码";button.setAttribute("aria-label","复制代码");
     button.append(iconSlot("copy"));
-    button.addEventListener("click",event=>{event.stopPropagation();void copyMessageText(button.parentElement?.querySelector("code")?.textContent||"",button)});
+    button.addEventListener("click",()=>{void copyMessageText(codeNode.textContent,button)});
     pre.append(button,code);bubble.append(pre);renderIcons(button);
    }
    continue;
@@ -1288,7 +1264,63 @@ function syncAssistantChildren(target,source){
  }
  while(target.childNodes.length>children.length)target.lastChild.remove();
 }
+// Double-tap copies only the touched text block. No per-cell buttons or layout changes.
+const assistantCopyGestures=new WeakSet();
+function assistantDoubleCopyTarget(bubble,target){
+ const el=target?.nodeType===1?target:target?.parentElement;
+ if(!el||!bubble.contains(el)||el.closest("button,a,input,textarea,select,img,video,canvas,summary,[contenteditable=true]"))return null;
+ const block=el.closest("code,td,th,p,li,blockquote,h1,h2,h3,h4,h5,h6");
+ return block&&bubble.contains(block)?block:null;
+}
+function assistantDoubleCopyValue(block){
+ const value=String(block?.textContent||"");
+ return value.trim()?value:"";
+}
+let assistantCopyToastTimer=null;
+function assistantCopyNotice(){
+ let toast=document.getElementById("assistantCopyNotice");
+ if(!toast){
+  toast=node("div");toast.id="assistantCopyNotice";toast.setAttribute("role","status");toast.setAttribute("aria-live","polite");
+  toast.style.cssText="position:fixed;z-index:10000;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;transform:translateX(-50%);padding:7px 15px;border-radius:18px;background:#233b49;color:#fff;font-size:13px;pointer-events:none;white-space:nowrap";
+  document.body.append(toast);
+ }
+ toast.textContent="已复制";toast.hidden=false;clearTimeout(assistantCopyToastTimer);
+ assistantCopyToastTimer=setTimeout(()=>{toast.hidden=true},1500);
+}
+function wireAssistantDoubleCopy(bubble){
+ if(assistantCopyGestures.has(bubble))return;assistantCopyGestures.add(bubble);
+ let start=null,last=null,lastTouchCopy=0;
+ const copy=block=>{const value=assistantDoubleCopyValue(block);if(value)void copyMessageText(value,null).then(ok=>{if(ok)assistantCopyNotice()})};
+ bubble.addEventListener("touchstart",event=>{
+  start=null;
+  if(event.touches.length!==1){last=null;return}
+  const t=event.touches[0],block=assistantDoubleCopyTarget(bubble,event.target);
+  if(!block){last=null;return}
+  start={id:t.identifier,x:t.clientX,y:t.clientY,block,time:Date.now()};
+ },{passive:true});
+ bubble.addEventListener("touchmove",event=>{
+  if(!start)return;
+  const t=event.touches[0];
+  if(event.touches.length!==1||t.identifier!==start.id||Math.hypot(t.clientX-start.x,t.clientY-start.y)>10){start=null;last=null}
+ },{passive:true});
+ bubble.addEventListener("touchcancel",()=>{start=null;last=null},{passive:true});
+ bubble.addEventListener("touchend",event=>{
+  const tap=start;start=null;
+  if(!tap||event.touches.length||event.changedTouches.length!==1){last=null;return}
+  const t=event.changedTouches[0],now=Date.now();
+  if(t.identifier!==tap.id||now-tap.time>260||Math.hypot(t.clientX-tap.x,t.clientY-tap.y)>10){last=null;return}
+  if(last&&last.block===tap.block&&now-last.time<=350&&Math.hypot(t.clientX-last.x,t.clientY-last.y)<=24){
+   last=null;lastTouchCopy=now;if(event.cancelable)event.preventDefault();copy(tap.block);
+  }else last={block:tap.block,x:t.clientX,y:t.clientY,time:now};
+ },{passive:false});
+ bubble.addEventListener("dblclick",event=>{
+  if(Date.now()-lastTouchCopy<650)return;
+  const block=assistantDoubleCopyTarget(bubble,event.target);
+  if(!block)return;event.preventDefault();copy(block);
+ });
+}
 function updateAssistantText(bubble,answer,complete=false){
+ wireAssistantDoubleCopy(bubble);
  const text=complete?String(answer||""):streamingMarkdownPrefix(answer);
  if(assistantTextState.get(bubble)===text)return;
  const staged=node("div");
@@ -1641,15 +1673,14 @@ async function copyMessageText(value,button){
   finally{temp.remove()}
  }
  if(!copied){flashError("复制失败，请长按消息选择文字");return false}
+ if(!button)return true;
  button.classList.add("is-copied");
- if(!button._copyOriginalNodes)button._copyOriginalNodes=Array.from(button.childNodes);
- button.replaceChildren(document.createTextNode("✓"));
  button.title="已复制";button.setAttribute("aria-label","已复制");
  if(button._copyLabelTimer)clearTimeout(button._copyLabelTimer);
  button._copyLabelTimer=setTimeout(()=>{
-  if(button.isConnected){button.classList.remove("is-copied");button.replaceChildren(...(button._copyOriginalNodes||[]));button.title=button.dataset.originalTitle||"复制";button.setAttribute("aria-label",button.dataset.originalTitle||"复制")}
-  button._copyOriginalNodes=null;button._copyLabelTimer=null;
- },2000);
+  if(button.isConnected){button.classList.remove("is-copied");button.title=button.dataset.originalTitle||"复制";button.setAttribute("aria-label",button.dataset.originalTitle||"复制")}
+  button._copyLabelTimer=null;
+ },1300);
  return true;
 }
 function messageTool(icon,label,action){
@@ -1924,7 +1955,7 @@ function appendMessageCopy(row,content){
  if(row.dataset.messageKind==="video")return;
  if(!text.trim()&&!image)return;
  const user=row.classList.contains("user"),bar=node("div","message-copy-bar");
- if(text.trim())bar.append(messageTool("copy","复制全文",b=>copyMessageText(text,b)));
+ if(!image)bar.append(messageTool("copy","复制",b=>copyMessageText(text,b)));
  if(user)bar.append(messageTool("square-pen","编辑消息",()=>messageDraft(row.dataset.sourceText||text)));
  const translatable=messageTranslationSource(row,user?row.dataset.sourceText||text:text);
  if(translatable){
