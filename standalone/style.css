@@ -17,7 +17,7 @@ a{color:inherit}
 .small-btn{width:31px;height:31px}
 .small-btn .ui-icon svg{width:19px;height:19px}
 
-.sidebar{position:fixed;inset:0 auto 0 0;width:280px;min-width:0;max-width:min(78vw,280px);height:100dvh;transform:translate3d(-101%,0,0);transition:transform .18s cubic-bezier(.2,.8,.25,1);will-change:transform;box-shadow:8px 0 18px rgba(24,43,80,.10);display:flex;flex-direction:column;gap:0;padding:13px 12px 12px;background:#fff;border-right:1px solid #e7eaf3;overflow:hidden;z-index:30}
+.sidebar{position:fixed;inset:0 auto 0 0;width:280px;min-width:0;max-width:min(78vw,280px);height:100dvh;transform:translate3d(-101%,0,0);transition:transform .18s cubic-bezier(.2,.8,.25,1);will-change:transform;box-shadow:8px 0 18px rgba(24,43,80,.10);display:flex;flex-direction:column;gap:0;padding:13px 12px 12px;background:#fff;border-right:1px solid #e7eaf3;border-radius:24px 24px 0 0;overflow:hidden;z-index:30}
 .sidebar-top{display:flex;align-items:center;justify-content:space-between;min-height:52px;padding:0 7px;margin-bottom:6px}
 .brand-lockup{display:flex;gap:9px;align-items:center;min-width:0}
 .brand-avatar{position:relative;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:22px;font-weight:640;color:#3a8878;background:#e6f2ee;letter-spacing:-2px}
@@ -535,7 +535,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 @media(prefers-reduced-motion:reduce){body.rainbow-enabled .brand{animation:none}}
 @media(min-width:901px){.composer-area{padding:6px 20px 12px}}
 @media(max-width:900px){
- .sidebar{inset:0 auto 0 0;width:min(72vw,280px);min-width:0;max-width:min(72vw,280px);height:100dvh;border:0;border-right:1px solid #e7eaf3;border-radius:0;padding:10px 6px max(10px,env(safe-area-inset-bottom))}
+ .sidebar{inset:0 auto 0 0;width:min(72vw,280px);min-width:0;max-width:min(72vw,280px);height:100dvh;border:0;border-right:1px solid #e7eaf3;padding:10px 6px max(10px,env(safe-area-inset-bottom))}
  .shell.menu-open .sidebar{transform:translate3d(0,0,0)}
  .sidebar-close{display:inline-flex;width:30px;height:34px}
  .sidebar .brand-app-icon{width:26px;height:26px;flex-basis:26px;border-radius:8px}
