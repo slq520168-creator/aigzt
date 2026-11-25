@@ -759,8 +759,9 @@ async function freeChatAnswer(env,messages,mode,replyLevel,nativeFiles,remaining
 async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
- const replyLevel=["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
  const typed=typeof body.message==="string"?body.message.trim():"";
+ const promptBatch=/(?:提示词|image\s*prompts?)/i.test(typed)&&/(?:[2-9]|[1-9]\d|[二三四五六七八九十]+)\s*(?:套|组|个|条|sets?|prompts?)/i.test(typed);
+ const replyLevel=promptBatch?"long":["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
 // The bounded transport size is independent of model context capacity.
 const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(attachments.length>4)throw Error("一次最多四个附件");
@@ -829,6 +830,9 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   for(const m of reversed)contextParts.push("其他对话「"+truncate(m.title,50)+"」"+(m.role==="assistant"?"助手":"用户")+"："+truncate(m.body,380));
   if(contextParts.length)messages.unshift({role:"system",body:"以下是同一用户的相关上下文，仅作为参考；用户当前明确要求优先。\n"+contextParts.join("\n").slice(0,4300)});
  }
+ if(promptBatch||(/(?:提示词|image\s*prompts?)/i.test(typed)&&/(?:作图|摄影|画面|图片|绘图|人物|图像)/.test(typed))){
+  messages.unshift({role:"system",body:"当用户要求图片提示词时，每套用一个独立的 prompt-set Markdown 围栏，围栏内包含完整人物设定、中文正向提示词、英文提示词、负面提示词和比例；套号标题放在围栏外，不要嵌套围栏，不要只把提示词标签放进围栏。每套控制长度、减少重复解释但保留固定身份及场景细节。优先完成全部要求；若达到输出上限，结束在完整的一套后并明确下一套编号，不要编造已生成图片。"});
+ }
  const creativeId=typeof body.creativeMode==="string"?body.creativeMode:"";
  if(Object.hasOwn(FREE_CREATIVE_PROMPTS,creativeId))messages.unshift({role:"system",body:FREE_CREATIVE_PROMPTS[creativeId]});
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
@@ -866,7 +870,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   // No images, no PDF re-upload, no repeated paid request, no duplicate user-message row.
   if(result.incomplete&&result.content?.trim()&&!nativeFiles.length&&!body.outputImages&&!body.imageOnly&&body.freeFallback!==false&&remaining()>=3500){
    const prior=result;
-   const follow=[...selectedMessages,{role:"assistant",body:prior.content},{role:"user",body:"请从上条回复中断处继续完成原问题，不重复已写内容。原文结尾：\n"+prior.content.slice(-1800)}];
+   const follow=[...selectedMessages,{role:"assistant",body:prior.content},{role:"user",body:"请从上条回复中断处直接继续原任务，不写开场、复述、续写标题或引用原文。如果中断在围栏内，直接补齐其正文再关闭围栏；如果已经完成一套，从下一套开始。原文结尾：\n"+prior.content.slice(-1800)}];
    try{
     const tail=await freeChatAnswer(env,follow,mode,replyLevel,[],remaining(),null);
     if(tail.content?.trim()){

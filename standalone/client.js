@@ -1156,8 +1156,78 @@ function normalizeAssistantMarkdown(answer){
  }
  return out;
 }
+// Recover model-generated prompt sections without treating real program code as prompts.
+function imagePromptLabel(line){
+ const s=String(line||"").trim().replace(/^(?:(?:>\s*)|(?:#{1,6}\s+)|(?:[-*]\s+)|(?:\d+[.)、]\s+))+/,"").replace(/^\*\*/,"");
+ const m=s.match(/^((?:(?:中文|英文|Chinese|English)\s*(?:正向\s*)?(?:作图|绘图|图像|图片)?\s*(?:提示词|prompt)|(?:正向|负面|反向|作图|绘图|图像|图片)\s*提示词|(?:negative|positive|image)\s*prompt)(?:\s*[（(][^）)]{1,30}[）)])?)\s*(?:\*\*)?(?:[:：]\s*(?:\*\*)?\s*(.*)|$)/i);
+ if(!m)return null;return {label:m[1],body:(m[2]||"").trim(),negative:/负面|反向|negative/i.test(m[1])};
+}
+function promptSectionBoundary(line){
+ const s=String(line||"").trim().replace(/^(?:>\s*|#{1,6}\s+|\*\*)+/,"");
+ return !!imagePromptLabel(line)||/^(?:主题|人物(?:档案|姓名|设定|一致性)|固定(?:身份|档案)|推荐(?:画面|图片)?比例|比例|摄影(?:风格|参数)|镜头|光圈|继续完成|第\s*\d+\s*[套组]|[-]{3,})(?:\s*[:：、.]|\s|$)/.test(s)||/^\s*#{1,6}\s+\S/.test(line)||/^\s*\d{1,2}[.)、]\s+\S/.test(line);
+}
+function normalizePromptSections(lines){
+ if(!lines.some(imagePromptLabel))return lines;
+ const out=[];let outside=null;
+ const mark=line=>String(line||"").trim().match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
+ for(let i=0;i<lines.length;i++){
+  const f=mark(lines[i]),label=imagePromptLabel(lines[i]);
+  if(label&&(!outside||/^(?:text|plaintext|txt)?$/i.test(outside.lang))){
+   if(outside){
+    if(out.length===outside.index+1)out.pop();else out.push(outside.mark);
+    outside=null;
+   }
+   let body=label.body?[label.body]:[],inside=false,j=i+1;
+   for(;j<lines.length;j++){
+    const line=lines[j],s=line.trim(),fm=mark(line);
+    if(promptSectionBoundary(line))break;
+    if(fm){
+     if(inside){inside=false;j++;break}
+     if(body.length)break;
+     // Model may have closed the label-only block before the actual text.
+     // A subsequent fence with content is handled as the payload.
+     if(fm[2])inside=true;
+     else if(!mark(lines[j+1])&&lines[j+1]?.trim()&&!promptSectionBoundary(lines[j+1]))inside=true;
+     continue;
+    }
+    if(!s){
+     if(body.length&&!inside)break;
+     if(body.length)body.push("");continue;
+    }
+    body.push(line);
+   }
+   const payload=body.join("\n").trim();
+   out.push("**"+label.label+"**");
+   if(payload){out.push("\x60\x60\x60"+(label.negative?"text":"image-prompt"),payload,"\x60\x60\x60")}
+   i=j-1;continue;
+  }
+  if(f){
+   if(outside&&f[1][0]===outside.mark[0]&&!f[2])outside=null;
+   else if(!outside)outside={mark:f[1],lang:f[2],index:out.length};
+  }
+  out.push(lines[i]);
+ }
+ return out;
+}
+function imagePromptPayload(value){
+ const lines=String(value||"").trim().split("\n");
+ const positive=[];let started=false;
+ for(const line of lines){
+  const label=imagePromptLabel(line);
+  if(label){if(label.negative||started)break;started=true;if(label.body)positive.push(label.body);continue}
+  if(started){if(promptSectionBoundary(line))break;positive.push(line)}
+ }
+ return (started?positive.join("\n"):String(value||"")).trim();
+}
+function isDirectImageRequest(value){
+ const s=String(value||"").trim();if(!s)return false;
+ if(/(?:只|仅|不要|不用|无需|禁止|先别|不需要)(?:直接)?(?:生成|制作|画|绘制)(?:任何)?(?:图片|图像|照片|图)|(?:只|仅)(?:写|生成|输出|提供|给出).{0,16}提示词|(?:怎么|如何|为什么|能不能|是否|什么是).{0,24}(?:作图|画图|生成图片)/.test(s))return false;
+ if(/(?:写|提供|输出|整理|设计|生成|编写|给出|制作).{0,24}(?:提示词|prompts?)/i.test(s)&&!/(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画|作图)/.test(s))return false;
+ if(/(?:写|生成|输出|提供).{0,20}(?:代码|网页|网站|功能|按钮|指令|视频|文章|故事)/.test(s))return false;
+ return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:画(?:一张|一幅|个|出|一下)?|绘制|作图|生成(?:一张|一幅|一组|一套)?(?:图片|图像|照片|写真|海报|插画|头像|壁纸|人物图|效果图)|制作(?:一张|一幅)?(?:图片|图像|照片|海报|头像|壁纸))/.test(s)||/^(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画)(?:一张|一幅)?(?:图片|图像|照片)/.test(s);
+}
 function renderAssistantText(bubble,answer){
- const lines=normalizeAssistantMarkdown(answer);
+ const lines=normalizePromptSections(normalizeAssistantMarkdown(answer));
  bubble.classList.remove("chat-revealing");bubble.replaceChildren();let paragraph=[],list=null,pre=null,code=null,activeFence=null;
  function inline(target,value){
   const pattern=/(!\[[^\]]*\]\((?:https:\/\/[^\s)]+|\/api\/files\/[0-9a-f-]{36})\)|\*\*[^*]+\*\*|(\x60+)[^\x60]+\2)/gi;
@@ -1210,10 +1280,19 @@ function renderAssistantText(bubble,answer){
    flush();list=null;
    if(pre){pre=null;code=null;activeFence=null}
    else{activeFence=fence[1];pre=node("pre","chat-code");code=node("code");
-    const codeNode=code,button=node("button","chat-code-copy");button.type="button";button.title="复制代码";button.setAttribute("aria-label","复制代码");
-    button.append(iconSlot("copy"));
-    button.addEventListener("click",()=>{void copyMessageText(codeNode.textContent,button)});
-    pre.append(button,code);bubble.append(pre);renderIcons(button);
+    const promptBlock=/^(?:image-prompt|prompt-set)$/i.test(fence[2]||"");
+    const button=node("button","chat-code-copy");button.type="button";button.title=promptBlock?"复制完整提示词":"复制内容";button.dataset.originalTitle=button.title;button.setAttribute("aria-label",button.title);
+    button.append(iconSlot("copy"),node("span","","复制"));
+    // Reconciliation can retain a button while replacing its code node. Always read the live DOM.
+    button.addEventListener("click",event=>{const b=event.currentTarget;void copyMessageText(b.closest("pre")?.querySelector("code")?.textContent?.trimEnd(),b)});
+    pre.append(button,code);
+    if(promptBlock){
+     pre.classList.add("chat-image-prompt");
+     const generate=node("button","chat-prompt-generate");generate.type="button";generate.title="使用此提示词作图";generate.append(iconSlot("image"),node("span","","作图"));
+     generate.addEventListener("click",event=>{const text=imagePromptPayload(event.currentTarget.closest("pre")?.querySelector("code")?.textContent);if(text)messageDraft(text,true,"image")});
+     pre.prepend(generate);renderIcons(generate);
+    }
+    bubble.append(pre);renderIcons(button);
    }
    continue;
   }
@@ -3521,9 +3600,10 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
- const submittedMode=S.composerMode;
- const submittedVideoProvider=S.videoProvider,submittedVideoModel=S.videoModel,submittedVideoRatio=S.videoRatio;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
+ const autoImage=S.composerMode==="text"&&!S.code&&!continueFrom&&S.attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type))&&isDirectImageRequest(prompt);
+ const submittedMode=autoImage?"image":S.composerMode;
+ const submittedVideoProvider=S.videoProvider,submittedVideoModel=S.videoModel,submittedVideoRatio=S.videoRatio;
  if(!S.user){show("authDialog");return}
  const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
  const videoImages=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
@@ -3667,7 +3747,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom,forceFreeOnce);
   });
   const detail=submittedMode==="text"?"当前线路暂时繁忙，原消息已保留，可继续重试。":humanError(e);
-  if(isImageMessage){status.append(retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
+  if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage&&submittedMode==="text"){
    const alternate=messageTool("layers","免费线路重试",()=>{
     if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
