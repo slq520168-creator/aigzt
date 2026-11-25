@@ -942,7 +942,7 @@ function makeAssistantPortrait(){
  const el=node("span","avatar-ai");el.dataset.state="idle";
  el.setAttribute("role","img");el.setAttribute("aria-label","IMAI 助手");
  const frame=node("span","ai-avatar-frame"),image=node("img","ai-avatar-image");
- image.src="/imai-robot-idle.gif?v=58";image.alt="";image.width=36;image.height=48;image.decoding="async";image.draggable=false;
+ image.src="/imai-robot-atlas.png?v=59";image.alt="";image.width=288;image.height=128;image.decoding="async";image.draggable=false;
  frame.append(image);el.append(frame);
  return el;
 }
@@ -950,10 +950,6 @@ function setPortraitState(row,state){
  const avatar=row?.querySelector(":scope > .avatar-ai");
  if(!avatar||avatar.dataset.state===state)return;
  avatar.dataset.state=state;
- const image=avatar.querySelector(".ai-avatar-image");
- const active=["thinking","creating","speaking","finished"].includes(state)&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
- const src=active?"/imai-robot-motion.gif?v=58":"/imai-robot-idle.gif?v=58";
- if(image&&image.getAttribute("src")!==src)image.src=src;
  if(state==="finished")window.setTimeout(()=>{
   if(avatar.isConnected&&avatar.dataset.state==="finished")setPortraitState(row,"idle");
  },900);
