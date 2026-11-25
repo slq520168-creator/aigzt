@@ -942,7 +942,7 @@ function makeAssistantPortrait(){
  const el=node("span","avatar-ai");el.dataset.state="idle";
  el.setAttribute("role","img");el.setAttribute("aria-label","IMAI 助手");
  const frame=node("span","ai-avatar-frame"),image=node("img","ai-avatar-image");
- image.src="/app-icon-192.png?v=57";image.alt="";image.width=60;image.height=60;image.decoding="async";image.draggable=false;
+ image.src="/imai-robot-idle.gif?v=58";image.alt="";image.width=36;image.height=48;image.decoding="async";image.draggable=false;
  frame.append(image);el.append(frame);
  return el;
 }
@@ -950,9 +950,13 @@ function setPortraitState(row,state){
  const avatar=row?.querySelector(":scope > .avatar-ai");
  if(!avatar||avatar.dataset.state===state)return;
  avatar.dataset.state=state;
+ const image=avatar.querySelector(".ai-avatar-image");
+ const active=["thinking","creating","speaking","finished"].includes(state)&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+ const src=active?"/imai-robot-motion.gif?v=58":"/imai-robot-idle.gif?v=58";
+ if(image&&image.getAttribute("src")!==src)image.src=src;
  if(state==="finished")window.setTimeout(()=>{
-  if(avatar.isConnected&&avatar.dataset.state==="finished")avatar.dataset.state="idle";
- },750);
+  if(avatar.isConnected&&avatar.dataset.state==="finished")setPortraitState(row,"idle");
+ },900);
 }
 function createImageWaitingFrame(){
  const frame=node("div","image-loading-card");frame.setAttribute("role","img");frame.setAttribute("aria-label","七彩图片生成中");

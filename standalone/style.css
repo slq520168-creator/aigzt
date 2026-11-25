@@ -661,25 +661,10 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .quick-entry small{font-size:11px;color:#859197}
 @media(max-width:430px){.model-quick{grid-template-columns:1fr;gap:7px}.quick-entry{padding:10px 12px}}
 
-.avatar-ai{width:36px;height:36px;display:grid;place-items:center;flex:none;background:transparent!important;color:inherit!important;isolation:isolate;position:relative;border-radius:50%;overflow:visible}
-.ai-avatar-frame{width:34px;height:34px;display:block;position:relative;overflow:hidden;border-radius:50%;border:1px solid #b9e6fa;background:#eaf5ff;transform-origin:50% 60%}
-.ai-avatar-image{position:absolute;width:165%;height:165%;max-width:none;max-height:none;left:-32%;top:-8%;object-fit:cover;pointer-events:none;user-select:none}
-.avatar-ai::before{content:"";position:absolute;inset:-2px;border-radius:50%;border:2px solid transparent;pointer-events:none}
-.message.assistant:last-child .avatar-ai[data-state="idle"] .ai-avatar-frame{animation:imaiAvatarBreathe 5s ease-in-out infinite}
-.avatar-ai[data-state="thinking"] .ai-avatar-frame{animation:imaiAvatarThink 1.6s ease-in-out infinite}
-.avatar-ai[data-state="thinking"]::before,.avatar-ai[data-state="creating"]::before{border-color:#75d8f6 #aa8cf8 #75d8f6 transparent;animation:imaiAvatarOrbit 1.3s linear infinite}
-.avatar-ai[data-state="creating"] .ai-avatar-frame{animation:imaiAvatarBreathe 1.8s ease-in-out infinite}
-.avatar-ai[data-state="speaking"] .ai-avatar-frame{animation:imaiAvatarTalk .68s ease-in-out infinite alternate}
-.avatar-ai[data-state="speaking"]::before{border-color:#81dbf2;animation:imaiAvatarGlow .9s ease-in-out infinite}
-.avatar-ai[data-state="finished"] .ai-avatar-frame{animation:imaiAvatarFinish .7s ease-out 1}
-.avatar-ai[data-state="error"] .ai-avatar-frame{filter:saturate(.65)}
-@keyframes imaiAvatarBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.5px)}}
-@keyframes imaiAvatarThink{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg) translateY(-1px)}}
-@keyframes imaiAvatarOrbit{to{transform:rotate(360deg)}}
-@keyframes imaiAvatarTalk{from{transform:translateY(0) rotate(-2deg)}to{transform:translateY(-1.5px) rotate(2deg)}}
-@keyframes imaiAvatarGlow{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:1;transform:scale(1.08)}}
-@keyframes imaiAvatarFinish{0%,100%{transform:scale(1)}45%{transform:translateY(-2px) scale(1.08)}}
-@media(prefers-reduced-motion:reduce){.avatar-ai .ai-avatar-frame,.avatar-ai::before{animation:none!important}}
+.avatar-ai{width:36px;height:48px;display:grid;place-items:center;flex:none;background:transparent;color:inherit;position:relative;overflow:visible}
+.ai-avatar-frame{display:block;width:36px;height:48px;background:transparent;overflow:visible}
+.ai-avatar-image{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none}
+.avatar-ai[data-state="error"] .ai-avatar-image{opacity:.75}
 .thinking-status{display:inline-flex;align-items:center;gap:8px;color:#70858a;font-size:13px;min-height:27px}
 .thinking-dots{display:inline-flex;gap:4px;align-items:center}
 .thinking-dots i{width:5px;height:5px;border-radius:50%;background:#a1c9c4;animation:thinkdots 1.15s ease-in-out infinite}
