@@ -2468,6 +2468,14 @@ function composerViewportMetrics(height,offsetTop,baseline,focused,wasVisible){
  const keyboardVisible=(focused||wasVisible)&&baseline-h>100;
  return {keyboardVisible,height:h,top:Math.max(0,Math.round(offsetTop||0))};
 }
+/* Use the real installed viewport rather than a potentially shorter dvh.
+   Keyboard geometry remains owned by composerViewportMetrics. */
+function installedViewportMetrics(inner,client,visual,offset,screenHeight){
+ const values=[inner,client,visual+Math.max(0,offset||0)].filter(n=>Number.isFinite(n)&&n>0);
+ const h=Math.round(Math.max(0,...values));
+ const screen=Number(screenHeight);
+ return {height:h,missing:Number.isFinite(screen)&&screen>=h&&screen-h<160?Math.round(screen-h):0};
+}
 function syncMobileHeight(){
  if(viewportLayoutFrame)return;
  viewportLayoutFrame=requestAnimationFrame(()=>{
@@ -2492,6 +2500,13 @@ function syncMobileHeight(){
    root.style.removeProperty("--aigzt-visible-height");
    root.style.removeProperty("--aigzt-visible-top");
    if(!focused)composerViewportBaseline=Math.max(height,window.innerHeight);
+   if(root.classList.contains("aigzt-ios-pwa")){
+    const pwa=installedViewportMetrics(window.innerHeight,root.clientHeight,height,vv?.offsetTop||0,window.screen?.height);
+    if(pwa.height>0){
+     root.style.setProperty("--aigzt-pwa-height",pwa.height+"px");
+     root.style.setProperty("--aigzt-pwa-screen-gap",pwa.missing+"px");
+    }
+   }
   }
  });
 }

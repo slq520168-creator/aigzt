@@ -990,7 +990,10 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
    reliable iOS signal even when display-mode reports browser. */
 @media(max-width:900px){
  html.aigzt-ios-pwa{--aigzt-ios-safe-top:env(safe-area-inset-top,0px)}
- html.aigzt-ios-pwa .shell{padding-top:var(--aigzt-ios-safe-top);height:var(--aigzt-visible-height,100dvh)}
+ html.aigzt-ios-pwa .shell{padding-top:var(--aigzt-ios-safe-top);height:var(--aigzt-visible-height,max(100%,100dvh,var(--aigzt-pwa-height,0px)))}
+ /* If the installed viewport already excludes a bottom region, do not reserve
+    that region again. Subtract the top inset conservatively for older installs. */
+ html.aigzt-ios-pwa .composer-area{padding-bottom:max(6px,calc(env(safe-area-inset-bottom,0px) - max(0px,calc(var(--aigzt-pwa-screen-gap,0px) - var(--aigzt-ios-safe-top))))))}
  html.aigzt-ios-pwa .sidebar{top:0;bottom:0;height:100dvh;padding-top:calc(var(--aigzt-ios-safe-top) + 12px)}
  html.aigzt-ios-pwa.aigzt-keyboard-visible .shell{padding-top:max(0px,calc(var(--aigzt-ios-safe-top) - var(--aigzt-visible-top,0px)))}
  html.aigzt-ios-pwa.aigzt-keyboard-visible .composer-area{padding-bottom:5px}
