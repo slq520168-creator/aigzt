@@ -101,7 +101,7 @@ a{color:inherit}
 .shell.menu-open .sidebar{transform:translate3d(0,0,0)}
 .side-shade:not([hidden]){display:block;position:fixed;inset:0;background:rgba(24,35,51,.22);z-index:25}
 .main{min-width:0;flex:1;display:flex;flex-direction:column;height:100%;position:relative;background:#fff}
-.topbar{height:54px;min-height:54px;padding:0 18px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.topbar{height:42px;min-height:42px;padding:0 12px;display:flex;justify-content:space-between;align-items:center;gap:6px;background:transparent;border:0;box-shadow:none;flex:none}
 .top-left,.top-right{display:flex;align-items:center;gap:8px;min-width:0}
 .mobile-menu{display:inline-flex}
 .model-select{display:inline-flex;align-items:center;gap:9px;max-width:min(56vw,430px);min-width:0;padding:9px 12px;border-radius:12px;font-size:15px;font-weight:620}
@@ -536,7 +536,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 @media(prefers-reduced-motion:reduce){body.rainbow-enabled.home-ambient::before,body.rainbow-enabled .conversation.empty-chat .welcome h1{animation:none}}
 @keyframes rainbow-breathe{from{background-position:0 50%}to{background-position:100% 50%}}
 @media(prefers-reduced-motion:reduce){body.rainbow-enabled .brand{animation:none}}
-@media(min-width:901px){.topbar{height:60px;min-height:60px}.composer-area{padding:6px 20px 12px}}
+@media(min-width:901px){.composer-area{padding:6px 20px 12px}}
 @media(max-width:900px){
  .sidebar{inset:0 auto 0 0;width:min(72vw,280px);min-width:0;max-width:min(72vw,280px);height:100dvh;border:0;border-right:1px solid #e7eaf3;border-radius:0;padding:10px 6px max(10px,env(safe-area-inset-bottom))}
  .shell.menu-open .sidebar{transform:translate3d(0,0,0)}
@@ -559,7 +559,6 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
  .sidebar .side-bottom #accountName{font-size:10px}
  .sidebar .side-bottom #settingsBtn{width:25px;min-width:25px}
  .side-shade:not([hidden]){display:block;position:fixed;inset:0;background:rgba(25,35,42,.25);z-index:25}
- .topbar{height:52px;min-height:52px;padding:0 12px}
  .mobile-menu{display:inline-flex}
  .top-left,.top-right{gap:2px}
  .model-select{font-size:14px;padding:7px;max-width:55vw}
@@ -924,7 +923,6 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .main{min-width:0;min-height:0;height:100%;width:0;flex:1 1 0}
 .brand-app-icon{display:block;width:38px;height:38px;flex:0 0 38px;border-radius:12px;object-fit:cover}
 .sidebar-top{gap:10px}
-.topbar{min-height:52px;height:52px;padding:0 16px;flex:none}
 .top-left{flex:1;min-width:0}
 .top-right{margin-left:auto;gap:7px}
 .top-wordmark{display:none}
@@ -982,7 +980,6 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  html.aigzt-keyboard-visible .shell{position:fixed;top:var(--aigzt-visible-top,0px);left:0;right:0;bottom:auto;height:var(--aigzt-visible-height,100dvh)}
  html.aigzt-keyboard-visible .composer-area{padding-bottom:5px}
  .main{height:100%;min-width:0;width:100%;flex:1 1 100%}
- .topbar{height:48px;min-height:48px;padding:0 12px}
  .top-left{flex:1}
  .top-right .icon-btn{width:36px}
  .composer-area{max-width:100%;padding:3px 10px max(7px,env(safe-area-inset-bottom))}
@@ -1013,10 +1010,9 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
    not repeatedly inside the navigation bar. navigator.standalone is the
    reliable iOS signal even when display-mode reports browser. */
 @media(max-width:900px){
- html.aigzt-ios-pwa{--aigzt-ios-safe-top:max(54px,env(safe-area-inset-top))}
- html.aigzt-ios-pwa .shell{padding-top:var(--aigzt-ios-safe-top);height:var(--aigzt-visible-height,calc(100dvh + env(safe-area-inset-bottom,0px)))}
- html.aigzt-ios-pwa .topbar{height:48px;min-height:48px;padding-top:0;flex:none}
- html.aigzt-ios-pwa .sidebar{top:0;bottom:0;height:calc(100dvh + env(safe-area-inset-bottom,0px));padding-top:calc(var(--aigzt-ios-safe-top) + 12px)}
+ html.aigzt-ios-pwa{--aigzt-ios-safe-top:env(safe-area-inset-top,0px)}
+ html.aigzt-ios-pwa .shell{padding-top:var(--aigzt-ios-safe-top);height:var(--aigzt-visible-height,100dvh)}
+ html.aigzt-ios-pwa .sidebar{top:0;bottom:0;height:100dvh;padding-top:calc(var(--aigzt-ios-safe-top) + 12px)}
  html.aigzt-ios-pwa.aigzt-keyboard-visible .shell{padding-top:max(0px,calc(var(--aigzt-ios-safe-top) - var(--aigzt-visible-top,0px)))}
  html.aigzt-ios-pwa.aigzt-keyboard-visible .composer-area{padding-bottom:5px}
  html.aigzt-ios-pwa .workspace-view[open]{top:var(--aigzt-ios-safe-top);bottom:0;height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top));max-height:calc(var(--aigzt-visible-height,100dvh) - var(--aigzt-ios-safe-top));padding-top:14px}
@@ -1077,28 +1073,19 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 }
 
 
-/* Stable, separate Chat / Work navigation in the app header. */
-.top-mode-switch{display:inline-flex;align-items:center;gap:3px;flex:none;margin-left:10px;padding:3px;border:1px solid rgba(126,157,197,.24);border-radius:14px;background:rgba(235,241,250,.8)}
-.top-mode-tab{appearance:none;display:inline-flex;align-items:center;justify-content:center;min-width:68px;height:33px;padding:0 15px;border:1px solid transparent;border-radius:10px;background:transparent;color:#60748a;font-size:13px;font-weight:660;line-height:1;cursor:pointer;touch-action:manipulation;white-space:nowrap;transition:background .16s ease,color .16s ease,border-color .16s ease,box-shadow .16s ease}
-.top-mode-tab.active{background:#fff;color:#2866a2;border-color:#cbdff0;box-shadow:0 1px 6px rgba(34,85,132,.12)}
-.top-mode-tab#topWork.active{background:linear-gradient(130deg,#eef0ff,#e3f6f9);color:#5656a5;border-color:#c6d9f3}
-.top-mode-tab:not(.active):hover{background:rgba(255,255,255,.65);color:#325d85}
+/* Independent compact page controls; no navigation bar surface or segmented frame. */
+.top-mode-switch{display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:2px;padding:0;border:0;background:transparent}
+.top-mode-tab{appearance:none;display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:34px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:#677080;font-size:13px;font-weight:600;line-height:1;cursor:pointer;touch-action:manipulation;white-space:nowrap}
+.top-mode-tab.active{color:#263a50;font-weight:750;background:rgba(255,255,255,.72)}
+.top-mode-tab:not(.active):hover{background:rgba(255,255,255,.5);color:#263a50}
 .top-mode-tab:focus-visible{outline:2px solid #458bd8;outline-offset:2px}
+.topbar .icon-btn{width:36px;height:36px;min-width:36px;border:0;border-radius:10px;background:transparent;box-shadow:none}
+.topbar .icon-btn .ui-icon,.topbar .icon-btn .ui-icon svg{width:19px;height:19px}
+.topbar .top-right{gap:3px}
+.topbar .top-left{gap:2px}
 .topbar #headerChatModels[hidden],.topbar #headerMore[hidden]{display:none!important}
-.topbar #headerChatModels{color:#356b9c}
-.topbar #headerChatModels:hover{background:#edf5ff}
-@media(max-width:900px){
- .top-mode-switch{margin-left:4px;gap:2px;padding:2px;border-radius:12px}
- .top-mode-tab{min-width:61px;height:31px;padding:0 11px;font-size:13px;border-radius:9px}
- .topbar .top-right{gap:3px}
- .topbar #headerChatModels{width:34px;min-width:34px}
-}
-@media(max-width:380px){
- .top-mode-tab{min-width:55px;padding:0 8px;font-size:12px}
- .topbar .top-right .icon-btn{width:31px;min-width:31px}
- .topbar .top-left{gap:2px}
-}
-@media(prefers-reduced-motion:reduce){.top-mode-tab{transition:none}}
+@media(max-width:380px){.topbar{padding:0 8px}.top-mode-tab{padding:0 5px;min-width:36px}}
+
 
 /* Work-model sheet: never place its title beneath the installed iPhone status bar. */
 #workModelDialog[open]{
