@@ -53,15 +53,10 @@
   </aside>
   <div class="side-shade" id="sideShade" hidden></div>
   <main class="main">
-   <header class="topbar" aria-label="页面快捷操作">
-    <div class="top-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="menu" aria-hidden="true"></span></button>
-     <div class="top-mode-switch" role="tablist" aria-label="切换聊天和工作">
-      <button type="button" id="topChat" class="top-mode-tab active" role="tab" aria-selected="true" aria-controls="conversation">聊天</button>
-      <button type="button" id="topWork" class="top-mode-tab" role="tab" aria-selected="false" aria-controls="workBoard">工作</button>
-     </div>
-    </div>
-    <div class="top-right"><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button></div>
-   </header>
+   <div class="page-actions" role="group" aria-label="页面快捷操作">
+    <button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="menu" aria-hidden="true"></span></button>
+    <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button></div>
+   </div>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
     <div class="work-header"><div><h2>工作</h2><p>输入任务，自动规划与执行</p></div><div class="work-header-actions"><button type="button" id="workNewTask" class="outline">新任务</button><button class="icon-btn" id="workClose" aria-label="返回聊天"><span class="ui-icon" data-icon="x" aria-hidden="true"></span></button></div></div>
     <div class="work-model-toolbar" aria-label="工作专用模型设置">

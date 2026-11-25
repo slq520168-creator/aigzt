@@ -3146,12 +3146,9 @@ function syncWorkspaceRoute(name){
  const hash=name?"#"+name:"";
  if(location.hash!==hash)history.replaceState(history.state,"",location.pathname+location.search+hash);
 }
-/* Top-level mode tabs are a single App Shell control, never a chat message or model control. */
+/* Floating page actions follow the active workspace; work remains accessible in the drawer. */
 function syncTopMode(){
  const chatting=!S.workMode&&!S.freeToolsMode,working=!!S.workMode;
- for(const [id,active] of [["topChat",chatting],["topWork",working]]){
-  const button=$(id);button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active));
- }
  $("headerChatModels").hidden=!chatting;
  $("headerNew").setAttribute("aria-label",working?"新建工作任务":"新建聊天");
  $("headerNew").title=working?"新建工作任务":"新建聊天";
@@ -4391,8 +4388,6 @@ function wire(){
  $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
  $("newChat").addEventListener("click",newChat);
  $("headerChatModels").addEventListener("click",()=>{if(!S.workMode&&!S.freeToolsMode){if(S.composerMode==="video"){S.source="all";S.filter="video";S.query="";S.modelPage=0}openModels()}});
- $("topChat").addEventListener("click",()=>{if(S.workMode)setWorkMode(false);else if(S.freeToolsMode)setFreeToolsMode(false);else{S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");setComposerMode("text");syncTopMode()}});
- $("topWork").addEventListener("click",()=>{if(!S.workMode)setWorkMode(true);else syncTopMode()});
  $("headerNew").addEventListener("click",()=>S.workMode?newWorkDraft():newChat());
  $("searchBtn").addEventListener("click",()=>{closeMenu();show("searchDialog");$("chatSearchInput").focus()});
  $("newProject").addEventListener("click",()=>openProject());

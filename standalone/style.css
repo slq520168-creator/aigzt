@@ -101,15 +101,13 @@ a{color:inherit}
 .shell.menu-open .sidebar{transform:translate3d(0,0,0)}
 .side-shade:not([hidden]){display:block;position:fixed;inset:0;background:rgba(24,35,51,.22);z-index:25}
 .main{min-width:0;flex:1;display:flex;flex-direction:column;height:100%;position:relative;background:#fff}
-.topbar{height:42px;min-height:42px;padding:0 12px;display:flex;justify-content:space-between;align-items:center;gap:6px;background:transparent;border:0;box-shadow:none;flex:none}
-.top-left,.top-right{display:flex;align-items:center;gap:8px;min-width:0}
 .mobile-menu{display:inline-flex}
 .model-select{display:inline-flex;align-items:center;gap:9px;max-width:min(56vw,430px);min-width:0;padding:9px 12px;border-radius:12px;font-size:15px;font-weight:620}
 .model-select:hover{background:var(--hover)}
 #modelTitle{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .model-select .ui-icon{width:16px;height:16px;color:#708187}
 .model-select .ui-icon svg{width:16px;height:16px}
-.conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom}
+.conversation{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom;scroll-padding-top:52px}
 .chat-scroll-arrows{position:absolute;right:7px;bottom:90px;z-index:4;display:flex;flex-direction:column;width:26px;border-radius:14px;background:rgba(100,110,120,.82);box-shadow:0 1px 5px rgba(20,30,40,.14);overflow:hidden}
 .chat-scroll-arrows[hidden]{display:none}
 .chat-scroll-arrows button{display:grid;place-items:center;width:26px;height:29px;padding:4px;border:0;background:transparent;color:#fff;touch-action:manipulation}
@@ -119,7 +117,7 @@ a{color:inherit}
 .shell.menu-open .chat-scroll-arrows,.shell.free-tools-active .chat-scroll-arrows{display:none}
 .welcome{margin:auto;padding:0 15px 38px;text-align:center}
 .welcome h1{margin:0;font-size:clamp(25px,3vw,32px);font-weight:620;letter-spacing:-.5px}
-.messages{width:100%;max-width:1100px;margin:0 auto;padding:15px 16px 40px}
+.messages{width:100%;max-width:1100px;margin:0 auto;padding:52px 16px 40px}
 .message{display:flex;gap:13px;align-items:flex-start;line-height:1.75;margin:15px 0 24px}
 .message.user{justify-content:flex-end;flex-direction:column;align-items:flex-end;gap:2px}
 .message.assistant{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;row-gap:4px}
@@ -527,7 +525,6 @@ body.rainbow-enabled.home-ambient{background:linear-gradient(145deg,#f3f7ff,#f6f
 body.rainbow-enabled.home-ambient::before{content:"";pointer-events:none;position:fixed;inset:-16%;z-index:0;background:radial-gradient(ellipse at 18% 26%,rgba(116,143,250,.36),transparent 36%),radial-gradient(ellipse at 76% 21%,rgba(183,114,231,.34),transparent 34%),radial-gradient(ellipse at 42% 76%,rgba(94,216,190,.34),transparent 44%),radial-gradient(ellipse at 91% 86%,rgba(252,174,154,.32),transparent 36%);filter:blur(30px);animation:home-color-breathe 13s ease-in-out infinite alternate}
 body.rainbow-enabled.home-ambient .shell{background:transparent;z-index:1}
 body.rainbow-enabled.home-ambient .main,
-body.rainbow-enabled.home-ambient .topbar,
 body.rainbow-enabled.home-ambient .composer-area,
 body.rainbow-enabled.home-ambient .conversation.empty-chat{background:transparent}
 body.rainbow-enabled .conversation.empty-chat .welcome{position:relative;z-index:1}
@@ -560,11 +557,8 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
  .sidebar .side-bottom #settingsBtn{width:25px;min-width:25px}
  .side-shade:not([hidden]){display:block;position:fixed;inset:0;background:rgba(25,35,42,.25);z-index:25}
  .mobile-menu{display:inline-flex}
- .top-left,.top-right{gap:2px}
  .model-select{font-size:14px;padding:7px;max-width:55vw}
- .top-right .icon-btn{width:34px}
- .top-right #themeToggle{display:none}
- .messages{padding:15px 7px 18px}
+ .messages{padding:52px 7px 18px}
  .message{gap:9px;margin:12px 0 20px}
  .welcome{padding:0 16px 15px}
  .welcome h1{font-size:26px}
@@ -580,7 +574,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
  .model-row{gap:5px}
  .model-info strong{font-size:12px}
 }
-@media(max-width:350px){.topbar #headerMore{display:none}.model-select{max-width:50vw}}
+@media(max-width:350px){.page-actions #headerMore{display:none}.model-select{max-width:50vw}}
 
 
 /* Dedicated, full-screen in-app views. Only login and destructive confirmation remain dialogs. */
@@ -755,7 +749,6 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 .top-work{flex:none;border:1px solid transparent;border-radius:10px;padding:7px 10px;color:#566970;font-size:13px;font-weight:550;white-space:nowrap}
 .top-work:hover,.top-work.active{color:#244b58;background:#f1f5f6}
 .top-work.active{border-color:#e4ebec}
-.top-left{min-width:0;gap:8px}
 .work-header-actions{display:flex;align-items:center;gap:8px}
 .work-header-actions .outline{font-size:12px;padding:7px 11px;border-radius:10px}
 .work-config{border:1px solid #e4e9ec;border-radius:14px;margin-top:15px;background:#fff}
@@ -854,7 +847,7 @@ body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-grad
 
 
 /* Standalone compact free tools page: no duplicate chat header. */
-.shell.free-tools-active .main>.topbar{display:none!important}
+.shell.free-tools-active .main>.page-actions{display:none!important}
 .free-tools-board{flex:1;min-height:0;width:100%;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:#fff}
 .free-tools-header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid #e9edf0;padding:5px 12px 7px}
 .free-tools-title{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:34px}
@@ -923,8 +916,6 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .main{min-width:0;min-height:0;height:100%;width:0;flex:1 1 0}
 .brand-app-icon{display:block;width:38px;height:38px;flex:0 0 38px;border-radius:12px;object-fit:cover}
 .sidebar-top{gap:10px}
-.top-left{flex:1;min-width:0}
-.top-right{margin-left:auto;gap:7px}
 .top-wordmark{display:none}
 .conversation,.work-board,.free-tools-board{min-height:0}
 .composer-area{width:100%;max-width:760px;min-width:0;padding:5px 14px max(8px,env(safe-area-inset-bottom));flex:none}
@@ -949,7 +940,7 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .model-extra>summary{padding:10px 13px}
 .model-tools{gap:8px}
 .model-count{font-size:12px;color:#77858d}
-.work-board{max-width:940px;width:100%;margin:0 auto;flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 28px 20px}
+.work-board{max-width:940px;width:100%;margin:0 auto;flex:1;overflow-y:auto;overflow-x:hidden;padding:52px 28px 20px;scroll-padding-top:52px}
 .work-header{align-items:center;gap:12px}
 .work-header h2{font-size:20px}
 .work-header p{font-size:12px}
@@ -980,14 +971,12 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  html.aigzt-keyboard-visible .shell{position:fixed;top:var(--aigzt-visible-top,0px);left:0;right:0;bottom:auto;height:var(--aigzt-visible-height,100dvh)}
  html.aigzt-keyboard-visible .composer-area{padding-bottom:5px}
  .main{height:100%;min-width:0;width:100%;flex:1 1 100%}
- .top-left{flex:1}
- .top-right .icon-btn{width:36px}
  .composer-area{max-width:100%;padding:3px 10px max(7px,env(safe-area-inset-bottom))}
  .composer{min-height:43px;padding:5px 8px;border-radius:22px}
  .composer-inner{gap:5px}
  .composer textarea{width:100%;min-width:0;max-width:100%;line-height:22px;min-height:32px;max-height:112px}
  .plus-tool,.send{height:32px;width:32px;min-width:32px}
- .messages{padding:10px 7px 18px}
+ .messages{padding:52px 7px 18px}
  .workspace-view .modal-head{padding:4px 0 9px;min-height:43px}
  .workspace-view .modal-head h2{font-size:18px}
  .model-tools{grid-template-columns:minmax(0,1fr) 100px;gap:7px}
@@ -995,7 +984,7 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  .model-row{padding:10px 11px;min-height:65px}
  .model-info strong{font-size:13px}
  .model-action{font-size:12px;padding:7px 9px}
- .work-board{max-width:100%;width:100%;padding:10px 13px 20px}
+ .work-board{max-width:100%;width:100%;padding:52px 13px 20px}
  .work-header h2{font-size:19px}
  .work-header p{font-size:11px}
  .work-agents,.work-config{margin-top:9px}
@@ -1005,7 +994,6 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  .work-config-row{padding:10px}
  .work-step-body{font-size:13px}
 }
-@media(max-width:380px){.topbar #headerMore{display:none}.work-header p{font-size:10px}}
 /* iOS installed PWA: reserve the OS status-bar area once at the App Shell,
    not repeatedly inside the navigation bar. navigator.standalone is the
    reliable iOS signal even when display-mode reports browser. */
@@ -1073,18 +1061,16 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 }
 
 
-/* Independent compact page controls; no navigation bar surface or segmented frame. */
-.top-mode-switch{display:inline-flex;align-items:center;gap:2px;flex:none;margin-left:2px;padding:0;border:0;background:transparent}
-.top-mode-tab{appearance:none;display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:34px;padding:0 7px;border:0;border-radius:9px;background:transparent;color:#677080;font-size:13px;font-weight:600;line-height:1;cursor:pointer;touch-action:manipulation;white-space:nowrap}
-.top-mode-tab.active{color:#263a50;font-weight:750;background:rgba(255,255,255,.72)}
-.top-mode-tab:not(.active):hover{background:rgba(255,255,255,.5);color:#263a50}
-.top-mode-tab:focus-visible{outline:2px solid #458bd8;outline-offset:2px}
-.topbar .icon-btn{width:36px;height:36px;min-width:36px;border:0;border-radius:10px;background:transparent;box-shadow:none}
-.topbar .icon-btn .ui-icon,.topbar .icon-btn .ui-icon svg{width:19px;height:19px}
-.topbar .top-right{gap:3px}
-.topbar .top-left{gap:2px}
-.topbar #headerChatModels[hidden],.topbar #headerMore[hidden]{display:none!important}
-@media(max-width:380px){.topbar{padding:0 8px}.top-mode-tab{padding:0 5px;min-width:36px}}
+/* Small floating controls: no opaque header and no flex-layout height. */
+.page-actions{position:absolute;top:4px;left:12px;right:12px;height:40px;z-index:8;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
+.page-actions-right,.page-actions>#menuBtn{pointer-events:auto;border:1px solid rgba(124,139,160,.22);background:rgba(255,255,255,.78);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:0 2px 8px rgba(34,48,72,.04)}
+.page-actions-right{display:flex;align-items:center;gap:1px;border-radius:22px;padding:0 3px;height:40px}
+.page-actions .icon-btn{width:38px;height:38px;min-width:38px;display:inline-flex;align-items:center;justify-content:center;color:#25354a;border-radius:50%;padding:0}
+.page-actions .icon-btn .ui-icon,.page-actions .icon-btn .ui-icon svg{width:20px;height:20px}
+.page-actions #menuBtn{width:40px;height:40px}
+.page-actions .icon-btn[hidden]{display:none!important}
+@media(max-width:380px){.page-actions{left:8px;right:8px}}
+
 
 
 /* Work-model sheet: never place its title beneath the installed iPhone status bar. */
