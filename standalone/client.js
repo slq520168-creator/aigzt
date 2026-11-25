@@ -1921,7 +1921,7 @@ function messageTextFile(content,format="auto"){
  const text=String(content||"");
  const md=format==="md"||(format==="auto"&&/(^|\n)\s*(?:#{1,6}\s|[-*]\s|\d+\.\s|>\s|\|.+\|)|\*\*[^*]+\*\*|\x60{3}/m.test(text));
  const extension=md?"md":"txt";
- return new File([text],"AIGZT-message."+extension,{type:(md?"text/markdown":"text/plain")+";charset=utf-8"});
+ return new File([text],"IMAI-message."+extension,{type:(md?"text/markdown":"text/plain")+";charset=utf-8"});
 }
 function messageImageFile(image){
  const url=image?.currentSrc||image?.src||"";
@@ -1932,7 +1932,7 @@ function messageImageFile(image){
  const binary=atob(base64),bytes=new Uint8Array(binary.length);
  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
  const mime=match[1].toLowerCase(),extension=mime==="image/jpeg"?"jpg":mime.slice(6);
- return new File([bytes],"AIGZT-image."+extension,{type:mime});
+ return new File([bytes],"IMAI-image."+extension,{type:mime});
 }
 function messageNativeFileShare(file,title){
  if(!navigator.share||!navigator.canShare)return null;
@@ -1942,7 +1942,7 @@ function messageNativeFileShare(file,title){
 function messageSaveFile(file,remoteUrl=""){
  const a=node("a");a.style.display="none";
  const objectURL=file?URL.createObjectURL(file):null;
- a.href=objectURL||remoteUrl;a.download=file?.name||"AIGZT-image";
+ a.href=objectURL||remoteUrl;a.download=file?.name||"IMAI-image";
  document.body.append(a);a.click();a.remove();
  if(objectURL)window.setTimeout(()=>URL.revokeObjectURL(objectURL),30000);
 }
@@ -1954,7 +1954,7 @@ function messageDownload(row,content,format="auto"){
  // On iOS/PWA, use the native share sheet's "Save to Files" target.
  // Call navigator.share synchronously, before the user-activation window closes.
  if(messageIsIOS()&&file){
-  const request=messageNativeFileShare(file,image?"保存 AIGZT 图片":"保存 AIGZT 消息");
+  const request=messageNativeFileShare(file,image?"保存 IMAI 图片":"保存 IMAI 消息");
   if(request){
    void request.catch(error=>{
     if(error?.name==="AbortError")return;
@@ -1982,7 +1982,7 @@ async function messageShare(row,content,button){
   // A fetch-before-share loses the mobile browser's user gesture. Decode the
   // already loaded in-chat image synchronously instead.
   if(file){
-   const request=messageNativeFileShare(file,"AIGZT 图片");
+   const request=messageNativeFileShare(file,"IMAI 图片");
    if(request){
     try{await request;return}
     catch(e){if(e?.name==="AbortError")return}
@@ -1991,7 +1991,7 @@ async function messageShare(row,content,button){
   }
   const imageUrl=image.currentSrc||image.src;
   if(navigator.share&&/^https?:/i.test(imageUrl)){
-   try{await navigator.share({title:"AIGZT 图片",url:new URL(imageUrl,location.href).href});return}
+   try{await navigator.share({title:"IMAI 图片",url:new URL(imageUrl,location.href).href});return}
    catch(e){if(e?.name==="AbortError")return}
   }
   messageDownload(row,content);return;
@@ -2001,9 +2001,9 @@ async function messageShare(row,content,button){
  if(navigator.share){
   try{
    const file=value.length>1800?messageTextFile(value):null;
-   const request=file?messageNativeFileShare(file,"AIGZT 回复"):null;
+   const request=file?messageNativeFileShare(file,"IMAI 回复"):null;
    if(request){await request;return}
-   await navigator.share({title:"AIGZT 回复",text:value});return;
+   await navigator.share({title:"IMAI 回复",text:value});return;
   }catch(e){if(e?.name==="AbortError")return}
  }
  if(await copyMessageText(value,button))flashError("系统分享未能打开，已复制消息内容");
@@ -3436,7 +3436,7 @@ function exportWorkTask(){
   d.steps.map(s=>"## "+s.phase+"\n\n"+s.body+"\n").join("\n");
  const file=new Blob([content],{type:"text/markdown;charset=utf-8"});
  const url=URL.createObjectURL(file),a=document.createElement("a");
- a.href=url;a.download="AIGZT-"+d.task.title.replace(/[\\/:*?"<>|]/g,"_").slice(0,34)+".md";
+ a.href=url;a.download="IMAI-"+d.task.title.replace(/[\\/:*?"<>|]/g,"_").slice(0,34)+".md";
  document.body.append(a);a.click();a.remove();window.setTimeout(()=>URL.revokeObjectURL(url),2000);
 }
 
@@ -4218,7 +4218,7 @@ async function finishOpenRouterOAuth(){
  let saved;
  try{saved=JSON.parse(pending)}catch{flashError("OpenRouter 授权状态损坏");return}
  if(saved.state!==state||Date.now()-saved.created>600000){flashError("OpenRouter 授权超时或校验失败");return}
- if(!S.user){flashError("请先登录 AIGZT 后重新授权 OpenRouter");return}
+ if(!S.user){flashError("请先登录 IMAI 后重新授权 OpenRouter");return}
  try{
   const result=await api("/api/openrouter/exchange",{code,verifier:saved.verifier});
   const d=await api("/api/connections",{provider:"openrouter",apiKey:result.key,model:saved.model||undefined,consent:false});
@@ -4250,7 +4250,7 @@ function toggleAuth(){
 }
 async function account(){
  if(!S.user){show("authDialog");return}
- if(!confirm("确定退出当前 AIGZT 账号？聊天记录会保存在你的云端。"))return;
+ if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
  try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
