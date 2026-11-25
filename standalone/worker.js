@@ -2732,8 +2732,10 @@ async function main(req,env){
  if(path==="/api/chats/search"&&req.method==="GET"){
   const query=truncate(url.searchParams.get("q"),60).trim();
   if(!query)return response({ok:true,chats:[]});
-  const escaped=query.replace(/[\\%_]/g,x=>"\\"+x),search="%"+escaped+"%";
-  const r=await env.DB.prepare("SELECT DISTINCT c.id,c.title,c.updated_at,c.project_id,c.pinned_at,c.archived_at FROM chats c LEFT JOIN messages m ON m.chat_id=c.id AND m.user_id=c.user_id WHERE c.user_id=? AND (c.title LIKE ? ESCAPE '\\' OR m.body LIKE ? ESCAPE '\\') ORDER BY c.updated_at DESC LIMIT 35").bind(user.id,search,search).all();
+  const escapeLike=value=>value.replace(/[\\%_]/g,x=>"\\"+x);
+  const exact="%"+escapeLike(query)+"%",fuzzy="%"+Array.from(query.replace(/\s+/g,""),escapeLike).join("%")+"%";
+  // Search the authenticated user's titles and messages, exact titles first.
+  const r=await env.DB.prepare("SELECT c.id,c.title,c.updated_at,c.project_id,c.pinned_at,c.archived_at FROM chats c WHERE c.user_id=? AND (c.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.chat_id=c.id AND m.user_id=c.user_id AND m.body LIKE ? ESCAPE '\\')) ORDER BY CASE WHEN c.title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,c.updated_at DESC LIMIT 35").bind(user.id,fuzzy,fuzzy,exact).all();
   return response({ok:true,chats:r.results||[]});
  }
 

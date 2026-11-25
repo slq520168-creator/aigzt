@@ -109,6 +109,7 @@ function show(id){
  else el.showModal();
  for(let i=drawerPageOrder.length-1;i>=0;i--)if(!drawerPageOrder[i].open||drawerPageOrder[i]===el)drawerPageOrder.splice(i,1);
  drawerPageOrder.push(el);
+ if(id==="searchDialog")queueChatSearch();
 }
 function hide(id){if($(id).open)$(id).close()}
 function closeMenu(){
@@ -787,13 +788,32 @@ async function moveChat(id){
   await api("/api/chats/"+S.actionChatId+"/project",{projectId:id});hide("moveDialog");await fetchChats();await fetchProjects();
  }catch(e){flashError(humanError(e))}
 }
-async function searchChats(e){
- e.preventDefault();if(!S.user){show("authDialog");return}
- const q=$("chatSearchInput").value.trim(),r=$("searchResults");r.replaceChildren();if(!q)return;
- try{const d=await api("/api/chats/search?q="+encodeURIComponent(q));if(!d.chats.length)r.append(node("div","hint","未找到聊天"));
-  for(const c of d.chats){const b=iconButton("message-circle",c.title,()=>{hide("searchDialog");void loadChat(c.id)});r.append(b)}
- }catch(e){r.append(node("div","hint",humanError(e)))}
+let chatSearchTimer=0,chatSearchSerial=0,chatSearchComposing=false;
+function fuzzyChatMatch(value,query){
+ const text=String(value||"").toLocaleLowerCase(),q=String(query||"").trim().toLocaleLowerCase();
+ if(!q||text.includes(q))return true;
+ let index=0;for(const char of q.replace(/\s+/g,"")){index=text.indexOf(char,index);if(index<0)return false;index+=char.length}return true;
 }
+function renderChatSearchRows(rows){
+ const r=$("searchResults");r.replaceChildren();
+ for(const c of rows){const b=iconButton("message-circle",c.title||"未命名聊天",()=>{hide("searchDialog");void loadChat(c.id)});r.append(b)}
+}
+function queueChatSearch(immediate=false){
+ clearTimeout(chatSearchTimer);const serial=++chatSearchSerial,owner=S.user?.id,q=$("chatSearchInput").value.trim(),r=$("searchResults");
+ if(!$("searchDialog").open)return;
+ if(!owner){r.replaceChildren(node("div","hint","登录后搜索聊天记录"));return}
+ const local=(S.chats||[]).filter(c=>fuzzyChatMatch(c.title,q)).slice(0,35);renderChatSearchRows(local);
+ if(!q){if(!local.length)r.append(node("div","hint","暂无聊天记录"));return}
+ if(!local.length)r.append(node("div","hint","搜索中…"));
+ const current=()=>serial===chatSearchSerial&&S.user?.id===owner&&$("searchDialog").open&&$("chatSearchInput").value.trim()===q;
+ const run=async()=>{try{
+  const d=await api("/api/chats/search?q="+encodeURIComponent(q));if(!current())return;
+  const rows=Array.isArray(d.chats)?d.chats:[];renderChatSearchRows(rows);
+  if(!rows.length)r.append(node("div","hint","未找到聊天"));
+ }catch(e){if(current()){renderChatSearchRows(local);r.append(node("div","hint",humanError(e)))}}};
+ if(immediate)void run();else chatSearchTimer=setTimeout(run,350);
+}
+function searchChats(e){e.preventDefault();if(!chatSearchComposing)queueChatSearch(true)}
 async function openFiles(){
  if(!S.user){show("authDialog");return}
  show("filesDialog");const box=$("savedFiles");box.replaceChildren(node("div","hint","读取文件中…"));closeMenu();
@@ -3012,27 +3032,48 @@ const EXTERNAL_FREE_TOOLS=[...MAINSTREAM_TOOL_ADDITIONS,...ORIGINAL_GENERATION_S
 const FREE_TOOL_CATEGORIES=["全部","最近使用","Perchance","P作图","P修图","角色创建","P编程","P写作","聊天","免注册","免费API","翻译","搜索","编程","作图","图生图","视频","修图","写作","办公","智能体","营销","API/开发","试用/付费","本地","综合","角色","互动","音频","目录"];
 const FREE_ACCESS_LABELS={free:"基础免费",daily:"限额免费",trial:"试用/评估",community:"社区共享",paid:"付费/待核",local:"本地运行",api:"免费API额度"};
 
-// Account-scoped, device-local launch history. Existing cards and destinations remain unchanged.
-const freeToolRecentMemory=new Map();
+// Account-scoped durable launch history; 24 most recently used, newest first.
+const FREE_TOOL_RECENT_LIMIT=24,freeToolRecentMemory=new Map(),freeToolRecentHydrating=new Map();
 function freeToolRecentKey(){return "aigzt:free-tools:recent:v1:"+String(S.user?.id||"guest")}
-function freeToolRecentRead(){
- const scope=freeToolRecentKey();
- try{
-  const saved=JSON.parse(localStorage.getItem(scope)||"[]");
-  if(Array.isArray(saved)){
-   const keys=Array.from(new Set(saved.filter(key=>typeof key==="string"&&(key.startsWith("site:")||key.startsWith("model:")))));
-   freeToolRecentMemory.set(scope,keys);return keys;
-  }
- }catch{}
- return freeToolRecentMemory.get(scope)||[];
+function normalizeFreeToolRecent(keys){
+ return Array.isArray(keys)?Array.from(new Set(keys.filter(key=>typeof key==="string"&&(key.startsWith("site:")||key.startsWith("model:"))))).slice(0,FREE_TOOL_RECENT_LIMIT):[];
+}
+function freeToolRecentRead(scope=freeToolRecentKey()){
+ if(freeToolRecentMemory.has(scope))return freeToolRecentMemory.get(scope);
+ let keys=[];try{keys=normalizeFreeToolRecent(JSON.parse(localStorage.getItem(scope)||"[]"))}catch{}
+ freeToolRecentMemory.set(scope,keys);return keys;
+}
+function freeToolRecentSave(scope,keys){
+ keys=normalizeFreeToolRecent(keys);freeToolRecentMemory.set(scope,keys);
+ try{localStorage.setItem(scope,JSON.stringify(keys))}catch{}
+ // The existing device IndexedDB provides an independent persistent backup.
+ void deviceMediaPut("free-tools:"+scope,new Blob([JSON.stringify(keys)],{type:"application/json"}));
+ return keys;
+}
+function freeToolRecentRefresh(scope){
+ if(S.freeToolsMode&&S.freeToolsCategory==="最近使用"&&freeToolRecentKey()===scope)renderFreeTools();
+}
+async function freeToolRecentHydrate(scope=freeToolRecentKey()){
+ if(freeToolRecentHydrating.has(scope))return freeToolRecentHydrating.get(scope);
+ const task=(async()=>{
+  const initial=freeToolRecentRead(scope);
+  const blob=await deviceMediaGet("free-tools:"+scope);
+  let backup=[];try{if(blob)backup=normalizeFreeToolRecent(JSON.parse(await blob.text()))}catch{}
+  const current=freeToolRecentRead(scope);
+  // Existing local data is authoritative; restore backup only when it was missing.
+  // A click made while restoring stays at the front of the recovered history.
+  if(!initial.length&&backup.length){freeToolRecentSave(scope,[...current,...backup]);freeToolRecentRefresh(scope)}
+  else if(current.length){freeToolRecentSave(scope,current)}
+ })().finally(()=>freeToolRecentHydrating.delete(scope));
+ freeToolRecentHydrating.set(scope,task);return task;
 }
 function freeToolRemember(key){
- const scope=freeToolRecentKey(),keys=[key,...freeToolRecentRead().filter(value=>value!==key)];
- freeToolRecentMemory.set(scope,keys);
- try{localStorage.setItem(scope,JSON.stringify(keys))}catch{}
- if(S.freeToolsMode&&S.freeToolsCategory==="最近使用")setTimeout(()=>{
-  if(S.freeToolsMode&&S.freeToolsCategory==="最近使用"&&freeToolRecentKey()===scope)renderFreeTools();
- },0);
+ const scope=freeToolRecentKey();
+ // Start recovery before writing, so a missing local record cannot erase the backup.
+ void freeToolRecentHydrate(scope);
+ const keys=normalizeFreeToolRecent([key,...freeToolRecentRead(scope).filter(value=>value!==key)]);
+ freeToolRecentSave(scope,keys);
+ if(S.freeToolsMode&&S.freeToolsCategory==="最近使用")setTimeout(()=>freeToolRecentRefresh(scope),0);
 }
 function freeToolsFilters(){
  const list=$("freeToolFilters"),x=list.scrollLeft;list.replaceChildren();
@@ -3177,7 +3218,7 @@ function setFreeToolsMode(enabled){
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
   $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
-  $("navFreeTools").classList.add("active");renderFreeTools();syncWorkspaceRoute("tools");
+  $("navFreeTools").classList.add("active");renderFreeTools();void freeToolRecentHydrate();syncWorkspaceRoute("tools");
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   if(!S.workMode){$("conversation").hidden=false;syncWorkspaceRoute("")}
@@ -4450,7 +4491,11 @@ function wire(){
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
  $("deleteProject").addEventListener("click",()=>void deleteProject());
- $("searchForm").addEventListener("submit",e=>void searchChats(e));
+ $("searchForm").addEventListener("submit",searchChats);
+ $("chatSearchInput").addEventListener("compositionstart",()=>{chatSearchComposing=true;clearTimeout(chatSearchTimer);++chatSearchSerial});
+ $("chatSearchInput").addEventListener("compositionend",()=>{chatSearchComposing=false;queueChatSearch()});
+ $("chatSearchInput").addEventListener("input",e=>{if(!chatSearchComposing&&!e.isComposing)queueChatSearch()});
+ $("searchDialog").addEventListener("close",()=>{clearTimeout(chatSearchTimer);++chatSearchSerial;chatSearchComposing=false});
  $("memoryForm").addEventListener("submit",e=>void saveNote(e));
  $("settingMemory").addEventListener("change",e=>{S.memoryEnabled=e.target.checked;void persistPrefs().catch(err=>flashError(humanError(err)))});
  $("settingRainbow").addEventListener("change",e=>{applyTheme(e.target.checked?"rainbow":"plain");void persistPrefs().catch(err=>flashError(humanError(err)))});
