@@ -1510,6 +1510,7 @@ function voiceLanguage(text){
  return voiceSession.lang;
 }
 function voiceSpeak(value,button=null,continueAfter=false){
+ stopMessageReader();
  const synth=window.speechSynthesis,t=speechContent(value);
  if(!synth||typeof window.SpeechSynthesisUtterance!=="function"||!t)return false;
  voiceCancel();const token=voiceSession.token,lang=voiceLanguage(t),voices=synth.getVoices();
@@ -1547,6 +1548,114 @@ function voiceSpeak(value,button=null,continueAfter=false){
  };
  next();return token===voiceSession.token;
 }
+
+/* Independent, single-owner message reader. Never start paid/cloud speech silently. */
+let messageReader=null;
+function stopMessageReader(remove=true){
+ const p=messageReader;if(!p)return;messageReader=null;p.cancelled=true;
+ clearTimeout(p.timer);p.abort?.abort();
+ if(p.local&&p.utterance){p.utterance.onstart=p.utterance.onend=p.utterance.onerror=null;try{window.speechSynthesis.cancel()}catch{}}
+ if(p.audio){p.audio.onended=p.audio.onerror=p.audio.onplaying=p.audio.onpause=null;p.audio.pause();p.audio.removeAttribute("src");p.audio.load()}
+ if(p.url)URL.revokeObjectURL(p.url);
+ voicePlaybackButton(p.button,false);if(remove)p.panel.remove();
+}
+function readerStatus(p,value){if(messageReader===p)p.status.textContent=value}
+function readerFail(p,why){
+ if(messageReader!==p)return;
+ clearTimeout(p.timer);p.timer=null;p.abort?.abort();p.abort=null;
+ if(p.utterance){p.utterance.onstart=p.utterance.onend=p.utterance.onerror=null;try{window.speechSynthesis.cancel()}catch{}p.utterance=null}
+ p.phase="failed";p.pause.hidden=true;voicePlaybackButton(p.button,false);
+ readerStatus(p,why);p.retry.hidden=false;p.cloud.hidden=false;
+}
+function readerDone(p){
+ if(messageReader!==p)return;
+ clearTimeout(p.timer);p.phase="done";p.pause.hidden=true;
+ voicePlaybackButton(p.button,false);readerStatus(p,"朗读完成");p.retry.hidden=false;
+}
+function readerLocal(p){
+ if(messageReader!==p)return;
+ p.local=true;p.phase="loading";p.retry.hidden=true;p.cloud.hidden=true;
+ p.pause.hidden=true;voicePlaybackButton(p.button,true);
+ const synth=window.speechSynthesis;
+ if(!synth||typeof window.SpeechSynthesisUtterance!=="function"){readerFail(p,"本机没有可用朗读引擎");return}
+ const chunks=voiceChunks(p.text);let i=0;
+ function next(){
+  if(messageReader!==p)return;
+  clearTimeout(p.timer);
+  if(i>=chunks.length){p.utterance=null;readerDone(p);return}
+  const part=chunks[i++],lang=voiceLanguage(part),u=new window.SpeechSynthesisUtterance(part);
+  const voices=synth.getVoices(),matching=voices.filter(v=>v.lang.toLowerCase().split("-")[0]===lang.toLowerCase().split("-")[0]);
+  const selected=matching.find(v=>v.voiceURI===voiceSession.voice)||matching.find(v=>v.localService&&v.lang.toLowerCase()===lang.toLowerCase())||matching.find(v=>v.localService)||matching[0];
+  u.lang=selected?.lang||lang;u.rate=voiceSession.rate;u.volume=1;if(selected)u.voice=selected;
+  p.utterance=u;p.phase="loading";p.pause.hidden=true;
+  readerStatus(p,"准备朗读 "+i+"/"+chunks.length+"…");
+  p.timer=setTimeout(()=>readerFail(p,"系统语音未启动，可重试或使用云朗读"),10000);
+  u.onstart=()=>{if(messageReader!==p||p.utterance!==u)return;clearTimeout(p.timer);p.phase="playing";p.pause.hidden=false;p.pause.textContent="暂停";readerStatus(p,"朗读中 "+i+"/"+chunks.length);p.timer=setTimeout(()=>readerFail(p,"系统语音播放超时"),Math.max(30000,part.length*900))};
+  u.onend=()=>{if(messageReader===p&&p.utterance===u)next()};
+  u.onerror=e=>{if(messageReader===p&&p.utterance===u)readerFail(p,"系统朗读失败："+String(e.error||"未知错误"))};
+  try{if(synth.paused)synth.resume();synth.speak(u)}catch(e){readerFail(p,"系统朗读启动失败")}
+ }
+ next();
+}
+async function readerCloud(p){
+ if(messageReader!==p)return;
+ if(!connected("gemini")){readerStatus(p,"云朗读需要在设置连接个人 Gemini API");return}
+ if(!confirm("使用个人 Gemini 生成音频？朗读文字会发送给 Google；免费额度之外可能产生费用。"))return;
+ if(p.utterance){p.utterance.onstart=p.utterance.onend=p.utterance.onerror=null;try{window.speechSynthesis.cancel()}catch{}p.utterance=null}
+ clearTimeout(p.timer);p.local=false;p.retry.hidden=true;p.cloud.hidden=true;p.pause.hidden=true;
+ voicePlaybackButton(p.button,true);
+ const chunks=[];let part="";
+ for(const ch of p.text){part+=ch;if(part.length>=420||(/[。！？!?；;\n]/.test(ch)&&part.length>=220)){if(part.trim())chunks.push(part.trim());part=""}}
+ if(part.trim())chunks.push(part.trim());
+ let i=0;
+ async function next(){
+  if(messageReader!==p)return;
+  if(p.url){URL.revokeObjectURL(p.url);p.url=null}
+  if(i>=chunks.length){readerDone(p);return}
+  p.phase="loading";readerStatus(p,"生成语音 "+(i+1)+"/"+chunks.length+"…");p.pause.hidden=true;
+  const ctrl=new AbortController();p.abort=ctrl;
+  p.timer=setTimeout(()=>{ctrl.abort();readerFail(p,"云朗读生成超时，请重试")},45000);
+  try{
+   const res=await fetch("/api/message/read-aloud",{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify({text:chunks[i],confirmed:true,apiKey:S.keys.gemini||undefined}),signal:ctrl.signal});
+   if(messageReader!==p||p.phase!=="loading")return;
+   if(!res.ok){const err=await res.json().catch(()=>null);throw Error(err?.error||"语音服务 HTTP "+res.status)}
+   const blob=await res.blob();if(messageReader!==p||p.phase!=="loading")return;
+   if(!blob.size||!blob.type.startsWith("audio/"))throw Error("语音服务没有返回音频");
+   clearTimeout(p.timer);p.abort=null;p.url=URL.createObjectURL(blob);
+   const audio=p.audio||(p.audio=document.createElement("audio"));audio.preload="auto";audio.src=p.url;audio.playbackRate=voiceSession.rate;
+   audio.onplaying=()=>{if(messageReader!==p)return;p.phase="playing";p.pause.hidden=false;p.pause.textContent="暂停";readerStatus(p,"云朗读 "+(i+1)+"/"+chunks.length)};
+   audio.onended=()=>{if(messageReader===p){i++;void next()}};
+   audio.onerror=()=>readerFail(p,"音频无法播放，请重试");
+   p.phase="ready";p.pause.hidden=false;p.pause.textContent="播放";readerStatus(p,"音频已生成，点击播放");
+   try{await audio.play()}catch{if(messageReader===p&&p.phase==="ready")readerStatus(p,"音频已生成，点击播放")}
+  }catch(e){if(messageReader===p&&p.phase==="loading")readerFail(p,e.message||"云朗读失败")}
+ }
+ void next();
+}
+function startMessageReader(row,text,button){
+ if(messageReader?.button===button&&["loading","ready","playing","paused"].includes(messageReader.phase)){stopMessageReader();return}
+ stopMessageReader();if(voiceSession.reading||voiceSession.active)voiceStop();
+ const panel=node("div","message-reader"),status=node("span","message-reader-status","准备朗读…");
+ status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+ const control=(name,fn)=>{const b=node("button","message-reader-control",name);b.type="button";b.addEventListener("click",e=>{e.stopPropagation();fn()});return b};
+ const p={row,button,panel,status,text:speechContent(text),local:false,phase:"loading",timer:null,utterance:null,audio:null,url:null,abort:null};
+ p.pause=control("暂停",()=>{
+  if(messageReader!==p)return;
+  if(p.phase==="playing"){
+   if(p.local){window.speechSynthesis.pause();clearTimeout(p.timer)}else p.audio?.pause();
+   p.phase="paused";p.pause.textContent="继续";readerStatus(p,"已暂停");
+  }else if(p.phase==="paused"||p.phase==="ready"){
+   if(p.local){window.speechSynthesis.resume();p.phase="playing";p.pause.textContent="暂停";readerStatus(p,"朗读中");p.timer=setTimeout(()=>readerFail(p,"系统语音播放超时"),Math.max(30000,(p.utterance?.text.length||130)*900))}
+   else void p.audio?.play().catch(()=>readerStatus(p,"播放未启动，请再次点击播放"));
+  }
+ });
+ p.retry=control("重试",()=>startMessageReader(row,text,button));p.cloud=control("云朗读",()=>void readerCloud(p));p.stop=control("关闭",()=>stopMessageReader());
+ p.pause.hidden=true;p.retry.hidden=true;p.cloud.hidden=true;
+ panel.append(status,p.pause,p.retry,p.cloud,p.stop);button.closest(".message-copy-bar").append(panel);messageReader=p;
+ if(!p.text){readerFail(p,"这条消息没有可朗读文字");return}
+ readerLocal(p);
+}
+
 function voiceReleaseMic(){
  clearTimeout(voiceSession.recordTimer);voiceSession.recordTimer=null;
  const stream=voiceSession.stream;voiceSession.stream=null;
@@ -1659,7 +1768,7 @@ function voiceWire(){
  $("voiceLang").addEventListener("change",e=>{voiceSession.lang=e.target.value;voiceSave();voiceChoices()});
  $("voiceRate").addEventListener("change",e=>{voiceSession.rate=Number(e.target.value);voiceSave()});
  window.speechSynthesis?.addEventListener?.("voiceschanged",voiceChoices);
- document.addEventListener("visibilitychange",()=>{if(document.hidden&&(voiceSession.active||voiceSession.reading))voiceStop()});
+ document.addEventListener("visibilitychange",()=>{if(document.hidden){stopMessageReader();if(voiceSession.active||voiceSession.reading)voiceStop()}});
 }
 
 async function copyMessageText(value,button){
@@ -1950,6 +2059,7 @@ function closeMessageMore(){
 }
 function appendMessageCopy(row,content){
  if(!row?.classList?.contains("message"))return;
+ if(messageReader?.row===row)stopMessageReader();
  if(activeMessageMore&&row.contains(activeMessageMore.trigger))closeMessageMore();
  row.querySelector(":scope > .message-copy-bar")?.remove();
  const text=String(content||""),image=row.querySelector("img.chat-generated-image");
@@ -1975,11 +2085,8 @@ function appendMessageCopy(row,content){
  }
  if(!user){
   bar.append(messageTool("refresh-cw","重新生成",()=>retryMessage(row)));
-  if(MESSAGE_READ_ALOUD_ENABLED&&!image&&window.speechSynthesis&&typeof SpeechSynthesisUtterance==="function"){
-   const play=messageTool("volume-2","播放回复",b=>{
-    if(voiceSession.button===b&&voiceSession.reading){voiceCancel();return}
-    if(!voiceSpeak(text,b,false))flashError("本设备暂不支持播放回复");
-   });
+  if(MESSAGE_READ_ALOUD_ENABLED&&!image){
+   const play=messageTool("volume-2","朗读回复",b=>startMessageReader(row,text,b));
    play.setAttribute("aria-pressed","false");bar.append(play);
   }
  }
@@ -2258,7 +2365,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
 }
 function newChat(keepDrawer=false){
  closeMessageMore();
- if(voiceSession.reading)voiceCancel();
+ stopMessageReader();if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
@@ -2276,7 +2383,7 @@ function startCoding(){
 async function loadChat(id){
  if(S.busy)return;
  closeMessageMore();
- if(voiceSession.reading)voiceCancel();
+ stopMessageReader();if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
@@ -3032,6 +3139,7 @@ function syncTopMode(){
  $("headerNew").title=working?"新建工作任务":"新建聊天";
 }
 function setFreeToolsMode(enabled){
+ if(enabled)stopMessageReader();
  S.freeToolsMode=!!enabled;$("shell").classList.toggle("free-tools-active",S.freeToolsMode);
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
@@ -3169,6 +3277,7 @@ async function wkRuns(){
 
 const WORK_LABELS=["规划","制作","复核","交付"];
 function setWorkMode(on){
+ if(on)stopMessageReader();
  setFreeToolsMode(false);S.workMode=!!on;
  if(on){
   if(!S.workStages.length)resetWorkPlan();

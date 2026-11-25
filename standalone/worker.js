@@ -886,6 +886,43 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,primarySucceeded:provider==="free"||primarySucceeded,primaryFailure,incomplete:Boolean(result.incomplete)};
 }
 
+
+/* User-authorized Gemini TTS. No shared paid key, no persistence or auto retry. */
+function speechWav(bytes,rate=24000){
+ if(bytes.length>=44&&String.fromCharCode(...bytes.subarray(0,4))==="RIFF"&&String.fromCharCode(...bytes.subarray(8,12))==="WAVE")return bytes;
+ if(!bytes.length||bytes.length%2)throw Object.assign(Error("语音数据格式异常"),{status:502});
+ const wav=new Uint8Array(44+bytes.length),v=new DataView(wav.buffer);
+ const tag=(offset,s)=>{for(let i=0;i<s.length;i++)wav[offset+i]=s.charCodeAt(i)};
+ tag(0,"RIFF");v.setUint32(4,36+bytes.length,true);tag(8,"WAVE");tag(12,"fmt ");v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);tag(36,"data");v.setUint32(40,bytes.length,true);wav.set(bytes,44);return wav;
+}
+async function readAloudAudio(req,env,user){
+ requireUser(user);const body=await parseJSON(req,12000);
+ if(body.confirmed!==true)return fail("请确认使用个人 Gemini 语音服务",400);
+ const text=typeof body.text==="string"?body.text.trim():"";
+ if(!text||text.length>500)return fail("单段朗读文字长度无效",400);
+ const {key}=await keyForProvider(env,user,"gemini",body.apiKey);
+ if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))return fail("个人 Gemini 密钥无效",400);
+ let upstream;
+ try{upstream=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent",{method:"POST",redirect:"manual",headers:{"content-type":"application/json","x-goog-api-key":key},body:JSON.stringify({contents:[{parts:[{text:"Read the following text verbatim, without adding commentary, in its original language:\n"+text}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Kore"}}}}}),signal:AbortSignal.timeout(40000)})}catch{return fail("Gemini 语音连接超时或失败",503)}
+ if(!upstream.ok)return fail("Gemini 语音服务 HTTP "+upstream.status,upstream.status===429?429:502);
+ const out=await upstream.json().catch(()=>null);
+ const candidate=out?.candidates?.[0];const part=candidate?.content?.parts?.find(p=>p.inlineData?.data)?.inlineData;
+ if(!part||!part.mimeType?.startsWith("audio/")||typeof part.data!=="string"||part.data.length>12000000)return fail("Gemini 未返回有效语音",502);
+ if(candidate.finishReason&&candidate.finishReason!=="STOP")return fail("Gemini 语音未完整生成："+candidate.finishReason,502);
+ let audio;try{
+  const raw=fromB64(part.data);
+  if(/^audio\/(?:wav|x-wav|wave)(?:;|$)/i.test(part.mimeType)){
+   if(raw.length<44||String.fromCharCode(...raw.subarray(0,4))!=="RIFF"||String.fromCharCode(...raw.subarray(8,12))!=="WAVE")return fail("WAV 音频格式异常",502);
+   audio=raw;
+  }else if(/^audio\/(?:L16|pcm)(?:;|$)/i.test(part.mimeType)){
+   const rate=Number(part.mimeType.match(/rate=(\d+)/i)?.[1]||24000);
+   if(![8000,16000,24000,44100,48000].includes(rate))return fail("音频采样率不支持",502);
+   audio=speechWav(raw,rate);
+  }else return fail("语音编码不支持",502);
+ }catch{return fail("语音数据解码失败",502)}
+ return new Response(audio,{headers:secureHeaders({"content-type":"audio/wav","cache-control":"no-store","content-disposition":"inline"})});
+}
+
 /* POST SSE: real upstream deltas where supported; terminal event commits the exact persisted answer. */
 function chatStream(req,env,user){
  const encoder=new TextEncoder();
@@ -2511,6 +2548,7 @@ async function main(req,env){
  }
  const imageJob=path.match(/^\/api\/image\/task\/([0-9a-f-]{36})$/i);
  if(imageJob&&req.method==="GET")return imageJobStatus(env,user,imageJob[1]);
+ if(path==="/api/message/read-aloud"&&req.method==="POST")return readAloudAudio(req,env,user);
  if(path==="/api/message/translate"&&req.method==="POST")return response(await translateChatMessage(req,env,user));
  if(path==="/api/chat/media"&&req.method==="POST")return response(await mediaChat(req,env,user));
   if(path==="/api/avatar"&&req.method==="GET")return avatarRead(env,user);
