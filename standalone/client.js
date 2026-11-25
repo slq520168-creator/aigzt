@@ -2462,18 +2462,36 @@ function settlePromptSize(){
  if(promptLayoutFrame)return;
  promptLayoutFrame=requestAnimationFrame(()=>{promptLayoutFrame=0;resizePrompt()});
 }
-let viewportLayoutFrame=0;
+let viewportLayoutFrame=0,composerViewportBaseline=0,composerViewportWidth=0;
+function composerViewportMetrics(height,offsetTop,baseline,focused,wasVisible){
+ const h=Math.max(0,Math.round(height));
+ const keyboardVisible=(focused||wasVisible)&&baseline-h>100;
+ return {keyboardVisible,height:h,top:Math.max(0,Math.round(offsetTop||0))};
+}
 function syncMobileHeight(){
- if(!window.visualViewport||viewportLayoutFrame)return;
+ if(viewportLayoutFrame)return;
  viewportLayoutFrame=requestAnimationFrame(()=>{
   viewportLayoutFrame=0;
-  const root=document.documentElement;
-  const keyboardVisible=document.activeElement===$("prompt")&&window.innerHeight-window.visualViewport.height>140;
-  root.classList.toggle("aigzt-keyboard-visible",keyboardVisible);
-  const next=keyboardVisible?Math.round(window.visualViewport.height)+"px":"";
-  if(root.style.getPropertyValue("--aigzt-visible-height")!==next){
-   if(next)root.style.setProperty("--aigzt-visible-height",next);
-   else root.style.removeProperty("--aigzt-visible-height");
+  const root=document.documentElement,vv=window.visualViewport,prompt=$("prompt");
+  const focused=document.activeElement===prompt&&!$("composerArea").hidden;
+  const mobile=window.matchMedia("(max-width:900px)").matches;
+  const width=Math.round(vv?.width||window.innerWidth),height=vv?.height||window.innerHeight;
+  const previous=root.classList.contains("aigzt-keyboard-visible");
+  if(!composerViewportBaseline||Math.abs(width-composerViewportWidth)>80){
+   composerViewportBaseline=Math.max(height,window.innerHeight);
+   composerViewportWidth=width;
+  }
+  if(!focused&&!previous)composerViewportBaseline=Math.max(height,window.innerHeight);
+  const metrics=composerViewportMetrics(height,vv?.offsetTop||0,composerViewportBaseline,focused,previous);
+  const active=mobile&&metrics.keyboardVisible&&(!document.querySelector("dialog[open]"))&&!$("composerArea").hidden;
+  root.classList.toggle("aigzt-keyboard-visible",active);
+  if(active){
+   root.style.setProperty("--aigzt-visible-height",metrics.height+"px");
+   root.style.setProperty("--aigzt-visible-top",metrics.top+"px");
+  }else{
+   root.style.removeProperty("--aigzt-visible-height");
+   root.style.removeProperty("--aigzt-visible-top");
+   if(!focused)composerViewportBaseline=Math.max(height,window.innerHeight);
   }
  });
 }
@@ -4466,9 +4484,15 @@ function wire(){
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);
+ $("prompt").addEventListener("focus",syncMobileHeight);
  $("prompt").addEventListener("blur",()=>{syncMobileHeight();settlePromptSize()});
- window.addEventListener("resize",syncMobileHeight);
- if(window.visualViewport)window.visualViewport.addEventListener("resize",syncMobileHeight)
+ window.addEventListener("resize",syncMobileHeight,{passive:true});
+ window.addEventListener("orientationchange",()=>{composerViewportBaseline=0;syncMobileHeight()},{passive:true});
+ if(window.visualViewport){
+  window.visualViewport.addEventListener("resize",syncMobileHeight,{passive:true});
+  window.visualViewport.addEventListener("scroll",syncMobileHeight,{passive:true});
+ }
+ syncMobileHeight();
 
  document.addEventListener("click",e=>{if(!$("attachMenu").hidden&&!$("attachMenu").contains(e.target)&&!$("attachButton").contains(e.target))hideAttachMenu()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")hideAttachMenu()});
