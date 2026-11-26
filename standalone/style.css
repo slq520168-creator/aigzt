@@ -306,7 +306,7 @@ a{color:inherit}
 .small-note{font-size:12px;color:#829096;line-height:1.6;margin:8px 0}
 #authDialog{width:min(90vw,390px);padding:22px;overflow:hidden}
 #authDialog[open]{display:flex;flex-direction:column;gap:5px}
-#authDialog>.page-back{align-self:flex-start;flex:0 0 36px}
+#authDialog>.page-heading{flex:0 0 auto}
 #authDialog input{margin:0}
 #authDialog input:-webkit-autofill{-webkit-box-shadow:0 0 0 100px #fff inset;-webkit-text-fill-color:#1b3037}
 #authDialog #authForm{gap:13px}
@@ -643,7 +643,7 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
  z-index:120;background:#fff;padding:9px;border:1px solid #e4e7eb;
  border-radius:16px;box-shadow:0 12px 34px rgba(12,27,35,.13)
 }
-.context-popover .page-intro{margin-bottom:3px}.context-popover .page-intro h2{font-size:15px}.context-popover .close-modal{width:27px;height:27px}
+.context-popover .page-heading{margin-bottom:3px}.context-popover .page-heading h2{font-size:15px}.context-popover .close-modal{width:27px;height:27px;flex-basis:27px}
 #actionsDialog.history-anchored[open]{z-index:120;padding:6px;border-radius:12px;box-sizing:border-box}
 #actionsDialog.history-anchored .action-row{min-height:36px;font-size:13px;padding:5px 7px}
 .history-inline-rename{display:flex;flex-direction:column;gap:5px}

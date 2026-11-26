@@ -2609,7 +2609,7 @@ function newChat(keepDrawer=false){
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
- workspaceTrail.length=0;
+ if(history.state?.aigztWorkspace)history.replaceState({...history.state,aigztWorkspace:false},"",location.pathname+location.search);
  S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();if(keepDrawer!==true)closeMenu();
 }
@@ -3427,24 +3427,21 @@ function renderFreeTools(){
  const empty=$("freeToolEmpty");empty.textContent=recent&&!search?"暂无最近使用的工具":"没有匹配的工具";empty.hidden=desired.length>0;
 }
 let restoringWorkspace=false;
-const workspaceTrail=[];
 function currentWorkspace(){return S.workMode?"work":S.freeToolsMode?"tools":""}
 function syncWorkspaceRoute(name){
  if(restoringWorkspace)return;
  const hash=name?"#"+name:"";
- if(location.hash!==hash)history.replaceState(history.state,"",location.pathname+location.search+hash);
+ if(location.hash!==hash)history.replaceState({...history.state,aigztWorkspace:false},"",location.pathname+location.search+hash);
 }
 function enterWorkspace(name){
  const previous=currentWorkspace();
  if(previous===name){closeMenu();return}
- workspaceTrail.push(previous);
  const state={...history.state,aigztWorkspace:true};
  history.pushState(state,"",location.pathname+location.search+"#"+name);
  restoreWorkspaceRoute();
 }
 function returnWorkspace(){
- if(workspaceTrail.length){
-  workspaceTrail.pop();
+ if(history.state?.aigztWorkspace&&location.hash){
   history.back();
  }else{
   if(S.workMode)setWorkMode(false);
@@ -4507,7 +4504,7 @@ function setCreationMode(){
  $("createDialogTitle").textContent="免费作图";
  $("drawSettings").hidden=false;$("drawResultSection").hidden=false;
  $("drawCancel").hidden=!S.drawBatch;$("drawElapsed").hidden=!S.drawBatch&&$("drawElapsed").textContent==="00:00";
- $("createButton").textContent=S.drawBatch?"生成中…":"生成免费图片";$("createPrompt").placeholder="描述你要生成的图片…";
+ $("createButton").textContent="生成免费图片";$("createPrompt").placeholder="描述你要生成的图片…";
 }
 function openCreate(){
  if(!S.user){show("authDialog");return}
@@ -4586,7 +4583,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;workspaceTrail.length=0;restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){

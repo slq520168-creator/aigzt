@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const html=fs.readFileSync('standalone/index.html','utf8'),js=fs.readFileSync('standalone/client.js','utf8'),css=fs.readFileSync('standalone/style.css','utf8');
 test('all named secondary pages have one fixed compact heading containing the original back button and title',()=>{
  for(const d of html.matchAll(/<dialog id="([^"]+)"[\s\S]*?<\/dialog>/g)){
-  assert.match(d[0],/<div class="page-heading[^"]*">\s*<button[^>]*page-back[\s\S]*?<\/button>\s*<h2/);
+  assert.match(d[0],/^<dialog[^>]*>\s*<div class="page-heading[^"]*">\s*<button[^>]*page-back[\s\S]*?<\/button>\s*<h2/);
   assert.ok(d[0].includes('data-close="'+d[1]+'"'));
  }
  for(const id of ['workClose','freeToolsClose'])assert.match(html,new RegExp('<div class="page-heading[^"]*">\\s*<button[^>]*id="'+id+'"[^>]*>[\\s\\S]*?<\\/button><h2'));
