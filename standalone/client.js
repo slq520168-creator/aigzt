@@ -1010,6 +1010,26 @@ function openLocalMedia(){
  return localMediaDB;
 }
 function deviceMediaKey(id){return S.user?.id&&id?S.user.id+":"+id:null}
+const localImageFiles=new WeakMap();
+function localImageElement(blob,loading="eager"){
+ const img=node("img","chat-generated-image");img.alt="生成图片";img.loading=loading;
+ localImageFiles.set(img,blob);img.src=URL.createObjectURL(blob);return img;
+}
+function imageChatStorageKey(owner){return owner?"aigzt:last-image-chat:"+owner:null}
+function rememberImageChat(owner=S.user?.id,chatId=S.chatId){
+ if(!owner||S.user?.id!==owner||!chatId||S.chatId!==chatId)return;
+ try{localStorage.setItem(imageChatStorageKey(owner),chatId)}catch{}
+}
+function forgetImageChat(){
+ const key=imageChatStorageKey(S.user?.id);if(key)try{localStorage.removeItem(key)}catch{}
+}
+async function restoreLastImageChat(){
+ const owner=S.user?.id,key=imageChatStorageKey(owner);
+ if(!key||S.chatId||S.busy||location.hash)return;
+ let id;try{id=localStorage.getItem(key)}catch{return}
+ if(!/^[0-9a-f-]{36}$/i.test(id||""))return;
+ if(S.user?.id===owner&&!S.chatId&&!S.busy)await loadChat(id);
+}
 let mediaPersistenceRequested=false;
 function requestDeviceMediaPersistence(){
  if(mediaPersistenceRequested)return;
@@ -1017,7 +1037,7 @@ function requestDeviceMediaPersistence(){
  try{void navigator.storage?.persist?.().catch(()=>{})}catch{}
 }
 async function deviceMediaPut(key,value){
- if(!key||(!(value instanceof Blob)&&!(Array.isArray(value)&&value.length&&value.every(b=>b instanceof Blob))))return false;
+ if(!key||(!(value instanceof Blob&&value.size>0)&&!(Array.isArray(value)&&value.length&&value.every(b=>b instanceof Blob&&b.size>0))))return false;
  try{const db=await openLocalMedia();await new Promise((resolve,reject)=>{
   const tx=db.transaction("media","readwrite");
   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
@@ -1032,9 +1052,11 @@ async function cacheReplyImages(owner,id,sources){
  if(!sources?.length)return true;
  if(!owner||!id)return false;
  requestDeviceMediaPersistence();
- const blobs=await Promise.all(sources.map(src=>deviceMediaBlob(src).catch(()=>null)));
- if(!blobs.every(b=>b instanceof Blob))return false;
- return deviceMediaPut(owner+":"+id+":reply-images",blobs);
+ const results=await Promise.all(sources.map(src=>deviceMediaBlob(src).catch(()=>null)));
+ const blobs=results.filter(b=>b instanceof Blob&&b.size>0&&b.type.startsWith("image/"));
+ if(!blobs.length)return false;
+ const saved=await deviceMediaPut(owner+":"+id+":reply-images",blobs);
+ return saved&&blobs.length===sources.length;
 }
 async function restoreReplyImages(bubble,id,replace=false){
  const key=deviceMediaKey(id);if(!key)return false;
@@ -1044,9 +1066,9 @@ async function restoreReplyImages(bubble,id,replace=false){
  if(!blobs.length||!bubble.isConnected||deviceMediaKey(id)!==key||bubble.closest(".message")?.dataset.messageId!==id)return false;
  if(replace)bubble.replaceChildren();
  for(const blob of blobs){
-  const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="lazy";img.src=URL.createObjectURL(blob);bubble.append(img);
+  bubble.append(localImageElement(blob,"lazy"));
  }
- return true;
+ rememberImageChat();return true;
 }
 async function visitDeviceMedia(owner,remove=false){
  const db=await openLocalMedia();
@@ -1129,18 +1151,22 @@ async function deviceMediaBlob(src){
 }
 function localMediaNotice(bubble,kind){bubble.replaceChildren(node("span","video-job-hint",kind==="video"?"视频仅保留在原设备；不会自动重新生成":"图片仅保留在原设备；不会自动重新生成"))}
 function renderDeviceMedia(bubble,blob,kind){
- const url=URL.createObjectURL(blob);
  if(kind==="video"){
+  const url=URL.createObjectURL(blob);
   const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=url;
   const link=node("a","chat-video-save","下载");link.href=url;link.download="aigzt-video.mp4";bubble.replaceChildren(video,link);
  }else{
-  const img=node("img","chat-generated-image");img.alt="生成图片";img.src=url;bubble.replaceChildren(img);
+  bubble.replaceChildren(localImageElement(blob));rememberImageChat();
   const row=bubble.closest(".message");if(row)appendMessageCopy(row,"");
  }
 }
-async function restoreDeviceMedia(bubble,id,kind,legacyUrl=""){
+async function restoreDeviceMedia(bubble,id,kind,legacyUrl="",legacyJobId=""){
  const key=deviceMediaKey(id);localMediaNotice(bubble,kind);
  let blob=await deviceMediaGet(key);
+ if(!(blob instanceof Blob)&&kind==="image"&&legacyJobId&&legacyJobId!==id){
+  const legacyKey=deviceMediaKey(legacyJobId);blob=await deviceMediaGet(legacyKey);
+  if(blob instanceof Blob&&blob.size&&key)await deviceMediaPut(key,blob);
+ }
  if(!(blob instanceof Blob)&&kind==="image"&&await restoreReplyImages(bubble,id,true))return;
  if(!(blob instanceof Blob)&&legacyUrl){try{blob=await deviceMediaBlob(legacyUrl);if(blob)await deviceMediaPut(key,blob)}catch{}}
  if(blob instanceof Blob&&bubble.isConnected&&deviceMediaKey(id)===key)renderDeviceMedia(bubble,blob,kind);
@@ -1175,16 +1201,17 @@ async function pollImageJob(bubble,id,manual){
   const key=deviceMediaKey(messageId),owner=S.user?.id;
   requestDeviceMediaPersistence();
   const r=await api("/api/image/task/"+id);
-  let cached=true;
+  let cached=false,blob=null;
   if(r.done&&!r.failed&&r.image){
-   try{const blob=await deviceMediaBlob(r.image);cached=await deviceMediaPut(key,blob)}catch{cached=false}
+   try{blob=await deviceMediaBlob(r.image);cached=blob instanceof Blob&&blob.size>0&&blob.type.startsWith("image/")&&await deviceMediaPut(key,blob)}catch{cached=false}
   }
   if(!bubble.isConnected||bubble.dataset.imageTask!==id||S.user?.id!==owner)return;
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
    if(r.failed){showImageRetry(bubble);return}
-   const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
+   const img=cached?localImageElement(blob):node("img","chat-generated-image");
+   img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
    img.onload=()=>{
     if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;
     const follow=chatImageNearBottom(bubble);
@@ -1192,12 +1219,12 @@ async function pollImageJob(bubble,id,manual){
     bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);
     const row=bubble.closest(".message");
     if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}
-    if(!cached)mediaCacheWarning(bubble);
+    if(cached)rememberImageChat(owner,S.chatId);else mediaCacheWarning(bubble);
     // The final image can have a different height from the loading frame.
     if(follow)followLatestImage(bubble);
    };
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;showImageRetry(bubble)};
-   img.src=r.image;return;
+   if(cached){if(img.complete&&img.naturalWidth)img.onload()}else img.src=r.image;return;
   }
   delay=Math.max(1000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -2127,6 +2154,8 @@ function messageTextFile(content,format="auto"){
  return new File([text],"IMAI-message."+extension,{type:(md?"text/markdown":"text/plain")+";charset=utf-8"});
 }
 function messageImageFile(image){
+ const local=localImageFiles.get(image);
+ if(local instanceof Blob&&local.size){const mime=local.type||"image/png",ext=mime==="image/jpeg"?"jpg":mime.slice(6);return new File([local],"IMAI-image."+ext,{type:mime})}
  const url=image?.currentSrc||image?.src||"";
  const match=url.match(/^data:(image\/(?:png|jpeg|webp|gif|avif));base64,([A-Za-z0-9+/=\s]+)$/i);
  if(!match)return null;
@@ -2512,7 +2541,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   if(!existingRow)row.append(makeAssistantPortrait(),bubble);
   else if(!row.querySelector(":scope > .avatar-ai"))row.prepend(makeAssistantPortrait());
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
-  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image")}
+  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image","",pending[1])}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){row.dataset.messageKind="image";void restoreDeviceMedia(bubble,messageId,"image",picture[1])}
   const videoPending=String(content||"").match(/^\[\[aigzt:video-job:([0-9a-f-]{36})\]\]$/i);
@@ -2568,7 +2597,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  return row;
 }
 function newChat(keepDrawer=false){
- closeMessageMore();
+ forgetImageChat();closeMessageMore();
  stopMessageReader();if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
@@ -2593,7 +2622,7 @@ async function loadChat(id){
  if(S.workMode)setWorkMode(false);
  try{
   const v=await api("/api/chats/"+id);
-  S.chatId=id;$("messageList").replaceChildren();hideWelcome();
+  forgetImageChat();S.chatId=id;$("messageList").replaceChildren();hideWelcome();
   for(const m of v.messages)appendMessage(m.role,m.body,m.model,null,false,m.id,Boolean(m.saved),m.feedback,m.usage_json,m.created_at);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
@@ -3826,7 +3855,8 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
-    if(!replyMediaCached)mediaCacheWarning(loading.querySelector(".bubble"));
+    if(result.images?.length&&replyMediaCached)rememberImageChat(mediaOwner,result.chatId);
+     if(!replyMediaCached)mediaCacheWarning(loading.querySelector(".bubble"));
     if(submittedMode==="text")setPortraitState(loading,"finished");
   }
   if(VOICE_CHAT_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
@@ -4788,5 +4818,5 @@ function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
  applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();document.documentElement.classList.remove("pwa-boot-rainbow");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
- restoreWorkspaceRoute();updateModelTitle();
+ restoreWorkspaceRoute();updateModelTitle();await restoreLastImageChat();
 });
