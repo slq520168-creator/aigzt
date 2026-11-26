@@ -120,6 +120,8 @@ function activeBackDialog(){
  return open[open.length-1]||Array.from(document.querySelectorAll("dialog[open]")).at(-1)||null;
 }
 function backDialog(id){
+ if(id==="authDialog")pendingHomeBrand=null;
+ if(id==="keyDialog")homeBrandBinding=null;
  if(id==="actionsDialog"){closeHistoryActions();return}
  const parent=id==="keyDialog"?keyBackPage:null;
  if(id==="keyDialog")keyBackPage=null;
@@ -490,6 +492,7 @@ function setFreeDefault(render=true){
 }
 async function useSavedConnection(){
  const provider=$("keyProvider").value,entry=S.savedProviders[provider];
+ if(homeBrandBinding?.provider===provider&&entry){const route=homeBrandBinding;homeBrandBinding=null;hide("keyDialog");openHomeBrandModels(route);return}
  if(!entry){$("keyStatus").textContent="请先保存密钥";return}
  const button=$("useSavedKey");button.disabled=true;
  try{
@@ -4129,7 +4132,7 @@ function russianGroupFor(m){
  const identity=[m.id,m.name,m.author,m.provider].filter(Boolean).join(" ");
  return RUSSIAN_MODEL_GROUPS.find(g=>m.provider===g.id||g.aliases.test(identity))||null;
 }
-const FAMILY_CONNECTIONS={gpt:[["openai","OpenAI"]],claude:[["claude","Claude"]],grok:[["grok","Grok"]],gemini:[["gemini","Gemini"]],qwen:[["qwen","千问"]],deepseek:[["deepseek","DeepSeek"]],novai:[["novai","NovaAI"]]};
+const FAMILY_CONNECTIONS={gpt:[["openai","OpenAI"]],claude:[["claude","Claude"]],grok:[["grok","Grok"]],gemini:[["gemini","Gemini"]],qwen:[["qwen","千问"]],deepseek:[["deepseek","DeepSeek"]],kimi:[["kimi","Kimi"]],novai:[["novai","NovaAI"]]};
 function renderChinaBrands(models){
  const target=$("modelRegionLinks"),chinese=S.source==="family:china"||S.source.startsWith("family:cn:");
  const russian=S.source==="family:russian"||S.source.startsWith("family:ru:");
@@ -4186,7 +4189,7 @@ function modelMatches(m){
   const family=S.source.slice(7),id=(m.id+" "+m.name).toLowerCase();
   const re={gpt:/gpt|openai\/|\bo[1-9]-/,claude:/claude|anthropic/,
    grok:/grok|x-ai\/|xai\//,gemini:/gemini|google\//,qwen:/qwen|alibaba|tongyi/,
-   novai:/novai|nova-ai|novaiapi/,deepseek:/deepseek/,
+   novai:/novai|nova-ai|novaiapi/,deepseek:/deepseek/,kimi:/kimi|moonshot/,llama:/\bllama\b|meta-llama/,
    russian:/yandex|gigachat|giga-chat|sber|alice-ai|\.su\//};
   const groupMatch=family==="china"&&Boolean(owner)
    ||family.startsWith("cn:")&&owner?.id===family.slice(3)
@@ -4292,6 +4295,27 @@ function refreshSourceChips(){
   btn.dataset.source=p;btn.addEventListener("click",()=>activateSource(p));
   container.append(btn);
  }
+}
+const HOME_BRAND_ROUTES=Object.freeze({
+ openai:{provider:"openai",family:"gpt"}, "claude-color":{provider:"claude",family:"claude"},
+ "gemini-color":{provider:"gemini",family:"gemini"},grok:{provider:"grok",family:"grok"},
+ "deepseek-color":{provider:"deepseek",family:"deepseek"},"qwen-color":{provider:"qwen",family:"qwen"},
+ "kimi-color":{provider:"kimi",family:"kimi"},"metaai-color":{provider:"openrouter",family:"llama",alternate:"groq"}
+});
+let pendingHomeBrand=null,homeBrandBinding=null;
+function openHomeBrandModels(route){
+ S.query="";S.source="family:"+route.family;S.filter="all";S.modelPage=0;
+ openModels();activateSource(S.source);
+ for(const p of [route.provider,route.alternate].filter(Boolean))if(S.savedProviders[p]?.verified)void refreshConnectedModelCatalog(p);
+ $("sourceChips").querySelector('[data-source="'+S.source+'"]')?.scrollIntoView({block:"nearest",inline:"nearest"});
+}
+function openHomeBrand(brand){
+ const route=HOME_BRAND_ROUTES[brand];if(!route)return;
+ if(!S.user){pendingHomeBrand=brand;show("authDialog");return}
+ if(connected(route.provider)||(route.alternate&&connected(route.alternate))){openHomeBrandModels(route);return}
+ homeBrandBinding=route;
+ openKeyPanel(route.provider);
+ if(route.family==="llama"&&S.connectionsLoaded)$("keyStatus").textContent="Meta Llama 通过 OpenRouter 接入；绑定后选择 Llama 模型。";
 }
 function openModels(){
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
@@ -4641,6 +4665,7 @@ async function login(event){
   const d=await api(S.authRegister?"/api/register":"/api/login",{email,password});
   S.user=d.user;hide("authDialog");form.reset();newChat();
   await Promise.all([fetchMe(),fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);
+  const brand=pendingHomeBrand;pendingHomeBrand=null;if(brand)openHomeBrand(brand);
  }catch(e){$("authError").textContent=humanError(e)}
  finally{$("authSubmit").disabled=false}
 }
@@ -4661,7 +4686,7 @@ async function account(){
 async function verifyKey(event){
  event.preventDefault();
  if(!S.user){show("authDialog");return}
- const p=$("keyProvider").value,key=$("personalKey").value.trim();
+ const p=$("keyProvider").value,key=$("personalKey").value.trim(),shortcut=homeBrandBinding?.provider===p?homeBrandBinding:null;
  if(!key){if(S.savedProviders[p]){await useSavedConnection();return}$("keyStatus").textContent="请先从官方页面获取 API Key";return}
  const submit=event.submitter||$("keyForm").querySelector('[type="submit"]');
  if(submit)submit.disabled=true;
@@ -4675,6 +4700,12 @@ async function verifyKey(event){
   S.savedProviders[p]={model:rec.model||"",consent:!!rec.consent,verified:!!rec.verified,updatedAt:rec.updatedAt};
   if(VIDEO_ONLY_PROVIDERS.has(p))delete S.connected[p];else S.connected[p]=Array.isArray(data.models)?data.models:[];
   delete S.keys[p];
+  if(shortcut){
+   refreshSourceChips();refreshKeyPanel();
+   if(rec.verified){homeBrandBinding=null;hide("keyDialog");openHomeBrandModels(shortcut)}
+   else $("keyStatus").textContent=data.warning||"密钥已保存，模型目录待验证";
+   return;
+  }
   if(rec.model&&!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn){
    S.provider=p;S.model=rec.model;
    S.modelTitle=p+" · "+(S.connected[p].find(m=>m.id===rec.model)?.name||rec.model);
@@ -4727,6 +4758,7 @@ function wireChatScrollArrows(){
 function wire(){
  syncInstalledPwaLayout();
  wireDrawerGestures();
+ for(const button of $("homeAiBrands").querySelectorAll("button[data-brand]"))button.addEventListener("click",()=>openHomeBrand(button.dataset.brand));
  $("sidebarChatScroll").addEventListener("scroll",()=>{positionHistoryActions();void loadOlderHistory()},{passive:true});
  window.addEventListener("resize",positionHistoryActions,{passive:true});
  window.visualViewport?.addEventListener("resize",positionHistoryActions,{passive:true});
@@ -4932,7 +4964,7 @@ function wire(){
  $("drawCancel").addEventListener("click",stopDrawBatch);
  drawPrefs();wireImageViewer();
  // Closing the page must not cancel a task or delete images; cancellation is explicit via drawCancel.
- $("keyDialog").addEventListener("close",()=>{if(!$("keyDialog").open){S.videoPendingKeyReturn=false;keyBackPage=null}});
+ $("keyDialog").addEventListener("close",()=>{if(!$("keyDialog").open){S.videoPendingKeyReturn=false;keyBackPage=null;homeBrandBinding=null}});
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();wireChatScrollArrows();
 }
