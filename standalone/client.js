@@ -830,14 +830,44 @@ function queueChatSearch(immediate=false){
  if(immediate)void run();else chatSearchTimer=setTimeout(run,350);
 }
 function searchChats(e){e.preventDefault();if(!chatSearchComposing)queueChatSearch(true)}
+let uploadedFilesOwner=null,uploadedFilesSignature="",uploadedFilesRequest=0;
+function uploadedFileKind(f){
+ const type=String(f.type||"").toLowerCase(),name=String(f.name||"").toLowerCase();
+ if(type.startsWith("image/")||/\.(png|jpe?g|webp|gif|avif|heic|heif)$/.test(name))return "image";
+ if(type.startsWith("video/")||/\.(mp4|mov|webm|m4v|mkv|avi)$/.test(name))return "video";
+ return "file-text";
+}
+function renderUploadedFiles(files,box){
+ const signature=JSON.stringify(files.map(f=>[f.id,f.name,f.type,f.size,f.uploadedAt]));
+ if(signature===uploadedFilesSignature&&box.children.length)return;
+ const fragment=document.createDocumentFragment();
+ for(const f of files){
+  const a=node("a","file-link uploaded-file"),kind=uploadedFileKind(f);
+  a.href=f.url;a.target="_blank";a.rel="noopener noreferrer";
+  const media=node("span","uploaded-file-media");const glyph=iconSlot(kind);media.append(glyph);renderIcons(media);
+  if(kind==="image"){
+   const img=node("img");img.alt="";img.loading="lazy";img.decoding="async";
+   img.addEventListener("load",()=>{media.classList.add("has-thumbnail")},{once:true});
+   img.addEventListener("error",()=>img.remove(),{once:true});
+   media.append(img);img.src=f.url;
+  }
+  const info=node("span","uploaded-file-info");const title=node("strong","",f.name||"附件");const stamp=new Date(f.uploadedAt||NaN);
+  const time=node("time","uploaded-file-time",Number.isFinite(stamp.getTime())?new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).format(stamp):"上传时间未记录");
+  if(Number.isFinite(stamp.getTime()))time.dateTime=stamp.toISOString();
+  info.append(title,time);a.append(media,info);fragment.append(a);
+ }
+ if(!files.length)fragment.append(node("div","hint","尚无已上传文件"));
+ box.replaceChildren(fragment);uploadedFilesSignature=signature;
+}
 async function openFiles(){
  if(!S.user){show("authDialog");return}
- show("filesDialog");const box=$("savedFiles");box.replaceChildren(node("div","hint","读取文件中…"));closeMenu();
+ const owner=S.user.id,box=$("savedFiles"),request=++uploadedFilesRequest;
+ if(uploadedFilesOwner!==owner){uploadedFilesOwner=owner;uploadedFilesSignature="";box.replaceChildren(node("div","hint","读取文件中…"))}
+ show("filesDialog");closeMenu();
  try{
-  const d=await api("/api/files");box.replaceChildren();
-  if(!d.files?.length)box.append(node("div","hint","尚无已上传文件"));
-  for(const f of d.files||[]){const a=document.createElement("a");a.className="file-link";a.href=f.url;a.target="_blank";a.rel="noopener";a.append(iconSlot("paperclip"),node("span","",f.name));box.append(a);renderIcons(a)}
- }catch(e){box.replaceChildren(node("div","hint",humanError(e)))}
+  const d=await api("/api/files");if(S.user?.id!==owner||request!==uploadedFilesRequest)return;
+  renderUploadedFiles(d.files||[],box);
+ }catch(e){if(S.user?.id===owner&&request===uploadedFilesRequest&&!uploadedFilesSignature)box.replaceChildren(node("div","hint",humanError(e)))}
 }
 const CHAT_TEXT_SIZE_KEY="aigzt:chat-text-size";
 const CHAT_TEXT_SIZES=Object.freeze({small:"12px",normal:"14px",large:"18px"});
@@ -3301,16 +3331,19 @@ function freeToolRemember(key){
  if(S.freeToolsMode&&S.freeToolsCategory==="最近使用")setTimeout(()=>freeToolRecentRefresh(scope),0);
 }
 function freeToolsFilters(){
- const list=$("freeToolFilters"),x=list.scrollLeft;list.replaceChildren();
- for(const label of FREE_TOOL_CATEGORIES){
-  const b=node("button","free-filter"+(label===S.freeToolsCategory?" active":""));
-  b.type="button";b.textContent=label;b.setAttribute("aria-label",label.startsWith("P")&&label!=="Perchance"?"Perchance "+label.slice(1):label);b.setAttribute("aria-pressed",String(label===S.freeToolsCategory));
-  b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools();list.querySelector(".free-filter.active")?.scrollIntoView({block:"nearest",inline:"nearest"})});
-  list.append(b);
+ const list=$("freeToolFilters");
+ if(list.children.length!==FREE_TOOL_CATEGORIES.length){
+  const fragment=document.createDocumentFragment();
+  for(const label of FREE_TOOL_CATEGORIES){
+   const b=node("button","free-filter");b.type="button";b.textContent=label;b.dataset.category=label;
+   b.setAttribute("aria-label",label.startsWith("P")&&label!=="Perchance"?"Perchance "+label.slice(1):label);
+   b.addEventListener("click",()=>{S.freeToolsCategory=label;renderFreeTools();b.scrollIntoView({block:"nearest",inline:"nearest"})});fragment.append(b);
+  }
+  list.replaceChildren(fragment);
  }
- list.scrollLeft=x;
+ for(const b of list.children){const selected=b.dataset.category===S.freeToolsCategory;b.classList.toggle("active",selected);b.setAttribute("aria-pressed",String(selected))}
 }
-// Preserve the existing favicon appearance. Repair only known missing sources.
+// Reuse decoded logos and permanent local category icons, including when a remote icon fails.
 const freeToolCards=new Map();
 const FREE_TOOL_ICON_REPAIRS={
  "krea-krea-2.hf.space":{domain:"krea.ai",glyph:"palette"},
@@ -3325,23 +3358,28 @@ function isPerchanceTool(item){
  try{return new URL(item.url).hostname==="perchance.org"||item.provider==="Perchance 社区"}catch{return false}
 }
 const PERCHANCE_CREATOR_PATHS=new Set(["/fur-ai","/ai-character-chat","/ai-character-chat-extended","/ai-character-generator","/ai-chat-roleplay-v2","/ai-character-description"]);
+const freeToolLogoLoads=new Map();
 function freeToolGraphic(item){
  const graphic=node("span","free-tool-icon");graphic.setAttribute("aria-hidden","true");
  let hostname=null;try{hostname=item.url?new URL(item.url).hostname:null}catch{}
- if(isPerchanceTool(item)){
-  const dice=iconSlot("dice");dice.classList.add("free-tool-icon-fallback");graphic.append(dice);renderIcons(graphic);return graphic;
- }
  const repair=FREE_TOOL_ICON_REPAIRS[hostname];
- const glyph=repair?.glyph||({聊天:"message-circle",综合:"blocks",作图:"image",图生图:"image",视频:"video",修图:"palette",角色:"circle-user",写作:"square-pen",互动:"zap",编程:"code-2",音频:"audio-lines",目录:"blocks"})[item.category]||"blocks";
- const fallback=iconSlot(glyph);fallback.classList.add("free-tool-icon-fallback");graphic.append(fallback);renderIcons(graphic);
+ const glyph=isPerchanceTool(item)?"dice":repair?.glyph||({聊天:"message-circle",综合:"blocks",作图:"image",图生图:"image",视频:"video",修图:"palette",角色:"circle-user",写作:"square-pen",互动:"zap",编程:"code-2",音频:"audio-lines",翻译:"languages",办公:"file-text",搜索:"search",目录:"blocks"})[item.category]||"blocks";
+ const fallback=node("span","free-tool-icon-fallback");
+ fallback.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(ICONS[glyph]||ICONS.blocks)+'</svg>';
+ graphic.append(fallback);
+ if(isPerchanceTool(item))return graphic;
  const domain=repair?repair.domain:hostname;
  if(domain){
-  const logo=node("img","free-tool-logo");logo.width=32;logo.height=32;logo.alt="";logo.loading="lazy";logo.decoding="async";logo.referrerPolicy="no-referrer";
-  // The favicon service returns a small generic globe for sites without a logo.
-  const apply=()=>{if(logo.naturalWidth>=24&&logo.naturalHeight>=24)graphic.classList.add("has-logo");else logo.remove()};
-  logo.addEventListener("load",apply,{once:true});logo.addEventListener("error",()=>logo.remove(),{once:true});
-  graphic.append(logo);logo.src="https://www.google.com/s2/favicons?domain="+encodeURIComponent(domain)+"&sz=64";
-  if(logo.complete&&logo.naturalWidth)apply();
+  let load=freeToolLogoLoads.get(domain);
+  if(!load){
+   load=new Promise(resolve=>{const img=new Image();img.referrerPolicy="no-referrer";
+    img.onload=()=>resolve(img.naturalWidth>=24&&img.naturalHeight>=24?img.src:null);
+    img.onerror=()=>resolve(null);img.src="https://www.google.com/s2/favicons?domain="+encodeURIComponent(domain)+"&sz=64";
+   });freeToolLogoLoads.set(domain,load);
+  }
+  void load.then(src=>{if(!src)return;const logo=node("img","free-tool-logo");logo.alt="";logo.width=32;logo.height=32;logo.referrerPolicy="no-referrer";
+   logo.onload=()=>graphic.classList.add("has-logo");logo.onerror=()=>logo.remove();graphic.append(logo);logo.src=src;
+  });
  }
  return graphic;
 }
@@ -3413,7 +3451,7 @@ function renderFreeTools(){
   a.title=item.name+" · "+functions.join(" · ");
   a.setAttribute("aria-label",item.name+"，"+functions.join("、")+"，打开外部网站");
   const parts=String(item.name||"").split(/\s*·\s*/);
-  const shortName=parts.length>1?parts.shift().trim():String(item.name||"");
+  const shortName=String(item.name||"");if(parts.length>1)parts.shift();
   const shortFunction=(item.guest?(item.login==="部分地区免登录"?"地区限定 · ":"免注册 · "):"")+(item.roleLabel||(parts.length?parts.join(" · ").trim():(item.category||functions[0])))+(item.access&&FREE_ACCESS_LABELS[item.access]?" · "+FREE_ACCESS_LABELS[item.access]:item.mainstream?" · 额度待核":"");
   const graphic=freeToolGraphic(item);
   a.append(graphic,node("strong","free-tool-name",shortName),node("small","free-tool-function",shortFunction));
@@ -3461,8 +3499,8 @@ function setFreeToolsMode(enabled){
  S.freeToolsMode=!!enabled;$("shell").classList.toggle("free-tools-active",S.freeToolsMode);
  if(enabled){
   S.workMode=false;$("workBoard").hidden=true;$("conversation").hidden=true;
-  $("freeToolsBoard").hidden=false;$("composerArea").hidden=true;
-  $("navFreeTools").classList.add("active");renderFreeTools();void freeToolRecentHydrate();syncWorkspaceRoute("tools");
+  $("composerArea").hidden=true;
+  $("navFreeTools").classList.add("active");renderFreeTools();$("freeToolsBoard").hidden=false;void freeToolRecentHydrate();syncWorkspaceRoute("tools");
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   if(!S.workMode){$("conversation").hidden=false;syncWorkspaceRoute("")}
@@ -4051,7 +4089,7 @@ async function loadCatalog(){
    const d=await api("/api/models");
    S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
    if(!d.catalogError&&Array.isArray(d.models)&&d.models.length){
-    S.remoteModels=d.models.map(m=>({...m,provider:"openrouter"}));
+    S.remoteModels=d.models.map(m=>({...m,author:m.provider,provider:"openrouter"}));
     S.loadedCatalog=true;
    }
    if(S.workMode)workModelHints();
@@ -4086,9 +4124,32 @@ function domesticGroupFor(m){
  const provider=String(m.provider||"").toLowerCase();
  return CHINA_MODEL_GROUPS.find(group=>group.authors.includes(author)||group.api===provider)||null;
 }
+const RUSSIAN_MODEL_GROUPS=[{id:"yandex",name:"Yandex AI Studio",aliases:/yandex|alice[-_ ]?ai|алиса|яндекс/i},{id:"gigachat",name:"Sber · GigaChat",aliases:/giga[-_ ]?chat|sber|сбер/i},{id:"novai",name:"NovaAI",aliases:/novai|nova[-_ ]?ai/i}];
+function russianGroupFor(m){
+ const identity=[m.id,m.name,m.author,m.provider].filter(Boolean).join(" ");
+ return RUSSIAN_MODEL_GROUPS.find(g=>m.provider===g.id||g.aliases.test(identity))||null;
+}
+const FAMILY_CONNECTIONS={gpt:[["openai","OpenAI"]],claude:[["claude","Claude"]],grok:[["grok","Grok"]],gemini:[["gemini","Gemini"]],qwen:[["qwen","千问"]],deepseek:[["deepseek","DeepSeek"]],novai:[["novai","NovaAI"]]};
 function renderChinaBrands(models){
  const target=$("modelRegionLinks"),chinese=S.source==="family:china"||S.source.startsWith("family:cn:");
- target.hidden=!chinese;if(!chinese)return;
+ const russian=S.source==="family:russian"||S.source.startsWith("family:ru:");
+ const family=S.source.slice(7),providers=FAMILY_CONNECTIONS[family];
+ target.hidden=!chinese&&!russian&&!providers;if(target.hidden)return;
+ if(russian||providers){
+  const groups=russian?RUSSIAN_MODEL_GROUPS:providers.map(([id,name])=>({id,name}));
+  const counts=groups.map(g=>models.filter(m=>russian?russianGroupFor(m)?.id===g.id:m.provider===g.id||modelMatches(m)).length);
+  const signature=S.source+"|"+counts.join("|")+"|"+groups.map(g=>Boolean(S.savedProviders[g.id]?.verified)).join("|");
+  if(target.dataset.renderSignature===signature)return;
+  target.replaceChildren();
+  for(let i=0;i<groups.length;i++){
+   const g=groups[i],count=counts[i],selected=S.source==="family:ru:"+g.id;
+   const b=node("button","model-provider-card"+(selected?" selected":""));b.type="button";
+   b.append(node("strong","",g.name),node("small","",count?count+" 个匹配模型":S.savedProviders[g.id]?.verified?"读取已连接模型":"连接官方服务商 · 尚未接入"));
+   b.addEventListener("click",()=>{if(russian&&count)activateSource("family:ru:"+g.id);else if(S.savedProviders[g.id]?.verified){void refreshConnectedModelCatalog(g.id);if(russian)activateSource("family:ru:"+g.id)}else{hide("modelDialog");openKeyPanel(g.id,"modelDialog")}});
+   target.append(b);
+  }
+  target.dataset.renderSignature=signature;return;
+ }
  const counts=new Map(CHINA_MODEL_GROUPS.map(group=>[group.id,0]));
  for(const m of models){const id=domesticGroupFor(m)?.id;if(id)counts.set(id,(counts.get(id)||0)+1)}
  const signature=S.source+"|"+CHINA_MODEL_GROUPS.map(g=>g.id+":"+counts.get(g.id)).join("|");
@@ -4119,7 +4180,7 @@ function allModels(){
 }
 function modelMatches(m){
  const query=S.query.trim().toLowerCase();
- const owner=domesticGroupFor(m);const t=(m.name+" "+m.id+" "+m.provider+" "+(m.description||"")+" "+(owner?.name||"")).toLowerCase();
+ const owner=domesticGroupFor(m),russian=russianGroupFor(m);const t=(m.name+" "+m.id+" "+m.provider+" "+(m.author||"")+" "+(m.description||"")+" "+(owner?.name||"")+" "+(russian?russian.name+" 俄罗斯":"")).toLowerCase();
  if(query&&!t.includes(query))return false;
  if(S.source.startsWith("family:")){
   const family=S.source.slice(7),id=(m.id+" "+m.name).toLowerCase();
@@ -4129,9 +4190,11 @@ function modelMatches(m){
    russian:/yandex|gigachat|giga-chat|sber|alice-ai|\.su\//};
   const groupMatch=family==="china"&&Boolean(owner)
    ||family.startsWith("cn:")&&owner?.id===family.slice(3)
-   ||family==="russian"&&m.provider==="novai"
-   ||family==="international"&&["openrouter","openai","claude","grok","gemini","groq","cerebras","novai","novai_pro"].includes(m.provider)
-   ||re[family]?.test(id);
+   ||family==="russian"&&Boolean(russian)
+   ||family.startsWith("ru:")&&russian?.id===family.slice(3)
+   ||family==="international"&&!owner&&!russian&&["openrouter","openai","claude","grok","gemini","groq","cerebras","novai_pro"].includes(m.provider)
+   ||Boolean(FAMILY_CONNECTIONS[family]?.some(([provider])=>m.provider===provider))
+   ||re[family]?.test(id+" "+(m.author||""));
   if(!groupMatch)return false;
  }else if(S.source==="recent"){if(modelOrdering(m).group!==0)return false}
  else if(S.source==="connected"){if(!connected(modelRoute(m)))return false}
@@ -4168,7 +4231,7 @@ function renderModels(){
  if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
- if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));dialog.scrollTop=previousTop;return}
+ if(!shown.length){list.append(node("p","hint",!$("modelRegionLinks").hidden?"暂无符合当前筛选的已列出模型，可在上方连接对应服务商获取真实目录":S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));dialog.scrollTop=previousTop;return}
  for(const item of shown){
   const via=item.availableWith==="openrouter-key"?"openrouter":item.provider,selected=modelIsSelected(item);
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
@@ -4215,6 +4278,8 @@ function activateSource(name){
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===name);
  renderModels();
  if(name==="family:china"||name.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
+ if(name==="family:russian"||name.startsWith("family:ru:"))for(const g of RUSSIAN_MODEL_GROUPS)if(S.savedProviders[g.id]?.verified&&(name==="family:russian"||name==="family:ru:"+g.id))void refreshConnectedModelCatalog(g.id);
+ for(const [provider] of FAMILY_CONNECTIONS[name.slice(7)]||[])if(S.savedProviders[provider]?.verified)void refreshConnectedModelCatalog(provider);
  if(name==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
  else if(S.savedProviders[name])void refreshConnectedModelCatalog(name);
 }
@@ -4364,7 +4429,7 @@ async function drawResult(tile,url){
  if(tile.cacheKey){requestDeviceMediaPersistence();try{cached=await deviceMediaPut(tile.cacheKey,await deviceMediaBlob(url))}catch{cached=false}}
  const img=node("img");img.alt="生成图片";img.loading="eager";img.className="draw-image-reveal";
  const ok=await new Promise(resolve=>{img.onload=()=>resolve(true);img.onerror=()=>resolve(false);img.src=url});
- if(!ok||!tile.picture.isConnected){tile.caption.textContent="图片加载失败";return false}
+ if(!ok||!tile.picture.isConnected){showDrawRetry(tile,"图片暂时未能加载，可重新尝试");return false}
  tile.picture.replaceChildren(img);
  tile.tile.querySelector(".draw-tile-actions")?.remove();
  const actions=node("div","draw-tile-actions"),download=node("a","","下载图片");
@@ -4392,6 +4457,13 @@ function drawSleep(ms,signal){
   signal.addEventListener("abort",abort,{once:true});
  });
 }
+function showDrawRetry(tile,reason){
+ tile.picture.replaceChildren(node("span","draw-stopped","暂未出图"));
+ tile.caption.textContent=String(reason||"免费来源暂未返回图片");
+ if(tile.tile.querySelector(".draw-retry"))return;
+ const b=node("button","outline draw-retry","重新尝试");b.type="button";
+ b.addEventListener("click",()=>{if(S.drawBatch)return;void runFreeDraw()});tile.tile.append(b);
+}
 async function drawTrackJob(id,tile,batch){
  for(let tries=0;tries<150&&!batch.cancelled;tries++){
   let waitMs=12000;
@@ -4399,18 +4471,18 @@ async function drawTrackJob(id,tile,batch){
    const r=await api("/api/image/task/"+encodeURIComponent(id));
    if(batch.cancelled)return false;
    if(r.done){
-    if(r.failed){tile.picture.textContent="生成失败";tile.caption.textContent=r.error||"作图服务暂不可用";return false}
+    if(r.failed){showDrawRetry(tile,r.error||"免费来源暂未返回图片");return false}
     if(typeof r.image==="string")return await drawResult(tile,r.image);
-    tile.picture.textContent="结果为空";tile.caption.textContent="作图服务未返回图片";return false;
+    showDrawRetry(tile,"作图服务未返回图片");return false;
    }
    tile.caption.textContent="正在生成";
-   waitMs=Math.max(7000,Math.min(14000,Number(r.waitSeconds||12)*1000));
+   waitMs=Math.max(1000,Math.min(14000,Number(r.waitSeconds||12)*1000));
   }catch(e){
    tile.caption.textContent="本次查询暂时中断";
   }
   if(!await drawSleep(waitMs,batch.controller.signal))return false;
  }
- if(!batch.cancelled){tile.caption.textContent="任务未完成，请在当前页面继续尝试"}
+ if(!batch.cancelled){showDrawRetry(tile,"等待时间已结束，可重新尝试")}
  return false;
 }
 function stopDrawBatch(){
@@ -4458,11 +4530,11 @@ async function runFreeDraw(){
    if(ok)success++;else failed++;
   }catch(error){
    if(batch.cancelled)return;
-   failed++;tile.picture.textContent="未完成";tile.caption.textContent=humanError(error);
+   failed++;showDrawRetry(tile,humanError(error));
   }finally{
    tile.finishedAt=Date.now();finished++;
    if(!batch.cancelled&&S.drawBatch===batch)
-    $("createStatus").textContent="已完成 "+finished+"/"+count+" 张 · 成功 "+success+" 张"+(failed?" · 失败 "+failed+" 张":"");
+    $("createStatus").textContent="已完成 "+finished+"/"+count+" 张 · 成功 "+success+" 张"+(failed?" · 待重试 "+failed+" 张":"");
    renderClock();
   }
  };
@@ -4475,7 +4547,7 @@ async function runFreeDraw(){
   if(S.drawBatch===batch){
    paintDrawStopwatch(batch,tiles);
    S.drawBatch=null;$("drawCancel").hidden=true;$("createButton").disabled=false;
-   $("createStatus").textContent="生成结束：成功 "+success+"/"+count+" 张"+(failed?" · 失败 "+failed+" 张":"");
+   $("createStatus").textContent="生成结束：成功 "+success+"/"+count+" 张"+(failed?" · 待重试 "+failed+" 张":"");
   }
  }
 }
@@ -4583,7 +4655,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -4859,11 +4931,7 @@ function wire(){
  $("createButton").addEventListener("click",()=>void generateMedia());
  $("drawCancel").addEventListener("click",stopDrawBatch);
  drawPrefs();wireImageViewer();
- $("createDialog").addEventListener("close",()=>{
-  stopDrawBatch();$("drawResults").replaceChildren();
-  $("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;
-  $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
- });
+ // Closing the page must not cancel a task or delete images; cancellation is explicit via drawCancel.
  $("keyDialog").addEventListener("close",()=>{if(!$("keyDialog").open){S.videoPendingKeyReturn=false;keyBackPage=null}});
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();wireChatScrollArrows();
