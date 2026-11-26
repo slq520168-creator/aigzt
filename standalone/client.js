@@ -2666,7 +2666,7 @@ function settlePromptSize(){
  if(promptLayoutFrame)return;
  promptLayoutFrame=requestAnimationFrame(()=>{promptLayoutFrame=0;resizePrompt()});
 }
-let viewportLayoutFrame=0,composerViewportBaseline=0,composerViewportWidth=0;
+let viewportLayoutFrame=0,composerViewportBaseline=0,composerViewportWidth=0,installedStableWidth=0;
 function composerViewportMetrics(height,offsetTop,baseline,focused,wasVisible){
  const h=Math.max(0,Math.round(height));
  const keyboardVisible=(focused||wasVisible)&&baseline-h>100;
@@ -2682,6 +2682,9 @@ function installedViewportMetrics(inner,client,visual,offset,screenHeight){
  // A standalone iOS window can report a shortened layout after keyboard dismissal.
  // Restore only a plausible portrait screen gap; never use an unrelated screen size.
  return {height:missing>0&&missing<=96?Math.round(screen):h,missing:0};
+}
+function stableInstalledHeight(previous,candidate,orientationChanged){
+ return orientationChanged||!previous?candidate:Math.max(previous,candidate);
 }
 function syncMobileHeight(){
  if(viewportLayoutFrame)return;
@@ -2699,20 +2702,22 @@ function syncMobileHeight(){
   if(!focused&&!previous)composerViewportBaseline=Math.max(height,window.innerHeight);
   const metrics=composerViewportMetrics(height,vv?.offsetTop||0,composerViewportBaseline,focused,previous);
   const active=mobile&&metrics.keyboardVisible&&(!document.querySelector("dialog[open]"))&&!$("composerArea").hidden;
-  root.classList.toggle("aigzt-keyboard-visible",active);
+  if(previous!==active)root.classList.toggle("aigzt-keyboard-visible",active);
   if(active){
-   root.style.setProperty("--aigzt-visible-height",metrics.height+"px");
-   root.style.setProperty("--aigzt-visible-top",metrics.top+"px");
+   if(root.style.getPropertyValue("--aigzt-visible-height")!==metrics.height+"px")root.style.setProperty("--aigzt-visible-height",metrics.height+"px");
+   if(root.style.getPropertyValue("--aigzt-visible-top")!==metrics.top+"px")root.style.setProperty("--aigzt-visible-top",metrics.top+"px");
   }else{
    root.style.removeProperty("--aigzt-visible-height");
    root.style.removeProperty("--aigzt-visible-top");
    if(!focused)composerViewportBaseline=Math.max(height,window.innerHeight);
-   if(root.classList.contains("aigzt-ios-pwa")){
-    const pwa=installedViewportMetrics(window.innerHeight,root.clientHeight,height,vv?.offsetTop||0,window.screen?.height);
-    if(pwa.height>0){
-     root.style.setProperty("--aigzt-pwa-height",pwa.height+"px");
-     
-    }
+   if(root.classList.contains("aigzt-ios-pwa")&&!focused&&!metrics.keyboardVisible){
+    // Exclude the CSS-controlled root height from viewport measurement.
+    const pwa=installedViewportMetrics(window.innerHeight,0,height,0,window.screen?.height);
+    const layoutWidth=Math.round(window.innerWidth),changed=installedStableWidth>0&&Math.abs(layoutWidth-installedStableWidth)>80;
+    installedStableWidth=layoutWidth;
+    const prior=parseInt(root.style.getPropertyValue("--aigzt-pwa-height"),10)||0;
+    const stable=stableInstalledHeight(prior,pwa.height,changed);
+    if(stable>0&&stable!==prior)root.style.setProperty("--aigzt-pwa-height",stable+"px");
    }
   }
  });
@@ -4734,10 +4739,10 @@ function wire(){
  $("prompt").addEventListener("focus",syncMobileHeight);
  $("prompt").addEventListener("blur",()=>{syncMobileHeight();settlePromptSize()});
  window.addEventListener("resize",syncMobileHeight,{passive:true});
- window.addEventListener("orientationchange",()=>{composerViewportBaseline=0;syncMobileHeight()},{passive:true});
+ window.addEventListener("orientationchange",()=>{composerViewportBaseline=0;installedStableWidth=0;document.documentElement.style.removeProperty("--aigzt-pwa-height");syncMobileHeight()},{passive:true});
  if(window.visualViewport){
   window.visualViewport.addEventListener("resize",syncMobileHeight,{passive:true});
-  window.visualViewport.addEventListener("scroll",syncMobileHeight,{passive:true});
+  window.visualViewport.addEventListener("scroll",()=>{if(!document.documentElement.classList.contains("aigzt-ios-pwa")||document.documentElement.classList.contains("aigzt-keyboard-visible")||document.activeElement===$("prompt"))syncMobileHeight()},{passive:true});
  }
  syncMobileHeight();
 
@@ -4782,6 +4787,6 @@ function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
- applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
+ applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();document.documentElement.classList.remove("pwa-boot-rainbow");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
  restoreWorkspaceRoute();updateModelTitle();
 });

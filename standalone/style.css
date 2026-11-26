@@ -524,17 +524,22 @@ body.rainbow-enabled .composer:focus-within{box-shadow:0 0 0 1px rgba(123,154,18
 .ui-icon svg{shape-rendering:geometricPrecision}
 /* 首页会话：七彩呼吸壁纸归属整个 App Shell，而不是聊天滚动区域。顶部、输入区和 iOS 安全区共用同一背景。 */
 /* Home ambient fills the visual viewport and PWA safe-area band. */
-html:has(body.rainbow-enabled.home-ambient){background:linear-gradient(145deg,#f3f7ff,#f6f1ff 38%,#ecfaf5 75%,#fff4fa);background-attachment:fixed}
-body.rainbow-enabled.home-ambient{background:transparent}
-body.rainbow-enabled.home-ambient::before{content:"";pointer-events:none;position:fixed;inset:-16%;z-index:0;background:radial-gradient(ellipse at 18% 26%,rgba(116,143,250,.36),transparent 36%),radial-gradient(ellipse at 76% 21%,rgba(183,114,231,.34),transparent 34%),radial-gradient(ellipse at 42% 76%,rgba(94,216,190,.34),transparent 44%),radial-gradient(ellipse at 91% 86%,rgba(252,174,154,.32),transparent 36%);filter:blur(30px);animation:home-color-breathe 13s ease-in-out infinite alternate}
-body.rainbow-enabled.home-ambient .shell{background:transparent;z-index:1}
+html.pwa-boot-rainbow,html:has(body.rainbow-enabled.home-ambient){background:linear-gradient(145deg,#f3f7ff,#f6f1ff 38%,#ecfaf5 75%,#fff4fa);background-attachment:fixed}
+html.pwa-boot-rainbow body,body.rainbow-enabled.home-ambient{background:transparent}
+html.pwa-boot-rainbow body::before,body.rainbow-enabled.home-ambient::before{content:"";pointer-events:none;position:fixed;inset:-16%;z-index:0;background:radial-gradient(ellipse at 18% 26%,rgba(116,143,250,.36),transparent 36%),radial-gradient(ellipse at 76% 21%,rgba(183,114,231,.34),transparent 34%),radial-gradient(ellipse at 42% 76%,rgba(94,216,190,.34),transparent 44%),radial-gradient(ellipse at 91% 86%,rgba(252,174,154,.32),transparent 36%);filter:blur(30px);animation:home-color-breathe 13s ease-in-out infinite alternate}
+html.pwa-boot-rainbow .shell,body.rainbow-enabled.home-ambient .shell{background:transparent;z-index:1}
+html.pwa-boot-rainbow .main,html.pwa-boot-rainbow .composer-area,html.pwa-boot-rainbow .conversation.empty-chat,
 body.rainbow-enabled.home-ambient .main,
 body.rainbow-enabled.home-ambient .composer-area,
 body.rainbow-enabled.home-ambient .conversation.empty-chat{background:transparent}
 body.rainbow-enabled .conversation.empty-chat .welcome{position:relative;z-index:1}
-body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-gradient(100deg,#395f9f,#8165b7,#409f99,#bd80a8);background-size:240% auto;background-clip:text;-webkit-background-clip:text;color:transparent;animation:rainbow-breathe 13s ease-in-out infinite alternate}
+html.pwa-boot-rainbow .conversation.empty-chat .welcome h1,body.rainbow-enabled .conversation.empty-chat .welcome h1{background:linear-gradient(100deg,#395f9f,#8165b7,#409f99,#bd80a8);background-size:240% auto;background-clip:text;-webkit-background-clip:text;color:transparent;animation:rainbow-breathe 13s ease-in-out infinite alternate}
+/* Installed WebKit: stationary gradient layer, no oversized blurred raster. */
+html.aigzt-ios-pwa.pwa-boot-rainbow,html.aigzt-ios-pwa:has(body.rainbow-enabled.home-ambient){background-attachment:scroll}
+html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow-enabled.home-ambient::before{inset:0;filter:none;transform:none;background:radial-gradient(ellipse at 14% 24%,rgba(116,143,250,.34),transparent 60%),radial-gradient(ellipse at 80% 15%,rgba(183,114,231,.30),transparent 58%),radial-gradient(ellipse at 43% 84%,rgba(94,216,190,.34),transparent 64%),radial-gradient(ellipse at 95% 89%,rgba(252,174,154,.26),transparent 58%);animation:pwa-color-breathe 13s ease-in-out infinite alternate}
+@keyframes pwa-color-breathe{from{opacity:.82}to{opacity:1}}
 @keyframes home-color-breathe{0%{transform:translate(-3%,-2%) scale(.96);opacity:.56}50%{opacity:1}100%{transform:translate(4%,3%) scale(1.06);opacity:.8}}
-@media(prefers-reduced-motion:reduce){body.rainbow-enabled.home-ambient::before,body.rainbow-enabled .conversation.empty-chat .welcome h1{animation:none}}
+@media(prefers-reduced-motion:reduce){html.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow-enabled.home-ambient::before,html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.pwa-boot-rainbow .conversation.empty-chat .welcome h1,body.rainbow-enabled.home-ambient::before,body.rainbow-enabled .conversation.empty-chat .welcome h1{animation:none}}
 @keyframes rainbow-breathe{from{background-position:0 50%}to{background-position:100% 50%}}
 @media(prefers-reduced-motion:reduce){body.rainbow-enabled .brand{animation:none}}
 @media(min-width:901px){.composer-area{padding:6px 20px 12px}}
@@ -994,8 +999,8 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
    reliable iOS signal even when display-mode reports browser. */
 @media(max-width:900px){
  html.aigzt-ios-pwa{--aigzt-ios-safe-top:env(safe-area-inset-top,0px)}
- html.aigzt-ios-pwa,html.aigzt-ios-pwa body{height:max(100%,100dvh,var(--aigzt-pwa-height,0px))}
- html.aigzt-ios-pwa .shell{padding-top:var(--aigzt-ios-safe-top);height:var(--aigzt-visible-height,max(100%,100dvh,var(--aigzt-pwa-height,0px)))}
+ html.aigzt-ios-pwa,html.aigzt-ios-pwa body{height:var(--aigzt-pwa-height,100dvh)}
+ html.aigzt-ios-pwa .shell{padding-top:var(--aigzt-ios-safe-top);height:var(--aigzt-visible-height,var(--aigzt-pwa-height,100dvh))}
  /* The expanded standalone shell includes the home-indicator region; reserve it exactly once. */
  html.aigzt-ios-pwa .composer-area{padding-bottom:max(4px,env(safe-area-inset-bottom,0px))}
  html.aigzt-ios-pwa .sidebar{top:0;bottom:0;height:100dvh;padding-top:calc(var(--aigzt-ios-safe-top) + 12px)}

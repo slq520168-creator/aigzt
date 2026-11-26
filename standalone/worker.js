@@ -59,7 +59,7 @@ function fail(msg,status=400){return response({ok:false,error:msg},status)}
 function secureHeaders(ext={}){
  return {"x-content-type-options":"nosniff","referrer-policy":"no-referrer",
  "x-frame-options":"DENY","cross-origin-resource-policy":"same-origin",
- "content-security-policy":"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob: https:; img-src 'self' blob: data: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",...ext};
+ "content-security-policy":"default-src 'none'; script-src 'self' 'sha256-wQdCEo+PgFgJgT7Ys03VZRheEHnfPv5cxX5Q/kCuln4='; style-src 'self'; connect-src 'self'; media-src 'self' blob: https:; img-src 'self' blob: data: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",...ext};
 }
 function staticResponse(text,type){
  return new Response(text,{headers:secureHeaders({"content-type":type,"cache-control":"no-store"})});
