@@ -670,16 +670,31 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
 .quick-entry small{font-size:11px;color:#859197}
 @media(max-width:430px){.model-quick{grid-template-columns:1fr;gap:7px}.quick-entry{padding:10px 12px}}
 
-.avatar-ai{width:48px;height:64px;display:grid;place-items:center;flex:none;background:transparent;color:inherit;position:relative;overflow:visible}
-.ai-avatar-frame{display:block;width:48px;height:64px;background:transparent;overflow:hidden;position:relative}
-.ai-avatar-image{display:block;width:144px;height:64px;max-width:none;position:absolute;left:0;top:0;pointer-events:none;user-select:none;transform:translateX(0)}
-.avatar-ai[data-state="thinking"] .ai-avatar-frame{animation:imaiRobotThink 1.7s ease-in-out infinite}
-.avatar-ai[data-state="speaking"] .ai-avatar-image,.avatar-ai[data-state="creating"] .ai-avatar-image{animation:imaiRobotGesture 1.25s steps(1,end) infinite}
-.avatar-ai[data-state="finished"] .ai-avatar-image{animation:imaiRobotGesture .9s steps(1,end) 1}
-.avatar-ai[data-state="error"] .ai-avatar-image{opacity:.75}
-@keyframes imaiRobotThink{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
-@keyframes imaiRobotGesture{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-48px)}50%{transform:translateX(-96px)}}
-@media(prefers-reduced-motion:reduce){.avatar-ai .ai-avatar-frame,.avatar-ai .ai-avatar-image{animation:none!important}}
+.avatar-ai{width:36px;height:36px;display:grid;place-items:center;flex:none;background:transparent!important;color:inherit!important;isolation:isolate}
+.avatar-ai svg{display:block;width:36px;height:36px;overflow:visible}
+.avatar-ai .ai-avatar-core,.avatar-ai .ai-avatar-halo,.avatar-ai .ai-avatar-eye,.avatar-ai .ai-avatar-beacon{transform-box:fill-box;transform-origin:center}
+.avatar-ai .ai-avatar-mouth{opacity:0;transform-box:fill-box;transform-origin:center}
+.avatar-ai .ai-avatar-smile{opacity:1}
+.message.assistant:last-child .avatar-ai[data-state="idle"] .ai-avatar-core{animation:replyPortraitBreathe 5.8s ease-in-out infinite}
+.message.assistant:last-child .avatar-ai[data-state="idle"] .ai-avatar-eye{animation:replyPortraitBlink 6.2s ease-in-out infinite}
+.avatar-ai[data-state="thinking"] .ai-avatar-core{animation:replyPortraitThink 1.8s ease-in-out infinite}
+.avatar-ai[data-state="thinking"] .ai-avatar-halo,.avatar-ai[data-state="creating"] .ai-avatar-halo{animation:replyPortraitPulse 1.3s ease-in-out infinite}
+.avatar-ai[data-state="thinking"] .ai-avatar-beacon,.avatar-ai[data-state="creating"] .ai-avatar-beacon{animation:replyPortraitBeacon .85s ease-in-out infinite alternate}
+.avatar-ai[data-state="creating"] .ai-avatar-core{animation:replyPortraitBreathe 2.3s ease-in-out infinite}
+.avatar-ai[data-state="speaking"] .ai-avatar-core{animation:replyPortraitTalk .58s ease-in-out infinite alternate}
+.avatar-ai[data-state="speaking"] .ai-avatar-smile{opacity:0}
+.avatar-ai[data-state="speaking"] .ai-avatar-mouth{opacity:1;animation:replyPortraitMouth .31s ease-in-out infinite alternate}
+.avatar-ai[data-state="finished"] .ai-avatar-core{animation:replyPortraitFinish .76s cubic-bezier(.2,.8,.2,1) 1}
+.avatar-ai[data-state="error"]{filter:saturate(.58)}
+@keyframes replyPortraitBreathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.4px)}}
+@keyframes replyPortraitBlink{0%,45%,48%,80%,83%,100%{transform:scaleY(1)}46%,81%{transform:scaleY(.16)}}
+@keyframes replyPortraitThink{0%,100%{transform:rotate(-3deg) translateY(0)}50%{transform:rotate(3deg) translateY(-1px)}}
+@keyframes replyPortraitPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.055);opacity:.7}}
+@keyframes replyPortraitBeacon{to{opacity:.44;transform:scale(.82)}}
+@keyframes replyPortraitTalk{from{transform:translateY(0) rotate(-1deg)}to{transform:translateY(1px) rotate(1deg)}}
+@keyframes replyPortraitMouth{from{transform:scale(1,.62)}to{transform:scale(1,1.55)}}
+@keyframes replyPortraitFinish{0%,100%{transform:scale(1) translateY(0)}42%{transform:scale(1.065) translateY(-2px)}}
+@media(prefers-reduced-motion:reduce){.avatar-ai .ai-avatar-core,.avatar-ai .ai-avatar-halo,.avatar-ai .ai-avatar-eye,.avatar-ai .ai-avatar-beacon,.avatar-ai .ai-avatar-mouth{animation:none!important}}
 .thinking-status{display:inline-flex;align-items:center;gap:8px;color:#70858a;font-size:13px;min-height:27px}
 .thinking-dots{display:inline-flex;gap:4px;align-items:center}
 .thinking-dots i{width:5px;height:5px;border-radius:50%;background:#a1c9c4;animation:thinkdots 1.15s ease-in-out infinite}

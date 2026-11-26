@@ -959,12 +959,12 @@ function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add
 
 
 /* The assistant's expression follows actual response progress; older rows do not animate. */
+let aiPortraitSerial=0;
 function makeAssistantPortrait(){
  const el=node("span","avatar-ai");el.dataset.state="idle";
  el.setAttribute("role","img");el.setAttribute("aria-label","IMAI 助手");
- const frame=node("span","ai-avatar-frame"),image=node("img","ai-avatar-image");
- image.src="/imai-robot-atlas.png?v=59";image.alt="";image.width=288;image.height=128;image.decoding="async";image.draggable=false;
- frame.append(image);el.append(frame);
+ const id="aigzt-portrait-"+(++aiPortraitSerial);
+ el.innerHTML="<svg viewBox=\"0 0 64 64\" width=\"36\" height=\"36\" aria-hidden=\"true\" focusable=\"false\">\n<defs><radialGradient id=\"AVID-halo\" cx=\"25%\" cy=\"16%\" r=\"90%\"><stop stop-color=\"#fcffff\"/><stop offset=\".46\" stop-color=\"#b4e7f5\"/><stop offset=\"1\" stop-color=\"#7493df\"/></radialGradient>\n<linearGradient id=\"AVID-shell\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop stop-color=\"#ffffff\"/><stop offset=\".48\" stop-color=\"#e1ecf8\"/><stop offset=\"1\" stop-color=\"#94b7d5\"/></linearGradient>\n<linearGradient id=\"AVID-screen\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"1\"><stop stop-color=\"#285f78\"/><stop offset=\"1\" stop-color=\"#152d4a\"/></linearGradient>\n<linearGradient id=\"AVID-eye\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\"><stop stop-color=\"#5bf8e5\"/><stop offset=\"1\" stop-color=\"#99bbff\"/></linearGradient></defs>\n<circle class=\"ai-avatar-halo\" cx=\"32\" cy=\"32\" r=\"30\" fill=\"url(#AVID-halo)\"/><circle cx=\"32\" cy=\"32\" r=\"29.2\" stroke=\"#fff\" stroke-opacity=\".85\" stroke-width=\"1.4\" fill=\"none\"/>\n<g class=\"ai-avatar-core\">\n<path d=\"M32 14V9\" fill=\"none\" stroke=\"#367b97\" stroke-linecap=\"round\" stroke-width=\"2.1\"/><circle class=\"ai-avatar-beacon\" cx=\"32\" cy=\"7.6\" r=\"3.1\" fill=\"#69e9df\" stroke=\"#fff\" stroke-width=\"1.3\"/>\n<rect x=\"7\" y=\"29\" width=\"8\" height=\"15\" rx=\"4\" fill=\"#c5e0ef\" stroke=\"#7ca6c2\"/><rect x=\"49\" y=\"29\" width=\"8\" height=\"15\" rx=\"4\" fill=\"#c5e0ef\" stroke=\"#7ca6c2\"/>\n<rect x=\"11\" y=\"15\" width=\"42\" height=\"42\" rx=\"17\" fill=\"url(#AVID-shell)\" stroke=\"#83a4bd\" stroke-width=\"1.2\"/>\n<path d=\"M17 24c3-5 7.5-7 13.5-7h9\" fill=\"none\" stroke=\"#fff\" stroke-opacity=\".85\" stroke-width=\"2\" stroke-linecap=\"round\"/>\n<rect x=\"15.5\" y=\"25.5\" width=\"33\" height=\"23\" rx=\"11.5\" fill=\"url(#AVID-screen)\" stroke=\"#719fb9\"/><path d=\"M19 29c5.5-3.7 17-4.6 26 0\" fill=\"none\" stroke=\"#d2ffff\" stroke-opacity=\".19\" stroke-width=\"1.7\"/>\n<ellipse class=\"ai-avatar-eye\" cx=\"25\" cy=\"35\" rx=\"3.2\" ry=\"3.9\" fill=\"url(#AVID-eye)\"/><ellipse class=\"ai-avatar-eye\" cx=\"39\" cy=\"35\" rx=\"3.2\" ry=\"3.9\" fill=\"url(#AVID-eye)\"/>\n<circle cx=\"26\" cy=\"33.8\" r=\".95\" fill=\"#fff\"/><circle cx=\"40\" cy=\"33.8\" r=\".95\" fill=\"#fff\"/>\n<path class=\"ai-avatar-smile\" d=\"M27 42q5 4 10 0\" fill=\"none\" stroke=\"#a9edf8\" stroke-width=\"1.9\" stroke-linecap=\"round\"/>\n<ellipse class=\"ai-avatar-mouth\" cx=\"32\" cy=\"43\" rx=\"3.7\" ry=\"2.3\" fill=\"#8ee7f5\"/>\n<circle cx=\"17.5\" cy=\"43\" r=\"2.2\" fill=\"#f4a7c1\" opacity=\".68\"/><circle cx=\"46.5\" cy=\"43\" r=\"2.2\" fill=\"#f4a7c1\" opacity=\".68\"/>\n<path d=\"M26 52q6 3 12 0\" fill=\"none\" stroke=\"#95abc5\" stroke-width=\"1.1\" stroke-linecap=\"round\"/>\n</g></svg>".replaceAll("AVID",id);
  return el;
 }
 function setPortraitState(row,state){
@@ -4230,9 +4230,17 @@ function ivShow(i){
   if(k===iv.i)requestAnimationFrame(()=>{if(b.isConnected)b.scrollIntoView({block:"nearest",inline:"nearest"})});
  }
 }
+function isPreviewableImage(img){
+ if(!img||!img.src||!img.getClientRects().length)return false;
+ if(img.closest("#imageViewer,.sidebar,.brand-lockup,.avatar-ai,.ai-avatar-frame,.provider-brand-img,.free-tool-logo,a[href],button,[role='button']"))return false;
+ // Conversation galleries contain only actual message media, never decorative assets.
+ if(img.closest(".messages,.message"))return img.matches(".chat-generated-image,.chat-upload-image");
+ return true;
+}
 function ivOpen(img){
+ if(!isPreviewableImage(img))return;
  const scope=img.closest(".draw-gallery,.messages,.media-preview,.result-list,#savedFiles,.work-board")||img.closest("dialog,.main")||document.body;
- const found=Array.from(scope.querySelectorAll("img")).filter(x=>x.getClientRects().length&&x.src&&!x.closest("#imageViewer,.sidebar,.brand-lockup"));
+ const found=Array.from(scope.querySelectorAll("img")).filter(isPreviewableImage);
  if(!found.includes(img))found.push(img);
  iv.items=found.map(x=>({src:x.currentSrc||x.src,alt:x.alt||""}));iv.origin=img;iv.lastTap=null;
  $("imageViewer").hidden=false;document.documentElement.classList.add("image-viewing");document.body.classList.add("image-viewing");
@@ -4244,9 +4252,7 @@ function wireImageViewer(){
  document.addEventListener("click",e=>{
   if(!(e.target instanceof Element))return;
   const img=e.target.closest("img");
-  if(!img||img.closest("#imageViewer,.sidebar,.brand-lockup")||!img.src||!img.getClientRects().length)return;
-  // Images inside navigation or controls belong to those actions, not the media viewer.
-  if(img.closest("a[href],button,[role='button']"))return;
+  if(!isPreviewableImage(img))return;
   e.preventDefault();e.stopPropagation();ivOpen(img);
  },true);
  $("ivClose").addEventListener("click",ivClose);
