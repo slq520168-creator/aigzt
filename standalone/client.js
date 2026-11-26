@@ -1069,27 +1069,48 @@ async function visitDeviceMedia(owner,remove=false){
   };
  });
 }
+function formatDeviceMediaSize(bytes){
+ if(bytes>=1073741824)return (bytes/1073741824).toFixed(2)+" GB";
+ if(bytes>=1048576)return (bytes/1048576).toFixed(2)+" MB";
+ if(bytes>=1024)return (bytes/1024).toFixed(1)+" KB";
+ return bytes+" B";
+}
 function showDeviceMediaSettings(){
- const owner=S.user?.id;if(!owner)return;
+ if(!S.user)return;
  let panel=$("deviceMediaSettings");
  if(!panel){
   panel=node("details","settings-entry");panel.id="deviceMediaSettings";
-  const heading=node("summary","","本机媒体缓存"),info=node("p","","图片和视频仅保留在本机，不占用网站媒体存储。默认不自动清理。");
-  const status=node("p");status.id="deviceMediaStatus";
-  const protect=node("button","","申请持久存储");protect.type="button";
-  protect.onclick=async()=>{try{const kept=await navigator.storage?.persist?.();status.textContent=kept?"浏览器已允许持久存储":"浏览器未授予持久存储，系统仍可能清理缓存。"}catch{status.textContent="当前浏览器不支持持久存储授权。"}};
-  const clear=node("button","","清理本机媒体");clear.type="button";
-  clear.onclick=async()=>{const account=S.user?.id;if(!account||!confirm("图片和视频没有云端副本，清理后无法恢复。确定删除此账号在本机的媒体缓存？"))return;
-   clear.disabled=true;try{await visitDeviceMedia(account,true);if(S.user?.id===account)void refreshDeviceMediaSettings(account)}catch{status.textContent="清理失败，未确认删除完成。"}finally{clear.disabled=false}};
-  panel.append(heading,info,status,protect,clear);
-  $("settingsDialog").querySelector(".settings-scroll").append(panel);
+  const heading=node("summary","settings-row"),iconWrap=node("span","settings-entry-icon"),icon=node("span","ui-icon");
+  icon.dataset.icon="folder";icon.setAttribute("aria-hidden","true");iconWrap.append(icon);
+  const label=node("span","settings-row-text"),hint=node("small","","图片与视频");hint.id="deviceMediaSummary";
+  label.append(node("strong","","存储空间"),hint);
+  const chevron=node("span","settings-chevron ui-icon");chevron.dataset.icon="chevron-down";chevron.setAttribute("aria-hidden","true");
+  heading.append(iconWrap,label,chevron);
+  const body=node("div","settings-entry-body"),total=node("p","small-note","正在读取…");total.id="deviceMediaStatus";
+  const images=node("p","small-note","图片 —");images.id="deviceMediaImageSize";
+  const videos=node("p","small-note","视频 —");videos.id="deviceMediaVideoSize";
+  const actions=node("div","settings-actions"),clear=node("button","outline full","清理缓存");clear.type="button";clear.id="deviceMediaClear";clear.disabled=true;
+  const note=node("p","settings-hint","仅保存在此设备。清理后无法恢复。");
+  clear.onclick=async()=>{const account=S.user?.id;if(!account||clear.disabled||!confirm("清理后，本机生成的图片和视频将无法恢复。确定清理？"))return;
+   clear.disabled=true;try{await visitDeviceMedia(account,true);if(S.user?.id===account)await refreshDeviceMediaSettings(account)}catch{if(S.user?.id===account){total.textContent="清理失败，请重试";clear.disabled=false}}};
+  actions.append(clear);body.append(total,images,videos,actions,note);panel.append(heading,body);
+  const anchor=$("settingsUsage");if(anchor)anchor.after(panel);else $("settingsDialog").querySelector(".settings-scroll").append(panel);
+  renderIcons(panel);
   panel.addEventListener("toggle",()=>{if(panel.open&&S.user)void refreshDeviceMediaSettings(S.user.id)});
  }
 }
 async function refreshDeviceMediaSettings(owner){
- const status=$("deviceMediaStatus");if(!status)return;
- try{const t=await visitDeviceMedia(owner);if(S.user?.id!==owner)return;status.textContent="图片 "+t.images+" 张 · "+(t.image/1048576).toFixed(2)+" MB；视频 "+t.videos+" 个 · "+(t.video/1048576).toFixed(2)+" MB";}
- catch{if(S.user?.id===owner)status.textContent="本机缓存容量读取失败。"}
+ const status=$("deviceMediaStatus"),clear=$("deviceMediaClear");if(!status||!clear)return;
+ status.textContent="正在读取…";clear.disabled=true;
+ try{
+  const t=await visitDeviceMedia(owner);if(S.user?.id!==owner)return;
+  const size=formatDeviceMediaSize(t.image+t.video);
+  $("deviceMediaSummary").textContent=size+" · 此设备";
+  status.textContent="已用空间　"+size;
+  $("deviceMediaImageSize").textContent="图片　"+t.images+" 张 · "+formatDeviceMediaSize(t.image);
+  $("deviceMediaVideoSize").textContent="视频　"+t.videos+" 个 · "+formatDeviceMediaSize(t.video);
+  clear.disabled=t.images+t.videos===0;
+ }catch{if(S.user?.id===owner)status.textContent="无法读取存储空间";}
 }
 async function deviceMediaGet(key){
  if(!key)return null;
