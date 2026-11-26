@@ -7,14 +7,15 @@ body{background:#fff;color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystem
 button,input,textarea,select{font:inherit;color:inherit}
 button{border:0;background:transparent;cursor:pointer;touch-action:manipulation}
 button:disabled{opacity:.46;cursor:not-allowed}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid #6397b2;outline-offset:2px}
+button:not(.page-back):focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid #6397b2;outline-offset:2px}
 a{color:inherit}
 [hidden]{display:none!important}
 .shell{width:100%;height:100dvh;display:flex;overflow:hidden;position:relative;isolation:isolate}
 .ui-icon{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex:none;vertical-align:middle}
 .ui-icon svg{width:21px;height:21px;display:block;pointer-events:none}
-.icon-btn{width:39px;height:39px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;color:var(--ink);flex:none}
-.icon-btn:hover,.nav-row:hover,.history-row:hover,.project-row:hover{background:var(--hover)}
+.icon-btn{width:39px;height:39px;display:inline-flex;align-items:center;justify-content:center;color:var(--ink);flex:none}
+.icon-btn:not(.page-back){border-radius:12px}
+.icon-btn:not(.page-back):hover,.nav-row:hover,.history-row:hover,.project-row:hover{background:var(--hover)}
 .small-btn{width:31px;height:31px}
 .small-btn .ui-icon svg{width:19px;height:19px}
 
@@ -278,9 +279,10 @@ a{color:inherit}
 .modal-head h2{font-size:20px;font-weight:650;margin:0}
 .modal-head p{color:#718186;font-size:12px;margin:5px 0 0}
 .close-modal{display:grid;place-items:center;width:36px;height:36px;flex:none;order:-1;color:var(--ink);background:transparent;border:0;padding:0}
-.page-back{display:inline-flex;align-items:center;justify-content:center;flex:none;width:36px;height:36px;min-width:36px;min-height:36px;padding:0;border:0;background:transparent;box-shadow:none;border-radius:0;color:var(--ink)}
+.page-back{display:inline-flex;align-items:center;justify-content:center;flex:none;width:36px;height:36px;min-width:36px;min-height:36px;padding:0;border:0;background:transparent;box-shadow:none;border-radius:0;outline:none;appearance:none;-webkit-appearance:none;-webkit-tap-highlight-color:transparent;color:var(--ink)}
 .page-back .ui-icon svg{width:19px;height:19px;stroke:currentColor}
-.page-back:hover{background:transparent}
+.page-back:focus-visible .ui-icon svg{stroke:#3978a3}
+.page-back:active .ui-icon svg{opacity:.65}
 .modal-head{justify-content:flex-start}
 .sidebar-top .brand-lockup{flex:1}
 .work-header-title{flex:1;min-width:0}
@@ -507,7 +509,7 @@ html.aigzt-ios-pwa .workspace-view.settings-dialog[open]{top:var(--aigzt-ios-saf
 .settings-dialog .settings-logout{width:100%;display:flex;align-items:center;gap:18px;padding:19px 23px;text-align:left;font-weight:650;font-size:16px;color:#c4332c;background:#fff;cursor:pointer;min-height:67px}
 .settings-dialog .settings-logout .ui-icon svg{width:24px;height:24px;stroke:#c4332c!important}
 .settings-dialog .settings-logout:hover{background:#fff7f6}
-.settings-dialog button:focus-visible,.settings-dialog summary:focus-visible{outline:2px solid #4d95c9;outline-offset:-2px}
+.settings-dialog button:not(.page-back):focus-visible,.settings-dialog summary:focus-visible{outline:2px solid #4d95c9;outline-offset:-2px}
 @media(max-width:650px){
  .workspace-view.settings-dialog .settings-topbar{padding:12px 17px;min-height:73px}
  .settings-dialog .settings-scroll{padding:24px 16px max(38px,env(safe-area-inset-bottom))}
@@ -1090,7 +1092,8 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .page-actions-right,.page-actions-left{pointer-events:auto;border:0;background:transparent;box-shadow:none}
 .page-actions-left{display:flex;align-items:center;gap:0}
 .page-actions-right{display:flex;align-items:center;gap:2px;padding:0;height:38px}
-.page-actions .icon-btn{width:38px;height:38px;min-width:38px;display:inline-flex;align-items:center;justify-content:center;color:#25354a;border-radius:50%;padding:0}
+.page-actions .icon-btn{width:38px;height:38px;min-width:38px;display:inline-flex;align-items:center;justify-content:center;color:#25354a;padding:0}
+.page-actions .icon-btn:not(.page-back){border-radius:50%}
 .page-actions .icon-btn .ui-icon,.page-actions .icon-btn .ui-icon svg{width:20px;height:20px}
 .page-actions #menuBtn{width:38px;height:38px}
 .page-actions .icon-btn[hidden]{display:none!important}
