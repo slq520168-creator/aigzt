@@ -1015,21 +1015,6 @@ function localImageElement(blob,loading="eager"){
  const img=node("img","chat-generated-image");img.alt="生成图片";img.loading=loading;
  localImageFiles.set(img,blob);img.src=URL.createObjectURL(blob);return img;
 }
-function imageChatStorageKey(owner){return owner?"aigzt:last-image-chat:"+owner:null}
-function rememberImageChat(owner=S.user?.id,chatId=S.chatId){
- if(!owner||S.user?.id!==owner||!chatId||S.chatId!==chatId)return;
- try{localStorage.setItem(imageChatStorageKey(owner),chatId)}catch{}
-}
-function forgetImageChat(){
- const key=imageChatStorageKey(S.user?.id);if(key)try{localStorage.removeItem(key)}catch{}
-}
-async function restoreLastImageChat(){
- const owner=S.user?.id,key=imageChatStorageKey(owner);
- if(!key||S.chatId||S.busy||location.hash)return;
- let id;try{id=localStorage.getItem(key)}catch{return}
- if(!/^[0-9a-f-]{36}$/i.test(id||""))return;
- if(S.user?.id===owner&&!S.chatId&&!S.busy)await loadChat(id);
-}
 let mediaPersistenceRequested=false;
 function requestDeviceMediaPersistence(){
  if(mediaPersistenceRequested)return;
@@ -1068,7 +1053,7 @@ async function restoreReplyImages(bubble,id,replace=false){
  for(const blob of blobs){
   bubble.append(localImageElement(blob,"lazy"));
  }
- rememberImageChat();return true;
+ return true;
 }
 async function visitDeviceMedia(owner,remove=false){
  const db=await openLocalMedia();
@@ -1156,7 +1141,7 @@ function renderDeviceMedia(bubble,blob,kind){
   const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=url;
   const link=node("a","chat-video-save","下载");link.href=url;link.download="aigzt-video.mp4";bubble.replaceChildren(video,link);
  }else{
-  bubble.replaceChildren(localImageElement(blob));rememberImageChat();
+  bubble.replaceChildren(localImageElement(blob));
   const row=bubble.closest(".message");if(row)appendMessageCopy(row,"");
  }
 }
@@ -1219,7 +1204,7 @@ async function pollImageJob(bubble,id,manual){
     bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);
     const row=bubble.closest(".message");
     if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}
-    if(cached)rememberImageChat(owner,S.chatId);else mediaCacheWarning(bubble);
+    if(!cached)mediaCacheWarning(bubble);
     // The final image can have a different height from the loading frame.
     if(follow)followLatestImage(bubble);
    };
@@ -2597,7 +2582,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  return row;
 }
 function newChat(keepDrawer=false){
- forgetImageChat();closeMessageMore();
+ closeMessageMore();
  stopMessageReader();if(voiceSession.reading)voiceCancel();
  S.creativeMode=null;
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
@@ -2622,7 +2607,7 @@ async function loadChat(id){
  if(S.workMode)setWorkMode(false);
  try{
   const v=await api("/api/chats/"+id);
-  forgetImageChat();S.chatId=id;$("messageList").replaceChildren();hideWelcome();
+  S.chatId=id;$("messageList").replaceChildren();hideWelcome();
   for(const m of v.messages)appendMessage(m.role,m.body,m.model,null,false,m.id,Boolean(m.saved),m.feedback,m.usage_json,m.created_at);
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
@@ -3855,7 +3840,6 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
-    if(result.images?.length&&replyMediaCached)rememberImageChat(mediaOwner,result.chatId);
      if(!replyMediaCached)mediaCacheWarning(loading.querySelector(".bubble"));
     if(submittedMode==="text")setPortraitState(loading,"finished");
   }
@@ -4824,5 +4808,6 @@ function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
  applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();document.documentElement.classList.remove("pwa-boot-rainbow");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections(),fetchWorkTasks()]);await finishOpenRouterOAuth();
- restoreWorkspaceRoute();updateModelTitle();await restoreLastImageChat();
+ // Fresh launches always start at the homepage; opening history explicitly restores local media.
+ syncWorkspaceRoute("");showWelcome();updateModelTitle();
 });
