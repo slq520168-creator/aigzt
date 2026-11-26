@@ -860,6 +860,7 @@ async function openSettings(){
  if(!S.user){show("authDialog");return}
  show("settingsDialog");closeMenu();$("settingsEmail").textContent=S.user.email;
  syncChatTextSizeSettings();
+ showDeviceMediaSettings();
  for(const item of $("settingsDialog").querySelectorAll(".settings-entry,.settings-about"))item.open=false;
  $("settingsDialog").querySelector(".settings-scroll").scrollTop=0;
  $("savedMessagesList").hidden=true;
@@ -1009,12 +1010,86 @@ function openLocalMedia(){
  return localMediaDB;
 }
 function deviceMediaKey(id){return S.user?.id&&id?S.user.id+":"+id:null}
-async function deviceMediaPut(key,blob){
- if(!key||!(blob instanceof Blob))return;
+let mediaPersistenceRequested=false;
+function requestDeviceMediaPersistence(){
+ if(mediaPersistenceRequested)return;
+ mediaPersistenceRequested=true;
+ try{void navigator.storage?.persist?.().catch(()=>{})}catch{}
+}
+async function deviceMediaPut(key,value){
+ if(!key||(!(value instanceof Blob)&&!(Array.isArray(value)&&value.length&&value.every(b=>b instanceof Blob))))return false;
  try{const db=await openLocalMedia();await new Promise((resolve,reject)=>{
-  const tx=db.transaction("media","readwrite");tx.objectStore("media").put(blob,key);
+  const tx=db.transaction("media","readwrite");
   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
- })}catch{ /* Storage quota or private browsing: current media remains downloadable. */ }
+  tx.objectStore("media").put(value,key);
+ });return true}catch(e){console.warn("Device media cache write failed",e?.name||"unknown");return false}
+}
+function mediaCacheWarning(bubble){
+ if(!bubble?.isConnected)return;
+ if(!bubble.querySelector(".device-media-warning"))bubble.append(node("span","video-job-hint device-media-warning","本机缓存未写入，请先下载图片或视频，关闭后可能无法恢复。"));
+}
+async function cacheReplyImages(owner,id,sources){
+ if(!sources?.length)return true;
+ if(!owner||!id)return false;
+ requestDeviceMediaPersistence();
+ const blobs=await Promise.all(sources.map(src=>deviceMediaBlob(src).catch(()=>null)));
+ if(!blobs.every(b=>b instanceof Blob))return false;
+ return deviceMediaPut(owner+":"+id+":reply-images",blobs);
+}
+async function restoreReplyImages(bubble,id,replace=false){
+ const key=deviceMediaKey(id);if(!key)return false;
+ let blobs=await deviceMediaGet(key+":reply-images");
+ if(!Array.isArray(blobs)||!blobs.length){const legacy=await deviceMediaGet(key);blobs=legacy instanceof Blob&&legacy.type.startsWith("image/")?[legacy]:[]}
+ blobs=blobs.filter(b=>b instanceof Blob&&b.type.startsWith("image/"));
+ if(!blobs.length||!bubble.isConnected||deviceMediaKey(id)!==key||bubble.closest(".message")?.dataset.messageId!==id)return false;
+ if(replace)bubble.replaceChildren();
+ for(const blob of blobs){
+  const img=node("img","chat-generated-image");img.alt="生成图片";img.loading="lazy";img.src=URL.createObjectURL(blob);bubble.append(img);
+ }
+ return true;
+}
+async function visitDeviceMedia(owner,remove=false){
+ const db=await openLocalMedia();
+ return new Promise((resolve,reject)=>{
+  const totals={image:0,video:0,images:0,videos:0};
+  const tx=db.transaction("media",remove?"readwrite":"readonly"),store=tx.objectStore("media");
+  tx.oncomplete=()=>resolve(totals);tx.onabort=()=>reject(tx.error);tx.onerror=()=>reject(tx.error);
+  const req=store.openCursor();
+  req.onsuccess=()=>{
+   const c=req.result;if(!c)return;
+   if(typeof c.key==="string"&&c.key.startsWith(owner+":")){
+    const blobs=Array.isArray(c.value)?c.value:[c.value];let generated=false;
+    for(const b of blobs){if(!(b instanceof Blob))continue;
+     if(b.type.startsWith("image/")){totals.image+=b.size;totals.images++;generated=true}
+     else if(b.type.startsWith("video/")){totals.video+=b.size;totals.videos++;generated=true}
+    }
+    if(remove&&generated)c.delete();
+   }
+   c.continue();
+  };
+ });
+}
+function showDeviceMediaSettings(){
+ const owner=S.user?.id;if(!owner)return;
+ let panel=$("deviceMediaSettings");
+ if(!panel){
+  panel=node("details","settings-entry");panel.id="deviceMediaSettings";
+  const heading=node("summary","","本机媒体缓存"),info=node("p","","图片和视频仅保留在本机，不占用网站媒体存储。默认不自动清理。");
+  const status=node("p");status.id="deviceMediaStatus";
+  const protect=node("button","","申请持久存储");protect.type="button";
+  protect.onclick=async()=>{try{const kept=await navigator.storage?.persist?.();status.textContent=kept?"浏览器已允许持久存储":"浏览器未授予持久存储，系统仍可能清理缓存。"}catch{status.textContent="当前浏览器不支持持久存储授权。"}};
+  const clear=node("button","","清理本机媒体");clear.type="button";
+  clear.onclick=async()=>{const account=S.user?.id;if(!account||!confirm("图片和视频没有云端副本，清理后无法恢复。确定删除此账号在本机的媒体缓存？"))return;
+   clear.disabled=true;try{await visitDeviceMedia(account,true);if(S.user?.id===account)void refreshDeviceMediaSettings(account)}catch{status.textContent="清理失败，未确认删除完成。"}finally{clear.disabled=false}};
+  panel.append(heading,info,status,protect,clear);
+  $("settingsDialog").querySelector(".settings-scroll").append(panel);
+  panel.addEventListener("toggle",()=>{if(panel.open&&S.user)void refreshDeviceMediaSettings(S.user.id)});
+ }
+}
+async function refreshDeviceMediaSettings(owner){
+ const status=$("deviceMediaStatus");if(!status)return;
+ try{const t=await visitDeviceMedia(owner);if(S.user?.id!==owner)return;status.textContent="图片 "+t.images+" 张 · "+(t.image/1048576).toFixed(2)+" MB；视频 "+t.videos+" 个 · "+(t.video/1048576).toFixed(2)+" MB";}
+ catch{if(S.user?.id===owner)status.textContent="本机缓存容量读取失败。"}
 }
 async function deviceMediaGet(key){
  if(!key)return null;
@@ -1045,8 +1120,9 @@ function renderDeviceMedia(bubble,blob,kind){
 async function restoreDeviceMedia(bubble,id,kind,legacyUrl=""){
  const key=deviceMediaKey(id);localMediaNotice(bubble,kind);
  let blob=await deviceMediaGet(key);
- if(!blob&&legacyUrl){try{blob=await deviceMediaBlob(legacyUrl);if(blob)await deviceMediaPut(key,blob)}catch{}}
- if(blob&&bubble.isConnected&&deviceMediaKey(id)===key)renderDeviceMedia(bubble,blob,kind);
+ if(!(blob instanceof Blob)&&kind==="image"&&await restoreReplyImages(bubble,id,true))return;
+ if(!(blob instanceof Blob)&&legacyUrl){try{blob=await deviceMediaBlob(legacyUrl);if(blob)await deviceMediaPut(key,blob)}catch{}}
+ if(blob instanceof Blob&&bubble.isConnected&&deviceMediaKey(id)===key)renderDeviceMedia(bubble,blob,kind);
 }
 
 function renderImageJob(bubble,id){
@@ -1074,8 +1150,15 @@ async function pollImageJob(bubble,id,manual){
  bubble.dataset.imageBusy="1";bubble.dataset.lastImagePoll=String(now);
  let delay=10000;
  try{
+  const messageId=bubble.closest(".message")?.dataset.messageId||id;
+  const key=deviceMediaKey(messageId),owner=S.user?.id;
+  requestDeviceMediaPersistence();
   const r=await api("/api/image/task/"+id);
-  if(!bubble.isConnected||bubble.dataset.imageTask!==id)return;
+  let cached=true;
+  if(r.done&&!r.failed&&r.image){
+   try{const blob=await deviceMediaBlob(r.image);cached=await deviceMediaPut(key,blob)}catch{cached=false}
+  }
+  if(!bubble.isConnected||bubble.dataset.imageTask!==id||S.user?.id!==owner)return;
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
@@ -1088,12 +1171,12 @@ async function pollImageJob(bubble,id,manual){
     bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);
     const row=bubble.closest(".message");
     if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}
+    if(!cached)mediaCacheWarning(bubble);
     // The final image can have a different height from the loading frame.
     if(follow)followLatestImage(bubble);
    };
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;showImageRetry(bubble)};
-   const key=deviceMediaKey(bubble.closest('.message')?.dataset.messageId||id);
-   img.src=r.image;void deviceMediaBlob(r.image).then(blob=>deviceMediaPut(key,blob)).catch(()=>{});return;
+   img.src=r.image;return;
   }
   delay=Math.max(1000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -2316,7 +2399,7 @@ function inlineVideoJob(bubble,id,retry=false){
     }
     if(r.status==="completed"&&r.temporaryUrl===true&&String(r.url||"").startsWith("/api/video/result/")){
      const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);cleanup();
-     try{const blob=await deviceMediaBlob(r.url);if(!blob)throw Error("视频下载失败");await deviceMediaPut(key,blob);if(bubble.isConnected){renderDeviceMedia(bubble,blob,"video");setPortraitState(bubble.closest(".message"),"finished")}}
+     try{const blob=await deviceMediaBlob(r.url);if(!blob)throw Error("视频下载失败");const saved=await deviceMediaPut(key,blob);if(bubble.isConnected){renderDeviceMedia(bubble,blob,"video");if(!saved)mediaCacheWarning(bubble);setPortraitState(bubble.closest(".message"),"finished")}}
      catch{if(bubble.isConnected){localMediaNotice(bubble,"video");const link=node("a","chat-video-save","下载原视频");link.href=r.url;link.download="aigzt-video.mp4";bubble.append(link)}}return;
     }
     if(external){
@@ -2425,7 +2508,8 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
    row.dataset.usedModel=typeof model==="string"?model:"";
    row.dataset.incomplete=incomplete?"1":"0";
   }
-  if(Array.isArray(replyImages))for(const src of replyImages){appendReplyImage(bubble,src);const key=deviceMediaKey(messageId);if(key)void deviceMediaBlob(src).then(blob=>deviceMediaPut(key,blob)).catch(()=>{})}
+  if(Array.isArray(replyImages)&&replyImages.length){for(const src of replyImages)appendReplyImage(bubble,src)}
+  else if(!existingRow&&messageId&&!pending&&!picture&&!localDone&&!videoPending&&!videoDone&&!paidVideo)void restoreReplyImages(bubble,messageId);
    if(!pending&&!videoPending&&!videoDone&&!picture&&!localDone)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
@@ -3644,6 +3728,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  }
  if(submittedMode==="text"&&forceFreeOnce){requestProvider="free";requestModel="free:auto"}
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
+ const mediaOwner=S.user?.id;
  const isNew=!S.chatId;
  const isFreeMessage=submittedMode==="text"&&requestProvider==="free";
  const isImageMessage=submittedMode==="image";
@@ -3702,6 +3787,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   else{
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
   }
+  const replyMediaCached=await cacheReplyImages(mediaOwner,result.assistantMessageId,result.images||[]);
   // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
@@ -3714,6 +3800,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
+    if(!replyMediaCached)mediaCacheWarning(loading.querySelector(".bubble"));
     if(submittedMode==="text")setPortraitState(loading,"finished");
   }
   if(VOICE_CHAT_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
@@ -4165,6 +4252,8 @@ function paintDrawStopwatch(batch,tiles){
  }
 }
 async function drawResult(tile,url){
+ let cached=true;
+ if(tile.cacheKey){requestDeviceMediaPersistence();try{cached=await deviceMediaPut(tile.cacheKey,await deviceMediaBlob(url))}catch{cached=false}}
  const img=node("img");img.alt="生成图片";img.loading="eager";img.className="draw-image-reveal";
  const ok=await new Promise(resolve=>{img.onload=()=>resolve(true);img.onerror=()=>resolve(false);img.src=url});
  if(!ok||!tile.picture.isConnected){tile.caption.textContent="图片加载失败";return false}
@@ -4183,8 +4272,7 @@ async function drawResult(tile,url){
  duck.href="https://duck.ai/";duck.target="_blank";duck.rel="noopener noreferrer";
  duck.title="先下载这张图片，再到 Duck.ai 上传原图继续编辑";
  actions.append(revise,duck);tile.tile.append(actions);
- tile.caption.textContent="保留在本机 · 网站不保存";
- if(tile.cacheKey){try{const blob=await deviceMediaBlob(url);if(blob)await deviceMediaPut(tile.cacheKey,blob)}catch{}}
+ tile.caption.textContent=cached?"保留在本机 · 网站不保存":"本机缓存失败，请下载图片";
  return true;
 }
 function drawSleep(ms,signal){
