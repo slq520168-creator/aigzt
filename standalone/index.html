@@ -58,9 +58,9 @@
     <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button></div>
    </div>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+    <div class="page-heading work-intro"><button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>工作</h2><div class="work-intro-actions"><button type="button" id="workNewTask" class="outline">新任务</button></div></div>
     <div class="work-page-content" id="workScroll">
-    <div class="work-intro"><div class="work-intro-title"><h2>工作</h2><p>输入任务，自动规划与执行</p></div><div class="work-intro-actions"><button type="button" id="workNewTask" class="outline">新任务</button></div></div>
+    <div class="page-intro"><p>输入任务，自动规划与执行</p></div>
     <div class="work-model-toolbar" aria-label="工作专用模型设置">
      <div class="work-model-ident"><span>工作专用模型</span><strong id="workSelectedModel">免费自动</strong><small>独立于聊天模型 · 仅用于工作任务</small></div>
      <button type="button" class="work-model-choose" id="workModelChoose"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span>选择工作模型</button>
@@ -135,9 +135,8 @@
     </div>
    </section>
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
-    <button type="button" class="icon-btn free-tools-close page-back" id="freeToolsClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+    <div class="page-heading free-tools-intro"><button type="button" class="icon-btn free-tools-close page-back" id="freeToolsClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>免费工具</h2></div>
     <div class="free-tools-content">
-    <div class="page-intro free-tools-intro"><h2>免费工具</h2></div>
     <div class="free-tools-filters-area">
      <div class="free-tools-controls">
       <label class="free-tools-search"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><input id="freeToolsSearch" type="search" placeholder="搜索工具" aria-label="搜索免费工具" autocomplete="off"></label>
@@ -193,14 +192,12 @@
  </div>
 
  <dialog id="actionsDialog" class="modal small-dialog context-popover" aria-label="会话操作">
-  <button class="close-modal page-back" data-close="actionsDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
-  <div class="page-intro"><h2>聊天操作</h2></div>
+  <div class="page-heading"><button class="close-modal page-back" data-close="actionsDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>聊天操作</h2></div>
   <div class="action-list" id="chatActionList"></div>
  </dialog>
  <dialog id="projectDialog" class="modal workspace-view" aria-label="项目">
-  <button class="close-modal page-back" data-close="projectDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="projectDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2 id="projectTitle">新建项目</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2 id="projectTitle">新建项目</h2></div>
     <form id="projectForm"><label>名称<input id="projectName" maxlength="60" required placeholder="项目名称"></label>
    <label>项目说明<textarea id="projectInstructions" maxlength="1500" rows="3" placeholder="目标、要求与长期规则（可选）"></textarea></label>
    <button type="submit" class="primary full" id="projectSave">保存项目</button>
@@ -208,35 +205,31 @@
   </div>
  </dialog>
  <dialog id="moveDialog" class="modal small-dialog workspace-view" aria-label="移动到项目">
-  <button class="close-modal page-back" data-close="moveDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="moveDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>添加到项目</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2>添加到项目</h2></div>
     <div class="action-list" id="moveProjectList"></div>
   </div>
  </dialog>
  <dialog id="searchDialog" class="modal workspace-view" aria-label="搜索聊天">
-  <button class="close-modal page-back" data-close="searchDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="searchDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>搜索聊天</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2>搜索聊天</h2></div>
     <form id="searchForm" class="search-form"><input id="chatSearchInput" type="search" maxlength="60" placeholder="搜索标题与消息" required><button class="primary" type="submit">搜索</button></form>
   <div id="searchResults" class="result-list"></div>
   </div>
  </dialog>
  <dialog id="filesDialog" class="modal workspace-view" aria-label="已上传文件">
-  <button class="close-modal page-back" data-close="filesDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="filesDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>已上传文件</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2>已上传文件</h2></div>
     <div id="savedFiles" class="result-list"></div>
   </div>
  </dialog>
 
  <dialog id="settingsDialog" class="modal settings-dialog workspace-view" aria-label="设置">
-  <button type="button" class="close-modal settings-back page-back" data-close="settingsDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
-  <div class="settings-scroll">
-   <div class="settings-intro"><h2>设置</h2><details class="settings-about">
+  <div class="page-heading"><div class="page-heading settings-intro"><button type="button" class="close-modal settings-back page-back" data-close="settingsDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>设置</h2><details class="settings-about">
     <summary aria-label="关于 IMAI" title="关于 IMAI"><span class="ui-icon" data-icon="info" aria-hidden="true"></span></summary>
     <div class="settings-about-panel"><strong>IMAI</strong><p>独立 AI 聊天与工作台</p><small>个人设置仅影响当前账号。生成图片不会因打开此页面而保存到网站。</small></div>
    </details></div>
+  <div class="settings-scroll">
    <section class="settings-section" aria-label="账户">
     <div class="settings-card">
      <details class="settings-entry" id="settingsAccount">
@@ -346,9 +339,8 @@
   </div>
  </dialog>
  <dialog id="authDialog" class="modal" aria-labelledby="authTitle">
-  <button type="button" class="close-modal page-back" data-close="authDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <button type="button" class="close-modal page-back" data-close="authDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2 id="authTitle">登录</h2></div>
   <div class="page-content auth-page-content">
-  <div class="page-intro"><h2 id="authTitle">登录</h2></div>
   <form id="authForm">
    <label class="sr-only" for="authEmail">邮箱</label><input id="authEmail" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" required placeholder="邮箱">
    <label class="sr-only" for="authPassword">密码</label><input id="authPassword" type="password" name="password" autocomplete="current-password" minlength="8" maxlength="160" required placeholder="密码（至少 8 位）">
@@ -360,9 +352,9 @@
  </dialog>
 
  <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">
-  <button type="button" class="close-modal page-back" data-close="workModelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workModelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>选择工作模型</h2></div>
   <div class="work-model-dialog-content">
-   <div class="page-intro"><h2>选择工作模型</h2><p>只影响工作任务，不修改聊天模型</p></div>
+  <div class="page-intro"><p>只影响工作任务，不修改聊天模型</p></div>
    <div class="work-current-model" aria-live="polite"><span>当前工作模型</span><strong id="workCurrentModelName">免费自动</strong><small id="workCurrentModelNote">实际免费模型由线路调度 · 与聊天独立</small></div>
    <p class="work-model-explain">选择后用于工作任务；未连接的服务商需要先验证授权。</p>
    <div id="workAgentCatalog" class="work-agent-catalog" aria-label="工作模型服务商"></div>
@@ -371,9 +363,8 @@
   </div>
  </dialog>
  <dialog id="modelDialog" class="modal wide-modal workspace-view" aria-label="模型大厅">
-  <button class="close-modal page-back" data-close="modelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="modelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>模型大厅</h2></div>
   <div class="page-content" id="modelScroll">
-  <div class="page-intro"><h2>模型大厅</h2></div>
     <div class="model-sticky-filters">
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>
   <div class="source-chips" id="sourceChips"><button class="chip active" data-source="all">全部模型</button><button class="chip" data-source="recent">常用成功</button><button class="chip" data-source="route:official">官方直连</button><button class="chip" data-source="route:third">第三方</button><button class="chip" data-source="free">免费线路</button><button class="chip" data-source="family:china">国内模型</button><button class="chip" data-source="family:international">海外</button><button class="chip" data-source="family:russian">俄罗斯</button><button class="chip" data-source="family:gpt">GPT</button><button class="chip" data-source="family:claude">Claude</button><button class="chip" data-source="family:grok">Grok</button><button class="chip" data-source="family:gemini">Gemini</button><button class="chip" data-source="family:qwen">千问</button><button class="chip" data-source="family:novai">NovaAI</button><button class="chip" data-source="family:deepseek">DeepSeek</button><button class="chip" data-source="connected">已连接</button></div><div id="modelRegionLinks" class="model-region-links" hidden></div>
@@ -391,9 +382,8 @@
  </dialog>
 
  <dialog id="keyDialog" class="modal workspace-view" aria-label="连接 AI">
-  <button class="close-modal page-back" data-close="keyDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="keyDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>连接 AI</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2>连接 AI</h2></div>
     <form id="keyForm">
   <label id="keyProviderNative">服务商<select id="keyProvider"><optgroup label="官方服务商直连"><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option><option value="qwen">阿里千问</option><option value="grok">Grok / xAI</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option><option value="stepfun">阶跃星辰</option><option value="xiaomi">小米 MiMo</option><option value="longcat">美团 LongCat</option><option value="baichuan">百川智能</option><option value="iflytek">讯飞星火</option><option value="sensetime">商汤 SenseNova</option><option value="yandex">Yandex AI Studio · 俄罗斯</option><option value="gigachat">GigaChat · 俄罗斯</option><option value="runway">Runway 视频 API</option><option value="luma">Luma Dream Machine 视频 API</option><option value="vidu">Vidu 视频 API</option></optgroup><optgroup label="第三方聚合 / 推理平台"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="siliconflow">硅基流动</option></optgroup></select></label>
   <details id="providerPicker" class="provider-picker" hidden><summary id="providerPickerSummary"></summary><div id="providerPickerList"></div></details>
@@ -414,9 +404,9 @@
  </dialog>
 
  <dialog id="voiceDialog" class="modal workspace-view" aria-label="语音对话">
-  <button type="button" class="close-modal page-back" data-close="voiceDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button type="button" class="close-modal page-back" data-close="voiceDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>语音对话</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2>语音对话</h2><p>语音提问 · AI 回答 · 设备语音播报</p></div>
+  <div class="page-intro"><p>语音提问 · AI 回答 · 设备语音播报</p></div>
     <div class="voice-settings">
    <label>播报声音<select id="voiceSelect" aria-label="选择设备朗读声音"><option value="">系统默认声音</option></select></label>
    <label>识别语言<select id="voiceLang"><option value="zh-CN">普通话</option><option value="zh-TW">繁体中文</option><option value="en-US">英语</option><option value="ja-JP">日语</option></select></label>
@@ -433,9 +423,8 @@
   </div>
  </dialog>
  <dialog id="createDialog" class="modal workspace-view" aria-label="免费作图">
-  <button class="close-modal page-back" data-close="createDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-heading"><button class="close-modal page-back" data-close="createDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2 id="createDialogTitle">免费作图</h2></div>
   <div class="page-content">
-  <div class="page-intro"><h2 id="createDialogTitle">免费作图</h2></div>
     <label class="draw-description">画面描述<textarea id="createPrompt" rows="4" maxlength="1400" placeholder="描述你要生成的图片…"></textarea></label>
   <div id="drawSettings" class="draw-settings">
  <fieldset class="draw-field"><legend>风格</legend><div id="drawStyle" class="draw-choices draw-style-options" data-value="portrait-master" role="group" aria-label="绘画风格"><button type="button" class="draw-choice active" data-value="portrait-master" aria-pressed="true">人像写真</button><button type="button" class="draw-choice" data-value="natural-portrait" aria-pressed="false">自然写真</button><button type="button" class="draw-choice" data-value="studio-portrait" aria-pressed="false">棚拍</button><button type="button" class="draw-choice" data-value="fashion-editorial" aria-pressed="false">时尚</button><button type="button" class="draw-choice" data-value="cinematic-portrait" aria-pressed="false">电影人像</button><button type="button" class="draw-choice" data-value="casual-photo" aria-pressed="false">随手拍</button><button type="button" class="draw-choice" data-value="pro-photo" aria-pressed="false">专业摄影</button><button type="button" class="draw-choice" data-value="cinematic" aria-pressed="false">电影感</button><button type="button" class="draw-choice" data-value="none" aria-pressed="false">通用</button><button type="button" class="draw-choice" data-value="anime" aria-pressed="false">动漫</button><button type="button" class="draw-choice" data-value="cute-anime" aria-pressed="false">萌系</button><button type="button" class="draw-choice" data-value="digital-painting" aria-pressed="false">数字绘画</button><button type="button" class="draw-choice" data-value="oil" aria-pressed="false">油画</button><button type="button" class="draw-choice" data-value="watercolor" aria-pressed="false">水彩</button><button type="button" class="draw-choice" data-value="pencil" aria-pressed="false">素描</button><button type="button" class="draw-choice" data-value="cartoon" aria-pressed="false">卡通</button><button type="button" class="draw-choice" data-value="fantasy" aria-pressed="false">奇幻</button></div><button type="button" id="drawMore" class="draw-more" aria-expanded="false">更多风格</button></fieldset>

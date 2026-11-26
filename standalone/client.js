@@ -119,12 +119,6 @@ function activeBackDialog(){
  const open=drawerPageOrder.filter(el=>el.open&&!el.hidden);
  return open[open.length-1]||Array.from(document.querySelectorAll("dialog[open]")).at(-1)||null;
 }
-function chatBackAvailable(){return !$("conversation").classList.contains("empty-chat")&&!S.workMode&&!S.freeToolsMode}
-function returnFromChat(){
- if(!chatBackAvailable())return;
- if((S.busy||$("messageList").querySelector("[data-image-task],[data-image-finalizing]"))&&!confirm("当前回复或作图尚未完成，返回首页可能中断生成。确定返回？"))return;
- newChat();
-}
 function backDialog(id){
  if(id==="actionsDialog"){closeHistoryActions();return}
  const parent=id==="keyDialog"?keyBackPage:null;
@@ -136,9 +130,8 @@ function goBack(){
  if(!$("imageViewer").hidden){ivClose();return}
  const page=activeBackDialog();if(page){backDialog(page.id);return}
  if($("shell").classList.contains("menu-open")){closeMenu();return}
- if(S.freeToolsMode){setFreeToolsMode(false);return}
- if(S.workMode){setWorkMode(false);return}
- if(chatBackAvailable())returnFromChat();
+ if(S.freeToolsMode||S.workMode){returnWorkspace();return}
+ openMenu();
 }
 function closeMenu(){
  if(historyActionAnchor)closeHistoryActions();
@@ -201,7 +194,7 @@ function wireDrawerGestures(){
   if(open){
    if(!(target instanceof Element)||!target.closest("#sidebar,#sideShade"))return;
    action="close";direction=-1;
-  }else if(S.freeToolsMode||S.workMode||chatBackAvailable()){
+  }else if(S.freeToolsMode||S.workMode){
    if(!left||target instanceof Element&&target.closest("button,a,summary,label"))return;
    action="back";direction=1;
   }else{
@@ -2274,15 +2267,20 @@ function messageTokenText(row){
  if(Number.isSafeInteger(usage.reasoning)&&usage.reasoning>=0)text+=" · 推理 "+fmt(usage.reasoning);
  return text+" tokens";
 }
-// One non-modal inline menu. No native details/summary or positioned hit-test layer.
+// One anchored non-modal menu; opening does not participate in message layout.
 let activeMessageMore=null;
 function setMessageMoreOpen(menu,open){
  if(open&&activeMessageMore&&activeMessageMore!==menu)setMessageMoreOpen(activeMessageMore,false);
  menu.panel.hidden=!open;
  menu.trigger.setAttribute("aria-expanded",String(Boolean(open)));
  menu.trigger.classList.toggle("is-active",Boolean(open));
- if(open)activeMessageMore=menu;
- else if(activeMessageMore===menu)activeMessageMore=null;
+ if(open){
+  activeMessageMore=menu;
+  const anchor=menu.trigger.getBoundingClientRect(),bar=menu.panel.parentElement.getBoundingClientRect(),viewport=$("conversation").getBoundingClientRect();
+  const width=menu.panel.offsetWidth;
+  menu.panel.style.setProperty("--message-menu-left",Math.max(viewport.left+8,Math.min(anchor.right-width,viewport.right-width-8))-bar.left+"px");
+  menu.panel.style.setProperty("--message-menu-height",Math.max(48,bar.top-Math.max(viewport.top,0)-12)+"px");
+ }else if(activeMessageMore===menu)activeMessageMore=null;
 }
 function wireMessageMore(trigger,panel){
  const menu={trigger,panel};
@@ -2611,6 +2609,7 @@ function newChat(keepDrawer=false){
  S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  if(S.freeToolsMode)setFreeToolsMode(false);
  if(S.workMode)setWorkMode(false);
+ workspaceTrail.length=0;
  S.chatId=null;S.attachments=[];renderAttachments();setComposerMode("text");$("messageList").replaceChildren();showWelcome();
  $("prompt").value="";$("prompt").placeholder="向 AI 提问…";settlePromptSize();flashError("");renderHistory();if(keepDrawer!==true)closeMenu();
 }
@@ -3427,9 +3426,30 @@ function renderFreeTools(){
  desired.forEach((card,i)=>{if(list.children[i]!==card)list.insertBefore(card,list.children[i]||null)});
  const empty=$("freeToolEmpty");empty.textContent=recent&&!search?"暂无最近使用的工具":"没有匹配的工具";empty.hidden=desired.length>0;
 }
+let restoringWorkspace=false;
+const workspaceTrail=[];
+function currentWorkspace(){return S.workMode?"work":S.freeToolsMode?"tools":""}
 function syncWorkspaceRoute(name){
+ if(restoringWorkspace)return;
  const hash=name?"#"+name:"";
  if(location.hash!==hash)history.replaceState(history.state,"",location.pathname+location.search+hash);
+}
+function enterWorkspace(name){
+ const previous=currentWorkspace();
+ if(previous===name){closeMenu();return}
+ workspaceTrail.push(previous);
+ const state={...history.state,aigztWorkspace:true};
+ history.pushState(state,"",location.pathname+location.search+"#"+name);
+ restoreWorkspaceRoute();
+}
+function returnWorkspace(){
+ if(workspaceTrail.length){
+  workspaceTrail.pop();
+  history.back();
+ }else{
+  if(S.workMode)setWorkMode(false);
+  else if(S.freeToolsMode)setFreeToolsMode(false);
+ }
 }
 /* Floating page actions follow the active workspace; work remains accessible in the drawer. */
 function syncTopMode(){
@@ -3453,8 +3473,15 @@ function setFreeToolsMode(enabled){
  closeMenu();syncHomeAmbient();syncTopMode();
 }
 function restoreWorkspaceRoute(){
- if(location.hash==="#tools")setFreeToolsMode(true);
- else if(location.hash==="#work")setWorkMode(true);
+ const next=location.hash==="#tools"?"tools":location.hash==="#work"?"work":"";
+ if(currentWorkspace()===next)return;
+ restoringWorkspace=true;
+ try{
+  if(S.workMode&&next!=="work")setWorkMode(false);
+  if(S.freeToolsMode&&next!=="tools")setFreeToolsMode(false);
+  if(next==="tools")setFreeToolsMode(true);
+  else if(next==="work")setWorkMode(true);
+ }finally{restoringWorkspace=false}
 }
 
 /* Real engineering work actions: no background writes, no simulated results. */
@@ -3577,19 +3604,32 @@ async function wkRuns(){
 }
 
 const WORK_LABELS=["规划","制作","复核","交付"];
+let chatComposerBeforeWork=null,workComposerDraft=null;
+function captureComposer(){return {text:$("prompt").value,attachments:S.attachments.slice(),mode:S.composerMode,miniToolChoice:S.miniToolChoice,code:S.code}}
+function restoreComposer(draft){
+ if(!draft)return;
+ S.code=!!draft.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code));
+ S.miniToolChoice=draft.miniToolChoice;S.attachments=draft.attachments.slice();$("prompt").value=draft.text;
+ setComposerMode(draft.mode||"text");renderAttachments();settlePromptSize();
+}
 function setWorkMode(on){
- if(on)stopMessageReader();
+ const wasWork=S.workMode;
+ if(on&&wasWork)return;
+ if(on){stopMessageReader();chatComposerBeforeWork=captureComposer()}
+ if(!on&&wasWork)workComposerDraft=captureComposer();
  setFreeToolsMode(false);S.workMode=!!on;
  if(on){
   if(!S.workStages.length)resetWorkPlan();
   $("workConfig").open=false;renderWorkEditor();void loadCatalog();
-  setComposerMode("text");$("conversation").hidden=true;$("workBoard").hidden=false;
+  restoreComposer(workComposerDraft||{text:"",attachments:[],mode:"text",miniToolChoice:null,code:false});$("conversation").hidden=true;$("workBoard").hidden=false;
   void wkConnections();
   $("prompt").placeholder="描述要完成的工作任务…";
   hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
  }else{
   $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");
-  $("prompt").placeholder="向 AI 提问…";syncWorkspaceRoute("");
+  if(wasWork){restoreComposer(chatComposerBeforeWork);chatComposerBeforeWork=null}
+  else $("prompt").placeholder="向 AI 提问…";
+  syncWorkspaceRoute("");
  }
  closeMenu();syncHomeAmbient();syncTopMode();updateComposerModel();
 }
@@ -4467,7 +4507,7 @@ function setCreationMode(){
  $("createDialogTitle").textContent="免费作图";
  $("drawSettings").hidden=false;$("drawResultSection").hidden=false;
  $("drawCancel").hidden=!S.drawBatch;$("drawElapsed").hidden=!S.drawBatch&&$("drawElapsed").textContent==="00:00";
- $("createButton").textContent="生成免费图片";$("createPrompt").placeholder="描述你要生成的图片…";$("createStatus").textContent="";
+ $("createButton").textContent=S.drawBatch?"生成中…":"生成免费图片";$("createPrompt").placeholder="描述你要生成的图片…";
 }
 function openCreate(){
  if(!S.user){show("authDialog");return}
@@ -4546,7 +4586,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;workspaceTrail.length=0;restoredChatModelOwner=null;setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -4627,23 +4667,26 @@ function wire(){
  });
  // Capture click also covers iOS touch-generated clicks and keyboard activation.
  document.addEventListener("click",closeOutsideMessageMore,true);
+ $("conversation").addEventListener("scroll",closeMessageMore,{passive:true});
+ window.addEventListener("resize",closeMessageMore,{passive:true});
  document.addEventListener("keydown",event=>{if(event.key==="Escape")closeMessageMore()});
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
+ window.addEventListener("popstate",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);
  $("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
- $("navFreeTools").addEventListener("click",()=>setFreeToolsMode(true));
+ $("navFreeTools").addEventListener("click",()=>enterWorkspace("tools"));
  $("navDraw").addEventListener("click",openCreate);
- $("freeToolsClose").addEventListener("click",()=>setFreeToolsMode(false));
+ $("freeToolsClose").addEventListener("click",returnWorkspace);
  $("freeToolsSearch").addEventListener("input",renderFreeTools);
- $("navWork").addEventListener("click",()=>setWorkMode(true));
+ $("navWork").addEventListener("click",()=>enterWorkspace("work"));
  $("navCode").addEventListener("click",startCoding);
  
  $("domesticProviderList");initDomesticProviderLinks();
- $("workClose").addEventListener("click",()=>setWorkMode(false));
+ $("workClose").addEventListener("click",returnWorkspace);
  $("workNewTask").addEventListener("click",newWorkDraft);
  $("workModelChoose").addEventListener("click",()=>{
   $("workModelMessage").textContent="";

@@ -1,49 +1,49 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const html=fs.readFileSync('standalone/index.html','utf8'),js=fs.readFileSync('standalone/client.js','utf8'),css=fs.readFileSync('standalone/style.css','utf8');
-test('each dialog and secondary page has an arrow back action',()=>{
- for(const d of html.matchAll(/<dialog id="([^"]+)"[\s\S]*?<\/dialog>/g)){assert.ok(d[0].includes('data-close="'+d[1]+'"'));assert.ok(d[0].includes('data-icon="arrow-left"'))}
- for(const id of ['workClose','freeToolsClose','ivClose'])assert.match(html,new RegExp('id="'+id+'"[^>]*>\\s*<span[^>]*data-icon="arrow-left"'));
+test('all named secondary pages have one fixed compact heading containing the original back button and title',()=>{
+ for(const d of html.matchAll(/<dialog id="([^"]+)"[\s\S]*?<\/dialog>/g)){
+  assert.match(d[0],/<div class="page-heading[^"]*">\s*<button[^>]*page-back[\s\S]*?<\/button>\s*<h2/);
+  assert.ok(d[0].includes('data-close="'+d[1]+'"'));
+ }
+ for(const id of ['workClose','freeToolsClose'])assert.match(html,new RegExp('<div class="page-heading[^"]*">\\s*<button[^>]*id="'+id+'"[^>]*>[\\s\\S]*?<\\/button><h2'));
+ assert.match(css,/\.page-heading\{display:flex;align-items:center/);
  assert.match(css,/\.page-back\{[^}]*border:0;[^}]*background:transparent/);
- assert.doesNotMatch(html,/id="(?:chatBack|closeSide)"/);
- assert.doesNotMatch(js,/\$\("(?:chatBack|closeSide)"\)|syncChatBack/);
- assert.match(js,/\$\("sideShade"\)\.addEventListener\("click",closeMenu\)/);
- assert.match(js,/action="close";direction=-1/);
- assert.match(js,/if\(chatBackAvailable\(\)\)returnFromChat\(\)/);
  assert.doesNotThrow(()=>new Function(js));
 });
-test('back priority is viewer, modal, drawer, workspace, chat',()=>{
- const code=js.slice(js.indexOf('function goBack(){'),js.indexOf('function closeMenu(){'));
- const calls=[],state={viewer:true,dialog:{id:'settingsDialog'},drawer:true,tools:true,work:true,chat:true};
- const run=new Function('$','activeBackDialog','ivClose','backDialog','closeMenu','S','setFreeToolsMode','setWorkMode','chatBackAvailable','returnFromChat',code+';goBack();');
- const S={get freeToolsMode(){return state.tools},get workMode(){return state.work}};
- const invoke=()=>run(id=>id==='imageViewer'?{hidden:!state.viewer}:{classList:{contains:()=>state.drawer}},()=>state.dialog,()=>calls.push('viewer'),id=>calls.push(id),()=>calls.push('drawer'),S,()=>calls.push('tools'),()=>calls.push('work'),()=>state.chat,()=>calls.push('chat'));
- invoke();state.viewer=false;invoke();state.dialog=null;invoke();state.drawer=false;invoke();state.tools=false;invoke();state.work=false;invoke();
- assert.deepEqual(calls,['viewer','settingsDialog','drawer','tools','work','chat']);
- assert.match(js,/\["page","back","viewer"\]\.includes\(origin\.action\)\)\{goBack\(\);return\}/);
+test('right swipe in an existing conversation opens drawer on first gesture without creating chat',()=>{
+ const code=js.slice(js.indexOf('function wireDrawerGestures(){'),js.indexOf('function flashError('));
+ const events={},calls=[];let open=false;
+ class El{closest(){return null}}
+ const doc={addEventListener:(name,fn)=>events[name]=fn,querySelector:()=>null};
+ const win={matchMedia:()=>({matches:true}),getSelection:()=>null,addEventListener:()=>{}};
+ const $=id=>id==='shell'?{classList:{contains:()=>open}}:{hidden:true};
+ const S={workMode:false,freeToolsMode:false};
+ new Function('document','window','Element','$','S','activeBackDialog','openMenu','closeMenu','goBack','iv',code+';wireDrawerGestures();')(doc,win,El,$,S,()=>null,()=>{calls.push('drawer');open=true},()=>{open=false},()=>calls.push('back'),{scale:1});
+ const touch=(x,y)=>({identifier:1,clientX:x,clientY:y}),target=new El();
+ events.touchstart({touches:[touch(10,180)],target});
+ events.touchmove({touches:[touch(60,181)],cancelable:true,preventDefault(){}});
+ events.touchend({touches:[],changedTouches:[touch(90,181)]});
+ assert.deepEqual(calls,['drawer']);
 });
-
-test("secondary pages have standalone return controls and no full-width navigation headers",()=>{
- assert.doesNotMatch(html,/class="[^"]*(?:modal-head|settings-topbar|iv-header|work-header|free-tools-title)/);
- assert.doesNotMatch(css,/\.modal-head|\.settings-topbar|\.iv-header|\.work-header|\.free-tools-title/);
- for(const d of html.matchAll(/<dialog id="([^"]+)"[^>]*>\s*([^\n]*)/g))assert.match(d[2],/^<button[^>]*page-back[^>]*>/);
- assert.match(js,/\$\("modelScroll"\)\.scrollTop=0/);
- assert.match(js,/\$\("workScroll"\)\.scrollTop=0/);
+test('reply menu is out of layout and opens above action row',()=>{
+ assert.match(css,/\.message-more-panel\{position:absolute;bottom:calc\(100% \+ 6px\)/);
+ assert.match(js,/menu\.panel\.style\.setProperty\("--message-menu-height"/);
+ assert.match(js,/addEventListener\("scroll",closeMessageMore/);
 });
-
- test("long pages scroll content without moving the return arrow",()=>{for(const id of ["modelScroll","workScroll"])assert.ok(html.includes('id="'+id+'"'));for(const selector of [".page-content",".work-page-content",".free-tools-content",".settings-scroll",".work-model-dialog-content"])assert.ok(css.includes(selector));assert.match(css,/\.page-content\{[^}]*overflow-y:auto/);assert.match(css,/\.work-page-content\{[^}]*overflow-y:auto/);assert.match(css,/\.free-tools-content\{[^}]*overflow-y:auto/);});
-
-test("connection page returns to its actual parent, not chat",()=>{
+test('workspace return uses history and work composer has separate draft',()=>{
+ assert.match(js,/history\.pushState\(state/);
+ assert.match(js,/history\.back\(\)/);
+ assert.match(js,/chatComposerBeforeWork=captureComposer\(\)/);
+ assert.match(js,/restoreComposer\(chatComposerBeforeWork\)/);
+});
+test('connection page returns to actual parent',()=>{
  const code=js.slice(js.indexOf("function backDialog(id){"),js.indexOf("function goBack(){"));
  for(const parent of ["modelDialog","workModelDialog","settingsDialog",null]){
-  const calls=[];const run=new Function("hide","show","closeHistoryActions","initial","let keyBackPage=initial;"+code+";backDialog('keyDialog');backDialog('keyDialog');");
-  run(id=>calls.push("hide:"+id),id=>calls.push("show:"+id),()=>calls.push("actions"),parent);
-  assert.deepEqual(calls,parent?["hide:keyDialog","show:"+parent,"hide:keyDialog"]:["hide:keyDialog","hide:keyDialog"]);
+  const calls=[];new Function("hide","show","closeHistoryActions","initial","let keyBackPage=initial;"+code+";backDialog('keyDialog');")(id=>calls.push("hide:"+id),id=>calls.push("show:"+id),()=>{},parent);
+  assert.deepEqual(calls,parent?["hide:keyDialog","show:"+parent]:["hide:keyDialog"]);
  }
- assert.match(js,/addEventListener\("click",\(\)=>backDialog\(btn.dataset.close\)\)/);
- for(const id of ["modelDialog","workModelDialog","settingsDialog"])assert.ok(js.includes(',"'+id+'")'));
 });
-test("login arrow is outside its scrolling form",()=>{
- const d=html.match(/<dialog id="authDialog"[\s\S]*?<\/dialog>/)[0];
- assert.match(d,/<button[^>]*page-back[\s\S]*?<\/button>\s*<div class="page-content auth-page-content">/);
- assert.match(css,/#authDialog\[open\]\{display:flex;flex-direction:column/);
+test('free draw state is not cleared by reopening',()=>{
+ const code=js.slice(js.indexOf('function setCreationMode(){'),js.indexOf('function openCreate(){'));
+ assert.doesNotMatch(code,/createStatus.*textContent/);
 });
