@@ -18,6 +18,7 @@ function node(tag,cls,text){
 const ICONS={
  dice:'<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="7.5" cy="7.5" r="0.9"/><circle cx="16.5" cy="7.5" r="0.9"/><circle cx="12" cy="12" r="0.9"/><circle cx="7.5" cy="16.5" r="0.9"/><circle cx="16.5" cy="16.5" r="0.9"/>',
  menu:'<path d="M4 6h16M4 12h10M4 18h16"/>',
+ "arrow-left":'<path d="M19 12H5m7 7-7-7 7-7"/>',
  'panel-left':'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
  layers:'<path d="m12 2 9 5-9 5-9-5 9-5Zm-9 10 9 5 9-5M3 17l9 5 9-5"/>',
  zap:'<path d="m13 2-3 8h8l-7 12 2-9H5l8-11Z"/>',
@@ -112,6 +113,26 @@ function show(id){
  if(id==="searchDialog")queueChatSearch();
 }
 function hide(id){if($(id).open)$(id).close()}
+function activeBackDialog(){
+ if($("actionsDialog").open&&historyActionAnchor)return $("actionsDialog");
+ const open=drawerPageOrder.filter(el=>el.open&&!el.hidden);
+ return open[open.length-1]||Array.from(document.querySelectorAll("dialog[open]")).at(-1)||null;
+}
+function chatBackAvailable(){return !$("conversation").classList.contains("empty-chat")&&!S.workMode&&!S.freeToolsMode}
+function syncChatBack(){const button=$("chatBack");if(button)button.hidden=!chatBackAvailable()}
+function returnFromChat(){
+ if(!chatBackAvailable())return;
+ if((S.busy||$("messageList").querySelector("[data-image-task],[data-image-finalizing]"))&&!confirm("当前回复或作图尚未完成，返回首页可能中断生成。确定返回？"))return;
+ newChat();
+}
+function goBack(){
+ if(!$("imageViewer").hidden){ivClose();return}
+ const page=activeBackDialog();if(page){if(page.id==="actionsDialog")closeHistoryActions();else hide(page.id);return}
+ if($("shell").classList.contains("menu-open")){closeMenu();return}
+ if(S.freeToolsMode){setFreeToolsMode(false);return}
+ if(S.workMode){setWorkMode(false);return}
+ if(chatBackAvailable())returnFromChat();
+}
 function closeMenu(){
  if(historyActionAnchor)closeHistoryActions();
  $("shell").classList.remove("menu-open");
@@ -147,45 +168,39 @@ function wireDrawerGestures(){
   if(horizontal&&horizontal.scrollWidth>horizontal.clientWidth+2&&/^(auto|scroll|overlay)$/.test(window.getComputedStyle(horizontal).overflowX))return true;
   return false;
  }
- function activePage(){
-  const open=drawerPageOrder.filter(el=>el.open&&!el.hidden);
-  return open[open.length-1]||null;
- }
+ function activePage(){return activeBackDialog()}
  document.addEventListener("touchstart",event=>{
   gesture=null;
-  if(!isMobile()||event.touches.length!==1||!$("imageViewer").hidden)return;
+  if(!isMobile()||event.touches.length!==1)return;
   const touch=event.touches[0],target=event.target,open=$("shell").classList.contains("menu-open");
-  const left=touch.clientX<=edgeWidth,right=touch.clientX>=window.innerWidth-edgeWidth;
-  // Ordinary interior taps and vertical reading never enter the expensive gesture path.
-  if(!open&&touch.clientX>drawerEdgeWidth&&!right)return;
-  const page=activePage();
-  if(!page&&!open&&!S.freeToolsMode&&!S.workMode&&touch.clientX>drawerEdgeWidth)return;
-  const replyEdge=!page&&!open&&!S.freeToolsMode&&!S.workMode&&touch.clientX<=replyEdgeWidth;
+  const left=touch.clientX<=edgeWidth;
+  const page=activePage(),viewer=!$("imageViewer").hidden;
+  if(viewer){
+   if(!left||iv.scale!==1||target instanceof Element&&target.closest("button,.iv-thumbs"))return;
+   gesture={id:touch.identifier,x:touch.clientX,y:touch.clientY,action:"viewer",direction:1,page};return;
+  }
+  if(page){
+   const rect=page.getBoundingClientRect();
+   const panelEdge=touch.clientX>=rect.left-2&&touch.clientX<=rect.left+edgeWidth;
+   if(!left&&!panelEdge)return;
+   if(!(target instanceof Element)||!page.contains(target)||target.closest("button,a,summary,label,input,textarea,select,video,canvas,[contenteditable]"))return;
+   if(blockedTarget(target,true))return;
+   gesture={id:touch.identifier,x:touch.clientX,y:touch.clientY,action:"page",direction:1,page};return;
+  }
+  if(!open&&touch.clientX>drawerEdgeWidth)return;
+  const replyEdge=!open&&!S.freeToolsMode&&!S.workMode&&touch.clientX<=replyEdgeWidth;
   if(blockedTarget(target,replyEdge))return;
   let action="",direction=0;
-  if(page){
-   if(!page.classList.contains("workspace-view")&&page.id!=="workModelDialog")return;
-   if(!(target instanceof Element)||!page.contains(target)||(!left&&!right))return;
-   if(target.closest("button,a,summary,label"))return;
-   action="page";direction=left?1:-1;
-  }else if(document.querySelector("dialog[open]"))return;
-  else if(open){
+  if(open){
    if(!(target instanceof Element)||!target.closest("#sidebar,#sideShade"))return;
    action="close";direction=-1;
-  }else if(S.freeToolsMode||S.workMode){
-   if(!left&&!right)return;
-   if(target instanceof Element&&target.closest("button,a,summary,label"))return;
-   action=S.freeToolsMode?"tools":"work";direction=left?1:-1;
+  }else if(S.freeToolsMode||S.workMode||chatBackAvailable()){
+   if(!left||target instanceof Element&&target.closest("button,a,summary,label"))return;
+   action="back";direction=1;
   }else{
-   // Full-width replies no longer have an avatar column as a swipe gutter.
-    // Permit a deliberate right swipe from the outer 22px of text, not its interior.
-    if(touch.clientX>drawerEdgeWidth)return;
-    const startElement=target instanceof Element?target:target?.parentElement;
-    if(startElement?.closest(".message-copy-bar,.message-translation,button,a,summary,label"))return;
-    if(startElement?.closest(".bubble")&&!replyEdge)return;
-    // Native image drag/selection must not preempt an edge drawer gesture.
-    if(window.getSelection?.()?.toString())return;
-    action="open";direction=1;
+   if(target instanceof Element&&target.closest(".message-copy-bar,.message-translation,button,a,summary,label"))return;
+   if(window.getSelection?.()?.toString())return;
+   action="open";direction=1;
   }
   gesture={id:touch.identifier,x:touch.clientX,y:touch.clientY,action,direction,page};
  },{passive:true});
@@ -207,24 +222,25 @@ function wireDrawerGestures(){
     }
    }
   }
-  if((Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx))||dx*gesture.direction< -16)gesture=null;
+  if((Math.abs(dy)>14&&Math.abs(dy)>Math.abs(dx))||dx*gesture.direction< -16){gesture=null;return}
+  if(["page","back","viewer"].includes(gesture.action)&&dx>12&&dx>Math.abs(dy)*2&&event.cancelable)event.preventDefault();
  },{passive:false});
  document.addEventListener("touchend",event=>{
   const origin=gesture;gesture=null;
-  if(!origin||origin.committed||event.touches.length!==0||event.changedTouches.length!==1||!isMobile()||!$("imageViewer").hidden)return;
+  if(!origin||origin.committed||event.touches.length!==0||event.changedTouches.length!==1||!isMobile())return;
+  if((origin.action==="viewer")!==!$("imageViewer").hidden)return;
   const touch=event.changedTouches[0];
   if(touch.identifier!==origin.id||activePage()!==origin.page)return;
   const dx=touch.clientX-origin.x,dy=touch.clientY-origin.y;
   const opening=origin.action==="open";
    if(dx*origin.direction<((opening||origin.action==="close")?drawerOpenDistance:minDistance)||Math.abs(dx)<Math.abs(dy)*(opening?1.7:1.5)||(opening&&Math.abs(dy)>42))return;
    if(opening&&window.getSelection?.()?.toString())return;
-  if(origin.action==="page"){if(origin.page.open)hide(origin.page.id);return}
+  if(["page","back","viewer"].includes(origin.action)){goBack();return}
   if(document.querySelector("dialog[open]"))return;
   const open=$("shell").classList.contains("menu-open");
   if(origin.action==="close"&&open)closeMenu();
   else if(origin.action==="open"&&!open&&!S.freeToolsMode&&!S.workMode)openMenu();
-  else if(origin.action==="tools"&&!open&&S.freeToolsMode)setFreeToolsMode(false);
-  else if(origin.action==="work"&&!open&&S.workMode)setWorkMode(false);
+
  },{passive:true});
  document.addEventListener("touchcancel",()=>{gesture=null},{passive:true});
  window.addEventListener("resize",()=>{
@@ -953,8 +969,8 @@ function syncHomeAmbient(){
  const view=$("conversation");
  document.body.classList.toggle("home-ambient",!!view&&view.classList.contains("empty-chat")&&!view.hidden&&!S.workMode&&!S.freeToolsMode);
 }
-function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient()}
-function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient()}
+function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient();syncChatBack()}
+function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient();syncChatBack()}
 
 
 
@@ -3411,6 +3427,7 @@ function syncWorkspaceRoute(name){
 /* Floating page actions follow the active workspace; work remains accessible in the drawer. */
 function syncTopMode(){
  const chatting=!S.workMode&&!S.freeToolsMode,working=!!S.workMode;
+ $("shell").classList.toggle("work-active",working);syncChatBack();
  $("headerChatModels").hidden=!chatting;
  $("headerNew").setAttribute("aria-label",working?"新建工作任务":"新建聊天");
  $("headerNew").title=working?"新建工作任务":"新建聊天";
@@ -4251,7 +4268,7 @@ function wireImageViewer(){
  stage.addEventListener("dblclick",e=>{e.preventDefault();if(Date.now()-iv.lastTouchEnd>550)ivZoom()});
  stage.addEventListener("touchstart",e=>{
   if(e.touches.length===2){iv.touch={pinch:true,d:ivDistance(e.touches[0],e.touches[1]),s:iv.scale};iv.lastTap=null}
-  else if(e.touches.length===1){const t=e.touches[0];iv.touch={x:t.clientX,y:t.clientY,lx:t.clientX,ly:t.clientY,moved:false,pinch:false}}
+  else if(e.touches.length===1){const t=e.touches[0];if(iv.scale===1&&t.clientX<=24){iv.touch=null;return}iv.touch={x:t.clientX,y:t.clientY,lx:t.clientX,ly:t.clientY,moved:false,pinch:false}}
  },{passive:false});
  stage.addEventListener("touchmove",e=>{
   const s=iv.touch;if(!s)return;
@@ -4606,6 +4623,7 @@ function wire(){
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);
+ $("chatBack").addEventListener("click",goBack);
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
@@ -4768,7 +4786,7 @@ function wire(){
 
  document.addEventListener("click",e=>{if(!$("attachMenu").hidden&&!$("attachMenu").contains(e.target)&&!$("attachButton").contains(e.target))hideAttachMenu()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")hideAttachMenu()});
- for(const btn of els("[data-close]"))btn.addEventListener("click",()=>hide(btn.dataset.close));
+ for(const btn of els("[data-close]"))btn.addEventListener("click",()=>{if(btn.dataset.close==="actionsDialog")closeHistoryActions();else hide(btn.dataset.close)});
  $("authForm").addEventListener("submit",e=>void login(e));
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
