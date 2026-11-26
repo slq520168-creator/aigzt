@@ -21,3 +21,4 @@ test('back priority is viewer, modal, drawer, workspace, chat',()=>{
  assert.deepEqual(calls,['viewer','settingsDialog','drawer','tools','work','chat']);
  assert.match(js,/\["page","back","viewer"\]\.includes\(origin\.action\)\)\{goBack\(\);return\}/);
 });
+test("page navigation has no full width title bar",()=>{for(const token of ['class="modal-head','class="iv-header'])assert.ok(!html.includes(token));for(const token of [".modal-head",".settings-topbar",".iv-header"])assert.ok(!css.includes(token));});
