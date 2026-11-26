@@ -2,8 +2,11 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const html=fs.readFileSync('standalone/index.html','utf8'),js=fs.readFileSync('standalone/client.js','utf8'),css=fs.readFileSync('standalone/style.css','utf8');
 test('each dialog and secondary page has an arrow back action',()=>{
  for(const d of html.matchAll(/<dialog id="([^"]+)"[\s\S]*?<\/dialog>/g)){assert.ok(d[0].includes('data-close="'+d[1]+'"'));assert.ok(d[0].includes('data-icon="arrow-left"'))}
- for(const id of ['chatBack','workClose','freeToolsClose','closeSide','ivClose'])assert.match(html,new RegExp('id="'+id+'"[^>]*>\\s*<span[^>]*data-icon="arrow-left"'));
+ for(const id of ['workClose','freeToolsClose','closeSide','ivClose'])assert.match(html,new RegExp('id="'+id+'"[^>]*>\\s*<span[^>]*data-icon="arrow-left"'));
  assert.match(css,/\.page-back\{[^}]*border:0;[^}]*background:transparent/);
+ assert.doesNotMatch(html,/id="chatBack"/);
+ assert.doesNotMatch(js,/\$\("chatBack"\)|syncChatBack/);
+ assert.match(js,/if\(chatBackAvailable\(\)\)returnFromChat\(\)/);
  assert.doesNotThrow(()=>new Function(js));
 });
 test('back priority is viewer, modal, drawer, workspace, chat',()=>{

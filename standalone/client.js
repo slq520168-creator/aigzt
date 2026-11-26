@@ -119,7 +119,6 @@ function activeBackDialog(){
  return open[open.length-1]||Array.from(document.querySelectorAll("dialog[open]")).at(-1)||null;
 }
 function chatBackAvailable(){return !$("conversation").classList.contains("empty-chat")&&!S.workMode&&!S.freeToolsMode}
-function syncChatBack(){const button=$("chatBack");if(button)button.hidden=!chatBackAvailable()}
 function returnFromChat(){
  if(!chatBackAvailable())return;
  if((S.busy||$("messageList").querySelector("[data-image-task],[data-image-finalizing]"))&&!confirm("当前回复或作图尚未完成，返回首页可能中断生成。确定返回？"))return;
@@ -969,8 +968,8 @@ function syncHomeAmbient(){
  const view=$("conversation");
  document.body.classList.toggle("home-ambient",!!view&&view.classList.contains("empty-chat")&&!view.hidden&&!S.workMode&&!S.freeToolsMode);
 }
-function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient();syncChatBack()}
-function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient();syncChatBack()}
+function hideWelcome(){$("welcome").hidden=true;$("conversation").classList.remove("empty-chat");syncHomeAmbient()}
+function showWelcome(){$("welcome").hidden=false;$("conversation").classList.add("empty-chat");syncHomeAmbient()}
 
 
 
@@ -3427,7 +3426,7 @@ function syncWorkspaceRoute(name){
 /* Floating page actions follow the active workspace; work remains accessible in the drawer. */
 function syncTopMode(){
  const chatting=!S.workMode&&!S.freeToolsMode,working=!!S.workMode;
- $("shell").classList.toggle("work-active",working);syncChatBack();
+ $("shell").classList.toggle("work-active",working);
  $("headerChatModels").hidden=!chatting;
  $("headerNew").setAttribute("aria-label",working?"新建工作任务":"新建聊天");
  $("headerNew").title=working?"新建工作任务":"新建聊天";
@@ -4623,7 +4622,6 @@ function wire(){
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);
- $("chatBack").addEventListener("click",goBack);
  $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
