@@ -3177,7 +3177,7 @@ function renderWorkEditor(){
 function newWorkDraft(){
  if(S.workBusy)return;
  S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderProjects();renderWorkEditor();if(S.workMode)renderWorkAgentCatalog();
- $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=false;$("workBoard").scrollTop=0;
+ $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=false;$("workScroll").scrollTop=0;
 }
 function loadWorkEditor(task){
  S.workStages=Array.isArray(task?.steps)&&task.steps.length?task.steps.map(x=>({...x})):[];if(!S.workStages.length)resetWorkPlan();
@@ -4121,7 +4121,7 @@ function renderModels(){
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
  const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
  if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
- const dialog=$("modelDialog"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
+ const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
  if(!shown.length){list.append(node("p","hint",S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));dialog.scrollTop=previousTop;return}
  for(const item of shown){
@@ -4186,7 +4186,7 @@ function refreshSourceChips(){
 function openModels(){
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
- S.modelPage=0;show("modelDialog");renderModels();$("modelDialog").scrollTop=0;void loadModelHistory();void loadCatalog();
+ S.modelPage=0;show("modelDialog");renderModels();$("modelScroll").scrollTop=0;void loadModelHistory();void loadCatalog();
  if(S.source==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
  else if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
@@ -4646,7 +4646,7 @@ function wire(){
     ["qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","novai_pro"].includes(p)?"中国":
     ["groq","openrouter","cerebras","openai","claude","novai","grok","gemini"].includes(p)?"国际":"推荐";
   renderWorkAgentCatalog();show("workModelDialog");
-  requestAnimationFrame(()=>{$("workModelDialog").scrollTop=0});
+  requestAnimationFrame(()=>{$("workModelDialog").querySelector(".work-model-dialog-content").scrollTop=0});
  });
  $("workAddStage").addEventListener("click",()=>{if(S.workStages.length<12){S.workStages.push({name:"新步骤",instruction:"",provider:"auto",model:""});renderWorkEditor()}});
  $("workAddRoute").addEventListener("click",()=>{if(S.workRoutes.length<20){S.workRoutes.push({provider:"free",model:"free:auto"});renderWorkEditor()}});

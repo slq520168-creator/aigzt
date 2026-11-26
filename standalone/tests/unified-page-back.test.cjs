@@ -21,4 +21,13 @@ test('back priority is viewer, modal, drawer, workspace, chat',()=>{
  assert.deepEqual(calls,['viewer','settingsDialog','drawer','tools','work','chat']);
  assert.match(js,/\["page","back","viewer"\]\.includes\(origin\.action\)\)\{goBack\(\);return\}/);
 });
-test("page navigation has no full width title bar",()=>{for(const token of ['class="modal-head','class="iv-header'])assert.ok(!html.includes(token));for(const token of [".modal-head",".settings-topbar",".iv-header"])assert.ok(!css.includes(token));});
+
+test("secondary pages have standalone return controls and no full-width navigation headers",()=>{
+ assert.doesNotMatch(html,/class="[^"]*(?:modal-head|settings-topbar|iv-header|work-header|free-tools-title)/);
+ assert.doesNotMatch(css,/\.modal-head|\.settings-topbar|\.iv-header|\.work-header|\.free-tools-title/);
+ for(const d of html.matchAll(/<dialog id="([^"]+)"[^>]*>\s*([^\n]*)/g))assert.match(d[2],/^<button[^>]*page-back[^>]*>/);
+ assert.match(js,/\$\("modelScroll"\)\.scrollTop=0/);
+ assert.match(js,/\$\("workScroll"\)\.scrollTop=0/);
+});
+
+ test("long pages scroll content without moving the return arrow",()=>{for(const id of ["modelScroll","workScroll"])assert.ok(html.includes('id="'+id+'"'));for(const selector of [".page-content",".work-page-content",".free-tools-content",".settings-scroll",".work-model-dialog-content"])assert.ok(css.includes(selector));assert.match(css,/\.page-content\{[^}]*overflow-y:auto/);assert.match(css,/\.work-page-content\{[^}]*overflow-y:auto/);assert.match(css,/\.free-tools-content\{[^}]*overflow-y:auto/);});
