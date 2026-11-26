@@ -347,6 +347,7 @@
  </dialog>
  <dialog id="authDialog" class="modal" aria-labelledby="authTitle">
   <button type="button" class="close-modal page-back" data-close="authDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button>
+  <div class="page-content auth-page-content">
   <div class="page-intro"><h2 id="authTitle">登录</h2></div>
   <form id="authForm">
    <label class="sr-only" for="authEmail">邮箱</label><input id="authEmail" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" required placeholder="邮箱">
@@ -355,6 +356,7 @@
    <button class="primary full" type="submit" id="authSubmit">登录</button>
    <button type="button" class="text-button" id="switchAuth">没有账号？注册</button>
   </form>
+  </div>
  </dialog>
 
  <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">

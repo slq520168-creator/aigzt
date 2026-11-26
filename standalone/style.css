@@ -301,7 +301,9 @@ a{color:inherit}
 .form-message{font-size:13px;color:#be3f31;margin:0}
 .form-message:empty{display:none}
 .small-note{font-size:12px;color:#829096;line-height:1.6;margin:8px 0}
-#authDialog{width:min(90vw,390px);padding:22px}
+#authDialog{width:min(90vw,390px);padding:22px;overflow:hidden}
+#authDialog[open]{display:flex;flex-direction:column;gap:5px}
+#authDialog>.page-back{align-self:flex-start;flex:0 0 36px}
 #authDialog input{margin:0}
 #authDialog input:-webkit-autofill{-webkit-box-shadow:0 0 0 100px #fff inset;-webkit-text-fill-color:#1b3037}
 #authDialog #authForm{gap:13px}

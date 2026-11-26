@@ -104,6 +104,7 @@ function iconButton(icon,text,onClick){
 }
 
 const drawerPageOrder=[];
+let keyBackPage=null;
 function show(id){
  const el=$(id);if(!el||el.open)return;
  if(el.classList.contains("workspace-view")||el.classList.contains("context-popover")){el.show();closeMenu();}
@@ -124,9 +125,16 @@ function returnFromChat(){
  if((S.busy||$("messageList").querySelector("[data-image-task],[data-image-finalizing]"))&&!confirm("当前回复或作图尚未完成，返回首页可能中断生成。确定返回？"))return;
  newChat();
 }
+function backDialog(id){
+ if(id==="actionsDialog"){closeHistoryActions();return}
+ const parent=id==="keyDialog"?keyBackPage:null;
+ if(id==="keyDialog")keyBackPage=null;
+ hide(id);
+ if(parent)show(parent);
+}
 function goBack(){
  if(!$("imageViewer").hidden){ivClose();return}
- const page=activeBackDialog();if(page){if(page.id==="actionsDialog")closeHistoryActions();else hide(page.id);return}
+ const page=activeBackDialog();if(page){backDialog(page.id);return}
  if($("shell").classList.contains("menu-open")){closeMenu();return}
  if(S.freeToolsMode){setFreeToolsMode(false);return}
  if(S.workMode){setWorkMode(false);return}
@@ -2671,7 +2679,7 @@ function setModel(row){
  S.allowPaid=Boolean(S.savedProviders[via]?.consent);S.selectedFree=isFreeModel(via,S.model);
  rememberChatModelSelection();
  if(via!=="free"&&!connected(via)){
-  updateModelTitle();hide("modelDialog");$("manualModel").value="";openKeyPanel(via);
+  updateModelTitle();hide("modelDialog");$("manualModel").value="";openKeyPanel(via,"modelDialog");
   $("keyStatus").textContent="已选定 "+row.id+"，请保存该服务商 API Key";
   return;
  }
@@ -2937,7 +2945,7 @@ async function chooseDedicatedWorkModel(provider,model){
  if(provider!=="free"){
   const record=S.savedProviders[provider];
   if(!record?.verified||!(record.consent||isFreeModel(provider,model))){
-   hide("workModelDialog");openKeyPanel(provider);return;
+   hide("workModelDialog");openKeyPanel(provider,"workModelDialog");return;
   }
   if(!model||!/^[a-zA-Z0-9][a-zA-Z0-9._:/@+\[\]-]{0,159}$/.test(model)){
    $("workModelMessage").textContent="请选择有效的官方模型 ID";return;
@@ -3012,7 +3020,7 @@ function renderWorkAgentCatalog(){
   button.append(top,node("small","",selected?(provider==="free"?"免费自动线路 · 每次实际模型由上游决定":"已选模型："+(active.model||record?.model||"未指定")):provider==="free"?"自动调用真实免费线路":ready?"已验证连接 · 点击选择模型":record?"需要验证连接或授权":"连接官方 API 后使用"));button.title=selected?(provider==="free"?"当前使用：免费自动线路":"当前使用："+name+" / "+(active.model||record?.model||"未指定")):name;
   button.addEventListener("click",()=>{
    if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前任务正在执行，不能更换模型";return}
-   if(!ready){hide("workModelDialog");openKeyPanel(provider);return}
+   if(!ready){hide("workModelDialog");openKeyPanel(provider,"workModelDialog");return}
    if(provider==="free"){void chooseDedicatedWorkModel("free","");return}
    S.workPickingProvider=provider;renderWorkProviderModels(provider);
    // Fetch only after an actual user click, not on each render or dialog open.
@@ -3206,7 +3214,7 @@ function initDomesticProviderLinks(){
   for(const o of options.filter(o=>providerRoute(o.value)===kind)){
    const id=o.value,b=node("button","provider-picker-option");b.type="button";
    const info=node("span","provider-picker-info");info.append(node("strong","",o.textContent),node("small","",connected(id)?"密钥已保存":providerRouteLabel(id)));
-   b.append(providerLogo(id),info);b.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(id)});grid.append(b);
+   b.append(providerLogo(id),info);b.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(id,"modelDialog")});grid.append(b);
   }el.append(heading,grid);
  }
 }
@@ -4055,7 +4063,7 @@ function renderChinaBrands(models){
   button.type="button";button.setAttribute("aria-pressed",String(selected));
   button.append(node("strong","",group.name),node("small","",count?count+" 个真实目录模型":group.api?"连接官方 API":"暂无公开模型"));
   if(count)button.addEventListener("click",()=>activateSource("family:cn:"+group.id));
-  else if(group.api)button.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(group.api)});
+  else if(group.api)button.addEventListener("click",()=>{hide("modelDialog");openKeyPanel(group.api,"modelDialog")});
   else button.disabled=true;
   target.append(button);
  }
@@ -4192,7 +4200,8 @@ function openModels(){
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
  if(S.source==="family:china"||S.source.startsWith("family:cn:"))void loadConnectedDomesticCatalogs();
 }
-function openKeyPanel(provider){
+function openKeyPanel(provider,backPage=null){
+ keyBackPage=backPage;
  $("providerPicker").open=false;
  if(typeof provider==="string"&&$("keyProvider").querySelector('option[value="'+provider+'"]'))$("keyProvider").value=provider;
  else $("keyProvider").value="openai";
@@ -4670,7 +4679,7 @@ function wire(){
  $("workDeploy").addEventListener("click",()=>void wkDeploy());
  $("workRuns").addEventListener("click",()=>void wkRuns());
 
- $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq")});
+ $("groqQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel("groq","modelDialog")});
  $("imageQuick").addEventListener("click",()=>{hide("modelDialog");setComposerMode("image");$("toolTray").hidden=true;$("prompt").focus()});
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
@@ -4700,7 +4709,7 @@ function wire(){
   if(!["auto","zh-CN","zh-TW","en-US","ja-JP"].includes(lang))return;
   try{localStorage.setItem("aigzt:dictation-language",lang)}catch{flashError("语音语言设置未保存，请检查浏览器权限")}
  });
- $("settingsOpenConnections").addEventListener("click",()=>{hide("settingsDialog");openKeyPanel()});
+ $("settingsOpenConnections").addEventListener("click",()=>{hide("settingsDialog");openKeyPanel(undefined,"settingsDialog")});
  $("settingsOpenFiles").addEventListener("click",()=>{hide("settingsDialog");void openFiles()});
  $("settingsOpenCoding").addEventListener("click",()=>{
   if($("prompt").value.trim()&&!confirm("进入编程助手会替换当前未发送的草稿，继续吗？"))return;
@@ -4784,7 +4793,7 @@ function wire(){
 
  document.addEventListener("click",e=>{if(!$("attachMenu").hidden&&!$("attachMenu").contains(e.target)&&!$("attachButton").contains(e.target))hideAttachMenu()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")hideAttachMenu()});
- for(const btn of els("[data-close]"))btn.addEventListener("click",()=>{if(btn.dataset.close==="actionsDialog")closeHistoryActions();else hide(btn.dataset.close)});
+ for(const btn of els("[data-close]"))btn.addEventListener("click",()=>backDialog(btn.dataset.close));
  $("authForm").addEventListener("submit",e=>void login(e));
  $("switchAuth").addEventListener("click",toggleAuth);
  $("keyForm").addEventListener("submit",e=>void verifyKey(e));
@@ -4801,7 +4810,7 @@ function wire(){
  $("openrouterLogin").addEventListener("click",()=>void beginOpenRouterOAuth().catch(e=>{$("keyStatus").textContent=humanError(e)}));
  $("keyProvider").addEventListener("change",refreshKeyPanel);
  $("providerPicker").addEventListener("toggle",()=>{if($("providerPicker").open)renderProviderPicker()});
- $("bindProviderQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel();$("providerPicker").open=true;renderProviderPicker()});
+ $("bindProviderQuick").addEventListener("click",()=>{hide("modelDialog");openKeyPanel(undefined,"modelDialog");$("providerPicker").open=true;renderProviderPicker()});
  $("disconnectProvider").addEventListener("click",()=>void removeSavedKey());
  $("modelSearch").addEventListener("input",e=>{S.query=e.target.value;S.modelPage=0;renderModels()});
  $("modelFilter").addEventListener("change",e=>{S.filter=e.target.value;S.modelPage=0;renderModels()});
@@ -4815,7 +4824,7 @@ function wire(){
   $("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;
   $("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";
  });
- $("keyDialog").addEventListener("close",()=>{S.videoPendingKeyReturn=false});
+ $("keyDialog").addEventListener("close",()=>{if(!$("keyDialog").open){S.videoPendingKeyReturn=false;keyBackPage=null}});
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();wireChatScrollArrows();
 }
