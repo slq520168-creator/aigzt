@@ -25,7 +25,6 @@ a{color:inherit}
 .brand-avatar{position:relative;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:22px;font-weight:640;color:#3a8878;background:#e6f2ee;letter-spacing:-2px}
 .brand-avatar i{position:absolute;right:5px;top:5px;width:6px;height:6px;border-radius:50%;background:#e6b45d}
 .brand{font-size:21px;color:#182a2f;letter-spacing:-.5px;font-weight:670}
-.sidebar-close{display:inline-flex}
 .sidebar-primary,.sidebar-links{display:flex;flex-direction:column;gap:2px}
 .sidebar-primary{flex:none;padding-bottom:7px}
 .sidebar-links{gap:1px}
@@ -554,7 +553,6 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
 @media(max-width:900px){
  .sidebar{inset:0 auto 0 0;width:min(72vw,280px);min-width:0;max-width:min(72vw,280px);height:100dvh;border:0;border-right:1px solid #e7eaf3;padding:10px 6px max(10px,env(safe-area-inset-bottom))}
  .shell.menu-open .sidebar{transform:translate3d(0,0,0)}
- .sidebar-close{display:inline-flex;width:30px;height:34px}
  .sidebar .brand-app-icon{width:26px;height:26px;flex-basis:26px;border-radius:8px}
  .sidebar .brand{font-size:15px}
  .sidebar .sidebar-top{padding:0 2px;gap:4px}

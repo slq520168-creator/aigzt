@@ -4622,7 +4622,7 @@ function wire(){
  window.addEventListener("resize",refreshUserMessageFolds,{passive:true});
  window.addEventListener("hashchange",restoreWorkspaceRoute);
  $("menuBtn").addEventListener("click",openMenu);
- $("closeSide").addEventListener("click",closeMenu);$("sideShade").addEventListener("click",closeMenu);
+ $("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
  $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
