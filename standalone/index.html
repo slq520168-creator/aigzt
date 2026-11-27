@@ -108,13 +108,15 @@
     </div>
      <div id="attachmentPreview" class="attachment-preview"></div>
      <div class="composer-model-line" id="composerModelLine">
-      <button type="button" class="composer-model-switch" id="composerSwitchModel" aria-label="切换模式" title="切换模式" aria-expanded="false" aria-controls="composerModeMenu"><span class="composer-model-symbol ui-icon" data-icon="layers" aria-hidden="true"></span>
-      <span class="composer-model-caption" id="composerModelCaption">聊天模型</span>
-      <span class="composer-model-name" id="composerModelName" aria-live="polite" title="当前选择：自动模式">自动模式</span><span class="model-switch-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button>
+      <button type="button" class="composer-model-switch composer-model-catalog" id="composerModelCatalog" aria-label="选择模型，打开模型大厅" title="模型大厅"><span class="composer-model-symbol ui-icon" data-icon="layers" aria-hidden="true"></span>
+      <span class="composer-model-caption" id="composerModelCaption"></span>
+      <span class="composer-model-name" id="composerModelName" aria-live="polite">自动选模</span><span class="model-switch-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button>
+      <button type="button" class="composer-model-switch composer-mode-trigger" id="composerSwitchModel" aria-label="切换模式" title="切换模式" aria-expanded="false" aria-controls="composerModeMenu"><span id="composerCurrentMode">自动模式</span><span class="model-switch-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button>
       <div id="composerModeMenu" class="composer-mode-menu" role="group" aria-label="聊天模式" hidden>
        <button type="button" data-chat-mode="auto" aria-pressed="true"><span>自动模式</span><span class="composer-mode-mark">✓</span></button>
        <button type="button" data-chat-mode="free" aria-pressed="false"><span>自由模式</span><span class="composer-mode-mark"></span></button>
        <button type="button" data-chat-mode="personal" aria-pressed="false"><span>个人模式</span><span class="composer-mode-mark"></span></button>
+       <p id="composerModeNote" class="composer-mode-note" role="status" hidden></p>
       </div>
      </div>
      <div class="composer-inner">

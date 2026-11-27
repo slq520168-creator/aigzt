@@ -634,7 +634,7 @@ async function fetchMe(){
   const old=String(S.user?.id||""),owner=String(v.user?.id||"");
   if(old!==owner){S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
   S.user=v.user;S.quota=v.quota;accountCheckedAt=Date.now();setAuthUI();
-  restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();
+  restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();void loadModelHistory();
   if(owner){void hydrateModelPreferences(owner);if(!S.connectionsLoaded)void fetchConnections()}
  }catch(e){if(epoch!==accountFetchEpoch)return;chatModelPreferenceReady=true;updateModelTitle();flashError("账号状态读取失败："+humanError(e))}
 }
@@ -3063,11 +3063,44 @@ async function loadChat(id){
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
 function isAutoChatModel(){return S.provider==="free"&&S.model==="free:auto"}
+// Mode restoration is based on real successful calls, not the last catalog click.
+function pickModeModel(mode,records,allowed){
+ if(mode!=="free"&&mode!=="personal")return null;
+ const candidates=[];
+ for(const [key,row] of Object.entries(records||{})){
+  const [provider,model]=key.split("\0");
+  if(!provider||!model||!Number.isFinite(row.success)||row.success<=0||row.failure>row.success)continue;
+  if(mode==="free"?provider!=="free"||!/^free:or\/[\w./-]+:free$/.test(model):provider==="free")continue;
+  if(allowed(provider,model))candidates.push({provider,model,at:row.success});
+ }
+ return candidates.sort((a,b)=>b.at-a.at)[0]||null;
+}
+function modeModelAllowed(provider,model){
+ if(unavailableChatModel(provider,model))return false;
+ if(provider==="free")return /^free:or\/[\w./-]+:free$/.test(model);
+ if(!connected(provider)||VIDEO_ONLY_PROVIDERS.has(provider))return false;
+ if(!isFreeModel(provider,model)&&!S.savedProviders[provider]?.consent)return false;
+ const known=allModels().find(m=>(m.availableWith==="openrouter-key"?"openrouter":m.provider)===provider&&m.id===model);
+ return !known||known.type==="text";
+}
+function restoreSuccessfulMode(mode){
+ if(mode==="auto"){modelPrefSync.versions.chat++;setFreeDefault(false);rememberChatModelSelection();updateModelTitle();return true}
+ ensureModelHistory();
+ const selected=pickModeModel(mode,modelHistoryRecords,modeModelAllowed);
+ if(!selected)return false;
+ const {provider,model}=selected;
+ const known=allModels().find(m=>(m.availableWith==="openrouter-key"?"openrouter":m.provider)===provider&&m.id===model);
+ S.provider=provider;S.model=model;S.modelTitle=known?.name||model.replace(/^free:or\//,"");
+ S.allowPaid=provider!=="free"&&Boolean(S.savedProviders[provider]?.consent);S.selectedFree=isFreeModel(provider,model);
+ freeModeChoosing=false;chatModelPreferenceReady=true;modelPrefSync.versions.chat++;
+ rememberChatModelSelection();updateModelTitle();return true;
+}
 function chatModeLabel(){return freeModeChoosing?"自由模式":isAutoChatModel()?"自动模式":S.provider==="free"?"自由模式":"个人模式"}
 function refreshChatModeUI(){
  const current=$("chatModeCurrent"),auto=$("chatAutoChoice"),mark=$("chatAutoMark"),manual=$("chatBoundChoice"),manualMark=$("chatBoundMark");
  if(!current||!auto||!mark||!manual||!manualMark)return;
  const selected=chatModeLabel()==="自动模式";current.textContent=chatModeLabel();current.title=freeModeChoosing?"请选择模型":chatSelectedName();
+ if($("composerCurrentMode"))$("composerCurrentMode").textContent=chatModeLabel();
  for(const b of $("composerModeMenu")?.querySelectorAll("[data-chat-mode]")||[]){const active=b.dataset.chatMode===(selected?"auto":chatModeLabel()==="个人模式"?"personal":"free");b.setAttribute("aria-pressed",String(active));b.classList.toggle("selected",active);const mark=b.querySelector(".composer-mode-mark");if(mark)mark.textContent=active?"✓":"";}
  auto.classList.toggle("selected",selected);auto.setAttribute("aria-pressed",String(selected));mark.textContent=selected?"✓":"";
  manual.classList.toggle("selected",!selected);manual.setAttribute("aria-pressed",String(!selected));manualMark.textContent=selected?"":"✓";
@@ -3086,11 +3119,12 @@ function updateComposerModel(){
  if(!line||!name||!switcher)return;
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
- const active=chatSelectedName();
+ const active=isAutoChatModel()?(readModelPref(chatModelStorageKey(S.user?.id||"")+":auto-display")?.name||"自动选模"):String(S.modelTitle||S.model||"选择模型").replace(/^free:or\//,"");
  name.classList.toggle("is-auto-model",S.provider==="free"&&S.model==="free:auto");
  name.textContent=S.miniToolChoice==="sticker"?"贴纸":imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频"):S.code?"代码 · "+active:active;
  name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击模型图标返回聊天":S.code?"代码模式 · "+active:"当前聊天选择："+active;
- $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":isAutoChatModel()?"":chatModeLabel();
+ $("composerModelCaption").textContent="";
+ $("composerCurrentMode").textContent=chatModeLabel();
  switcher.setAttribute("aria-label","切换模式");switcher.title="切换模式";
 }
 function updateModelTitle(){
@@ -3836,6 +3870,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
   if(loading.isConnected){
    S.chatId=result.chatId;
    if(submittedMode==="text"){
+    if(requestProvider==="free"&&requestModel==="free:auto"&&!result.incomplete&&result.usedModel&&S.user?.id){writeModelPref(chatModelStorageKey(S.user.id)+":auto-display",{name:String(result.usedModel).slice(0,160)});if(isAutoChatModel())updateComposerModel()}
     if(!result.incomplete&&(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined))){recordModelOutcome(requestProvider,requestProvider==="free"&&attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")?"free:auto":requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel))}
     else if(result.primaryFailure)recordModelOutcome(requestProvider,requestModel,false,result.primaryFailure);
     if(result.freeFallback===true&&!result.incomplete)recordModelOutcome("free","free:auto",true);
@@ -3930,7 +3965,7 @@ function modelHealth(provider,model,now=Date.now()){
  return {success:!failed&&!!r.success,recentFailure:failed&&now-r.failure<ttl,last:r.success||0,legacy:!!r.legacy};
 }
 async function loadModelHistory(){
- ensureModelHistory();const owner=modelHistoryOwner;if(!owner||modelHistoryLoaded||modelHistoryPending)return;
+ ensureModelHistory();const owner=modelHistoryOwner;if(!owner||modelHistoryLoaded)return;if(modelHistoryPending)return modelHistoryPending.catch(()=>null);
  const pending=api("/api/model-history");modelHistoryPending=pending;
  try{const data=await pending;if(modelHistoryOwner!==owner||String(S.user?.id||"")!==owner)return;
   for(const r of data.models||[])if(typeof r.provider==="string"&&typeof r.model==="string"&&Number.isFinite(r.at))recordModelOutcome(r.provider,r.model,true,"",r.at,r.legacy!==false);
@@ -4599,7 +4634,7 @@ async function login(event){
  $("authSubmit").disabled=true;$("authError").textContent="";
  try{
   const d=await api(S.authRegister?"/api/register":"/api/login",{email,password});
-  ++accountFetchEpoch;S.user=d.user;restoredChatModelOwner=null;activateModelPrefOwner(String(d.user.id));restoreChatModelSelection();chatModelPreferenceReady=true;setAuthUI();hide("authDialog");form.reset();newChat();
+  ++accountFetchEpoch;S.user=d.user;restoredChatModelOwner=null;activateModelPrefOwner(String(d.user.id));restoreChatModelSelection();chatModelPreferenceReady=true;setAuthUI();hide("authDialog");form.reset();newChat();void loadModelHistory();
   await Promise.all([fetchMe(),fetchProjects(),fetchChats(),fetchConnections()]);
   const brand=pendingHomeBrand;pendingHomeBrand=null;if(brand)openHomeBrand(brand);
  }catch(e){$("authError").textContent=humanError(e)}
@@ -4828,14 +4863,16 @@ function wire(){
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
  const composerModeMenu=$("composerModeMenu"),composerSwitch=$("composerSwitchModel");
  const closeComposerMode=()=>{composerModeMenu.hidden=true;composerSwitch.setAttribute("aria-expanded","false")};
- composerSwitch.addEventListener("click",()=>{hideAttachMenu();closeReplyLevel();composerModeMenu.hidden=!composerModeMenu.hidden;composerSwitch.setAttribute("aria-expanded",String(!composerModeMenu.hidden));refreshChatModeUI()});
+ composerSwitch.addEventListener("click",()=>{hideAttachMenu();closeReplyLevel();$("composerModeNote").hidden=true;composerModeMenu.hidden=!composerModeMenu.hidden;composerSwitch.setAttribute("aria-expanded",String(!composerModeMenu.hidden));refreshChatModeUI()});
+ $("composerModelCatalog").addEventListener("click",()=>{if(S.busy)return;closeComposerMode();hideAttachMenu();closeReplyLevel();openModels()});
  for(const b of composerModeMenu.querySelectorAll("[data-chat-mode]"))b.addEventListener("click",()=>{
   if(S.busy){closeComposerMode();return}
-  const choice=b.dataset.chatMode;closeComposerMode();restoreChatInputMode();
-  if(choice==="auto"){modelPrefSync.versions.chat++;setFreeDefault(false);rememberChatModelSelection();updateModelTitle();return}
-  // Keep the existing selection until an actual model is chosen. Closing the
-  // catalog without a choice cannot leave the composer in a disabled state.
-  freeModeChoosing=false;S.source=choice==="personal"?"connected":"free";S.filter=choice==="personal"?"all":"free";S.query="";openModels(true);
+  const choice=b.dataset.chatMode;closeComposerMode();$("composerModeNote").hidden=true;
+  if(choice==="auto"){restoreSuccessfulMode("auto");return}
+  // No catalog navigation from the mode menu. Preserve the current draft and tools.
+  if(restoreSuccessfulMode(choice))return;
+  const owner=S.user?.id,version=modelPrefSync.versions.chat;
+  void (async()=>{await loadModelHistory();if(S.user?.id!==owner||S.busy||modelPrefSync.versions.chat!==version)return;if(choice==="personal"&&!S.connectionsLoaded)await fetchConnections();if(S.user?.id!==owner||S.busy||modelPrefSync.versions.chat!==version)return;if(restoreSuccessfulMode(choice))return;const note=$("composerModeNote");note.textContent=choice==="personal"?"暂无已绑定的成功模型，请点击左侧模型选择":"暂无成功使用的自由模型，请点击左侧模型选择";note.hidden=false;composerModeMenu.hidden=false;composerSwitch.setAttribute("aria-expanded","true");})();
  });
  document.addEventListener("click",e=>{if(!composerModeMenu.hidden&&!composerModeMenu.contains(e.target)&&!composerSwitch.contains(e.target))closeComposerMode()});
  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeComposerMode()});
