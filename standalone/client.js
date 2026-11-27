@@ -1386,7 +1386,7 @@ async function pollImageJob(bubble,id,manual){
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
  finally{
   bubble.dataset.imageBusy="0";if(!bubble.dataset.imageStart)bubble.dataset.imageStart=String(Date.now());
-  if(bubble.isConnected&&bubble.dataset.imageTask===id){if(Date.now()-Number(bubble.dataset.imageStart)<300000)window.setTimeout(()=>void pollImageJob(bubble,id,false),delay);else showImageRetry(bubble)}
+  if(bubble.isConnected&&bubble.dataset.imageTask===id){if(Date.now()-Number(bubble.dataset.imageStart)<720000)window.setTimeout(()=>void pollImageJob(bubble,id,false),delay);else showImageRetry(bubble)}
  }
 }
 

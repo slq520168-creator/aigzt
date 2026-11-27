@@ -1271,7 +1271,7 @@ async function submitHordeGeneration(env,user,imageId,prompt){
  if(obj.size<200||obj.size>1600000)throw Object.assign(Error("参考图过大，请在作图模式重新上传以自动缩小图片"),{status:413});
  const bytes=new Uint8Array(await obj.arrayBuffer());
  if(detectImage(bytes)!==mime)throw Object.assign(Error("参考图片内容无效"),{status:415});
- const params={n:1,width:512,height:512,steps:18,cfg_scale:7,denoising_strength:0.58,sampler_name:"k_euler_a"};
+ const params={n:1,width:768,height:768,steps:24,cfg_scale:7,denoising_strength:0.58,sampler_name:"k_euler_a"};
  const payload={prompt:prompt.slice(0,1100),params,source_image:hordeBase64(bytes),source_processing:"img2img",r2:true,nsfw:false};
  let reply;
  try{reply=await fetch(HORDE_URL+"/generate/async",{method:"POST",headers:HORDE_HEADERS,body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(15000)})}
@@ -1326,7 +1326,7 @@ function hordeImageResult(raw){
 async function hordeStatus(env,user,job,ref){
  const now=Date.now();
  if(!hordeUuid(ref.id))return response({ok:true,done:true,failed:true,error:"免费图生图任务号无效"});
- if(now-(Number(ref.startedAt)||job.created_at)>=50000){
+ if(now-(Number(ref.startedAt)||job.created_at)>=120000){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=? WHERE id=? AND user_id=? AND status='pending'","免费社区排队超时",job.id,user.id);
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图生图排队超时",job.message_id,user.id).catch(()=>{});
   return response({ok:true,done:true,failed:true,error:"免费社区排队超时，请稍后再试"});
@@ -1379,6 +1379,63 @@ async function hordeStatus(env,user,job,ref){
 
 const KREA="https://krea-krea-2.hf.space";
 const KREA_SHAPES=Object.freeze({square:[1024,1024],portrait:[832,1216],portrait916:[576,1024],landscape:[1216,832],landscape169:[1024,576]});
+
+const IMAGE_HD_SHAPES=Object.freeze({square:[1536,1536],portrait:[1024,1536],portrait916:[1152,2048],landscape:[1536,1024],landscape169:[2048,1152]});
+const IMAGE_HD_COMPAT=Object.freeze({square:[1024,1024],portrait:[832,1216],portrait916:[768,1344],landscape:[1216,832],landscape169:[1344,768]});
+const IMAGE_HD_STAGE_MS=120000,IMAGE_HD_TOTAL_MS=660000,IMAGE_MAX_BYTES=12000000;
+function imageQualityShape(shape,provider,version){
+ if(version!==11)return imageShape(shape);
+ const map=provider==="zimage"?IMAGE_HD_SHAPES:provider==="krea"?KREA_SHAPES:IMAGE_HD_COMPAT;
+ return map[shape]||map.portrait;
+}
+function imageStageBudget(ref){return ref.v===11?IMAGE_HD_STAGE_MS:50000}
+function imageQualityPrompt(prompt,style,version){
+ const text=imageStyledPrompt(prompt,style);
+ if(version!==11||style==="none")return text;
+ const photo=/portrait|photo|fashion-editorial/.test(style);
+ return text+(photo?", precise focus on the subject, natural fine skin and hair texture, anatomically coherent features, detailed eyes and hands, realistic materials and balanced light, preserve natural depth of field":", refined fine details, clean intentional edges, coherent composition and textures, faithful to the requested artistic medium");
+}
+function imageDimensions(bytes,mime){
+ const n=bytes.length,d=new DataView(bytes.buffer,bytes.byteOffset,n);
+ if(mime==="image/png"&&n>=24&&d.getUint32(12)===0x49484452)return {width:d.getUint32(16),height:d.getUint32(20)};
+ if(mime==="image/jpeg"){
+  let p=2;
+  while(p+3<n){
+   if(bytes[p++]!==255)return null;
+   while(p<n&&bytes[p]===255)p++;
+   const m=bytes[p++];if(m===217||m===218)break;
+   if(m===1||(m>=208&&m<=215))continue;
+   if(p+2>n)break;
+   const len=d.getUint16(p);if(len<2||p+len>n)break;
+   if([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(m)&&len>=8)return {width:d.getUint16(p+5),height:d.getUint16(p+3)};
+   p+=len;
+  }
+ }
+ if(mime==="image/webp"&&n>=20){
+  const le24=p=>bytes[p]+bytes[p+1]*256+bytes[p+2]*65536;
+  let p=12;
+  while(p+8<=n){
+   const tag=d.getUint32(p),len=d.getUint32(p+4,true),q=p+8;if(len>n-q)break;
+   if(tag===0x56503858&&len>=10)return {width:1+le24(q+4),height:1+le24(q+7)};
+   if(tag===0x5650384c&&len>=5&&bytes[q]===47){const v=d.getUint32(q+1,true);return {width:1+(v&16383),height:1+((v>>>14)&16383)}}
+   if(tag===0x56503820&&len>=10&&bytes[q+3]===157&&bytes[q+4]===1&&bytes[q+5]===42)return {width:d.getUint16(q+6,true)&16383,height:d.getUint16(q+8,true)&16383};
+   p=q+len+(len%2);
+  }
+ }
+ return null;
+}
+function imageQualityResult(bytes,mime,ref){
+ if(ref?.v!==11)return null;
+ const dims=imageDimensions(bytes,mime);
+ if(!dims||!dims.width||!dims.height||dims.width>8192||dims.height>8192)throw Error("无法核验原始图片尺寸");
+ const [tw,th]=IMAGE_HD_SHAPES[ref.s]||IMAGE_HD_SHAPES.portrait;
+ const [mw,mh]=IMAGE_HD_COMPAT[ref.s]||IMAGE_HD_COMPAT.portrait;
+ const {width,height}=dims,ratioError=Math.abs(Math.log((width/height)/(tw/th)));
+ if(ratioError>0.14)throw Error("来源返回图片比例不符合要求");
+ if(width<mw*0.9||height<mh*0.9)throw Error("来源返回图片清晰度低于最低要求");
+ return {...dims,bytes:bytes.length,format:mime,targetWidth:tw,targetHeight:th,quality:width>=tw*0.95&&height>=th*0.95?"hd":"standard"};
+}
+
 const KREA_STYLES=Object.freeze({
  "portrait-master":"photorealistic portrait photography, natural skin texture, detailed eyes and hands, professional camera, cinematic lighting",
  "natural-portrait":"natural portrait photography, daylight, candid expression, realistic skin, authentic photo",
@@ -1404,7 +1461,7 @@ async function downloadImage(resp){
  if(!resp.ok||resp.status>=300)throw Error("图片下载 HTTP "+resp.status);
  const r=resp.body?.getReader();if(!r)throw Error("没有返回图片");
  let n=0;const chunks=[];
- for(;;){const {value,done}=await r.read();if(done)break;n+=value.length;if(n>6000000){await r.cancel().catch(()=>{});throw Error("图片超过6MB")}chunks.push(value)}
+ for(;;){const {value,done}=await r.read();if(done)break;n+=value.length;if(n>IMAGE_MAX_BYTES){await r.cancel().catch(()=>{});throw Error("图片超过12MB安全上限")}chunks.push(value)}
  const a=new Uint8Array(n);let x=0;for(const c of chunks){a.set(c,x);x+=c.length}
  const mime=detectImage(a);if(!mime||n<1024)throw Error("无效图片数据");
  return {a,mime};
@@ -1424,12 +1481,14 @@ function transientImageUrl(a,mime){
  for(let i=0;i<a.length;i+=32768)parts.push(String.fromCharCode(...a.subarray(i,i+32768)));
  return "data:"+mime+";base64,"+btoa(parts.join(""));
 }
-async function saveKreaImage(env,uid,rawUrl,temporary=false){
+async function saveKreaImage(env,uid,rawUrl,temporary=false,ref=null){
  const url=new URL(rawUrl),h=url.hostname.toLowerCase();
  if(url.protocol!=="https:"||url.username||url.password||!(h==="krea-krea-2.hf.space"||h.endsWith(".hf.space")||h==="huggingface.co"||h.endsWith(".huggingface.co")||h==="hf.co"||h.endsWith(".hf.co")||h.endsWith(".gradio.live")))throw Error("非可信图片来源");
  const resp=await fetch(url.href,{headers:{accept:"image/*",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(11000)});
  const {a,mime}=await downloadImage(resp);
- return transientImageUrl(a,mime);
+ const quality=imageQualityResult(a,mime,ref);
+ const image=transientImageUrl(a,mime);
+ return ref?.v===11?{image,quality}:image;
 }
 const GLM_IMAGE="https://multimodalart-glm-image.hf.space";
 const RIO_IMAGE="https://rioshiina-imagegen.hf.space";
@@ -1441,23 +1500,24 @@ const ZIMAGE_FAST="https://mrfakename-z-image-turbo.hf.space";
 const IM_IMAGE_STAGES_QUICK=Object.freeze(["zimage","vexa","krea","glm"]);
  // Preserve all previous job indices. Restore the existing Rio source for new jobs.
  const IMAGE_STAGES_V10=Object.freeze(["rio","zimage","vexa","krea","glm"]);
- function imageStages(ref){return ref.v===10?IMAGE_STAGES_V10:ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES}
- function imageStageRemaining(ref){return Math.max(0,50000-(Date.now()-Number(ref.stageAt||Date.now())))}
+ const IMAGE_STAGES_V11=Object.freeze(["zimage","rio","glm","krea","vexa"]);
+ function imageStages(ref){return ref.v===11?IMAGE_STAGES_V11:ref.v===10?IMAGE_STAGES_V10:ref.v===9?IM_IMAGE_STAGES_QUICK:ref.v===6?IM_IMAGE_STAGES_FAST:IM_IMAGE_STAGES}
+ function imageStageRemaining(ref){return Math.max(0,imageStageBudget(ref)-(Date.now()-Number(ref.stageAt||Date.now())))}
 function imageShape(shape){return Object.hasOwn(KREA_SHAPES,shape)?KREA_SHAPES[shape]:KREA_SHAPES.portrait}
 function imageStyledPrompt(prompt,style){
  const suffix=Object.hasOwn(KREA_STYLES,style)?KREA_STYLES[style]:KREA_STYLES["portrait-master"];
  return suffix?prompt+", "+suffix:prompt;
 }
-function imageGradioArgs(provider,prompt,shape,style,seed){
- const [width,height]=imageShape(shape),text=imageStyledPrompt(prompt,style);
+function imageGradioArgs(provider,prompt,shape,style,seed,version){
+ const [width,height]=imageQualityShape(shape,provider,version),text=imageQualityPrompt(prompt,style,version);
  return provider==="glm"?[text,[],seed,false,width,height,20,1.5]:[text,"","Turbo",8,0,width,height,seed,false];
 }
 function imageJobRef(provider,id,prompt,shape,style){
  return JSON.stringify({v:3,provider,id,p:prompt.slice(0,1200),s:shape,t:style});
 }
-async function submitGradioImage(env,provider,prompt,shape,style){
+async function submitGradioImage(env,provider,prompt,shape,style,version){
  const host=provider==="glm"?GLM_IMAGE:KREA,endpoint=provider==="glm"?"infer":"generate";
- const data=imageGradioArgs(provider,prompt,shape,style,Math.floor(Math.random()*2147483647));
+ const data=imageGradioArgs(provider,prompt,shape,style,Math.floor(Math.random()*2147483647),version);
  let r;
  try{r=await fetch(host+"/gradio_api/call/"+endpoint,{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data}),redirect:"manual",signal:AbortSignal.timeout(12000)})}
  catch{throw Object.assign(new Error("图片来源网络中断"),{uncertain:true})}
@@ -1469,8 +1529,8 @@ async function submitGradioImage(env,provider,prompt,shape,style){
  return id;
 }
 async function submitZImageFast(env,ref){
- const [width,height]=imageShape(ref.s);
- const args=[imageStyledPrompt(ref.p,ref.t),Math.max(512,Math.min(1024,height)),Math.max(512,Math.min(1024,width)),9,ref.seed,false];
+ const [width,height]=imageQualityShape(ref.s,"zimage",ref.v),cap=ref.v===11?2048:1024;
+ const args=[imageQualityPrompt(ref.p,ref.t,ref.v),Math.max(512,Math.min(cap,height)),Math.max(512,Math.min(cap,width)),9,ref.seed,false];
  let reply;
  try{reply=await fetch(ZIMAGE_FAST+"/gradio_api/call/generate_image",{
   method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},
@@ -1489,10 +1549,10 @@ async function submitKrea(req,env,user){
  // Persist first, then schedule exactly one upstream submission on status read.
  // Existing v6 jobs and their stage positions remain compatible with deployment restarts.
  const now=Date.now(),id=crypto.randomUUID();
- const ref={v:10,stage:0,phase:"new",id:"",taskId:"",p:prompt,s:shape,t:style,seed:Math.floor(Math.random()*2147483647),stageAt:now};
+ const ref={v:11,stage:0,phase:"new",id:"",taskId:"",p:prompt,s:shape,t:style,seed:Math.floor(Math.random()*2147483647),stageAt:now};
  await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND charged_day='image-unmetered' ORDER BY created_at ASC LIMIT 24)",user.id,now-3600000).catch(()=>{});
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-unmetered')",id,user.id,JSON.stringify(ref),now);
- return {ok:true,pending:true,jobId:id,model:"免费快速作图"};
+ return {ok:true,pending:true,jobId:id,model:"免费作图"};
 }
 async function failKreaJob(env,job,message){
  const r=await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",message,Date.now(),job.id,job.user_id);
@@ -1555,9 +1615,9 @@ function imagePending(job){
  let delay=12;
  try{
   const ref=JSON.parse(job.external_id||"{}");
-  if([4,5,6,9,10].includes(ref.v)&&Number.isFinite(ref.stageAt)){
+  if([4,5,6,9,10,11].includes(ref.v)&&Number.isFinite(ref.stageAt)){
    // End a source at its 50-second boundary, without high-frequency polling.
-   delay=Math.max(1,Math.min(7,Math.ceil((ref.stageAt+50000-Date.now())/1000)));
+   delay=Math.max(1,Math.min(7,Math.ceil((ref.stageAt+imageStageBudget(ref)-Date.now())/1000)));
   }
  }catch{}
  return response({ok:true,done:false,pending:true,waitSeconds:delay,startedAt:job.created_at});
@@ -1611,7 +1671,7 @@ async function imageRioRead(env,endpoint,eventId,timeoutMs=10500){
  return fail?{status:"failed",error:"Rio 生成失败"}:result!==null?{status:"complete",data:result}:{status:"pending"};
 }
 async function imageVexaRender(env,uid,ref,temporary=false){
- const shape=imageShape(ref.s),prompt=imageStyledPrompt(ref.p,ref.t);
+ const shape=imageQualityShape(ref.s,"vexa",ref.v),prompt=imageQualityPrompt(ref.p,ref.t,ref.v);
  const res=await fetch("https://vexa-ai.pages.dev/image",{method:"POST",
   headers:{"content-type":"application/json",accept:"application/json"},
   body:JSON.stringify({prompt:prompt+", compose for "+shape[0]+":"+shape[1]+" aspect ratio",model:"hd",preference:"quality"}),
@@ -1623,7 +1683,8 @@ async function imageVexaRender(env,uid,ref,temporary=false){
  if(url.protocol!=="https:"||url.hostname!=="vexa-ai.pages.dev"||!url.pathname.startsWith("/image/proxy/")||url.username||url.password)throw Error("Vexa 图片地址未通过校验");
  const file=await fetch(url.href,{headers:{accept:"image/*"},redirect:"manual",signal:AbortSignal.timeout(11000)});
  const {a,mime}=await downloadImage(file);
- return transientImageUrl(a,mime);
+ const quality=imageQualityResult(a,mime,ref),image=transientImageUrl(a,mime);
+ return ref.v===11?{image,quality}:image;
 }
 async function imageV4Move(env,job,ref,nextStage,reason="来源未返回有效图片"){
  const stage=imageStages(ref)[ref.stage]||"unknown";
@@ -1644,9 +1705,9 @@ async function imageV4Pending(env,job,ref){
 // A generated image is not a failed generation if its download is temporarily unavailable.
 async function imageV4Deliver(env,user,job,ref,url){
  let result;
- try{result=await saveKreaImage(env,user.id,url,true)}
+ try{result=await saveKreaImage(env,user.id,url,true,ref)}
  catch(error){
-  if(error?.message==="非可信图片来源"||(ref.deliveryFailures||0)>=2)
+  if(/非可信图片来源|图片比例|图片清晰度|图片尺寸/.test(error?.message||"")||(ref.deliveryFailures||0)>=2)
    return imageV4Move(env,job,ref,ref.stage+1);
   return imageV4Pending(env,job,{...ref,phase:"deliver",url,deliveryFailures:(ref.deliveryFailures||0)+1});
  }
@@ -1657,7 +1718,7 @@ async function imageTransientComplete(env,job,localImageUrl){
  const deleted=await dbRun(env.DB,"DELETE FROM image_jobs WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",job.id,job.user_id,job.checked_at,job.external_id);
  if(!deleted.meta?.changes)return response({ok:true,done:true,failed:true,error:"图片已交付，不会自动重新生成"});
  if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图片已生成（本次会话临时展示，图片未保存）",job.message_id,job.user_id).catch(()=>{});
- return response({ok:true,done:true,image:localImageUrl,temporary:true,model:"免费作图"});
+ return response({ok:true,done:true,image:typeof localImageUrl==="string"?localImageUrl:localImageUrl.image,temporary:true,model:"免费作图",...(localImageUrl?.quality?{imageQuality:localImageUrl.quality}:{})});
 }
 async function imageV4Complete(env,job,mediaId){
  const changed=await dbRun(env.DB,"UPDATE image_jobs SET media_id=?,status='complete',finished_at=? WHERE id=? AND user_id=? AND status='recovering' AND checked_at=? AND external_id=?",mediaId,Date.now(),job.id,job.user_id,job.checked_at,job.external_id);
@@ -1666,7 +1727,7 @@ async function imageV4Complete(env,job,mediaId){
 }
 async function imageV4Status(env,user,job,ref){
  const now=Date.now();
- if(now-job.created_at>(ref.v===10?275000:ref.v===9?215000:30*60000)){
+ if(now-job.created_at>(ref.v===11?IMAGE_HD_TOTAL_MS:ref.v===10?275000:ref.v===9?215000:30*60000)){
   await failKreaJob(env,job,ref.v===9?"免费快速作图超时，请稍后重试":"作图超时");
   return response({ok:true,done:true,failed:true,error:ref.v===9?"免费来源排队过久，本次已停止等待":"作图超时"});
  }
@@ -1679,7 +1740,7 @@ async function imageV4Status(env,user,job,ref){
  }
  // Deadline transition has priority over the normal 7-second status throttle.
  // This atomic claim guarantees one Worker advances each 50-second stage.
- if(ref.phase!=="deliver"&&now-(ref.stageAt||now)>=50000){
+ if(ref.phase!=="deliver"&&now-(ref.stageAt||now)>=imageStageBudget(ref)){
   const next=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",now,job.id,user.id);
   return next.meta?.changes?imageV4Move(env,{...job,checked_at:now},ref,ref.stage+1):imagePending(job);
  }
@@ -1693,7 +1754,7 @@ async function imageV4Status(env,user,job,ref){
   // Every source gets at most 50 seconds. Advance to another verified
   // FREE source instead of waiting 140+ seconds on Krea or GLM.
   // The durable claim above serializes stage transitions across Workers.
-  if(ref.phase!=="deliver"&&now-(ref.stageAt||now)>=50000)
+  if(ref.phase!=="deliver"&&now-(ref.stageAt||now)>=imageStageBudget(ref))
    return imageV4Move(env,job,ref,ref.stage+1);
   if(stage==="vexa"){
    try{
@@ -1711,14 +1772,14 @@ async function imageV4Status(env,user,job,ref){
    }
    if(stage==="rio"){
     // Match IM's RioShiina/ImageGen parameters, including async_execution and the Krea-2-Turbo model.
-    const shape=imageShape(ref.s),params={
-     task_type:"txt2img",model:"Krea-2-Turbo",prompt:imageStyledPrompt(ref.p,ref.t),
+    const shape=imageQualityShape(ref.s,"rio",ref.v),params={
+     task_type:"txt2img",model:"Krea-2-Turbo",prompt:imageQualityPrompt(ref.p,ref.t,ref.v),
      width:shape[0],height:shape[1],seed:ref.seed,steps:8,cfg:1,sampler:"euler",scheduler:"simple",
      zero_gpu_duration:80,async_execution:true};
     const eventId=await imageRioSubmit(env,"run",[JSON.stringify(params)]);
     return imageV4Pending(env,job,{...ref,id:eventId,phase:"run"});
    }
-   const id=await submitGradioImage(env,stage,ref.p,ref.s,ref.t);
+   const id=await submitGradioImage(env,stage,ref.p,ref.s,ref.t,ref.v);
    return imageV4Pending(env,job,{...ref,id,phase:"event"});
   }
   if(stage==="rio"){
@@ -1765,7 +1826,7 @@ async function imageJobStatus(env,user,id){
   try{const ref=JSON.parse(job.external_id);
    if(ref.v===8&&ref.p==="qwenedit")return qwenEditStatus(env,user,job,ref);
    if(ref.v===7&&ref.p==="horde")return hordeStatus(env,user,job,ref);
-   if([4,5,6,9,10].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
+   if([4,5,6,9,10,11].includes(ref.v)&&Number.isInteger(ref.stage)&&typeof ref.p==="string")return imageV4Status(env,user,job,ref);
   }catch(e){if(e?.status)throw e}
  }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"生成失败"});
