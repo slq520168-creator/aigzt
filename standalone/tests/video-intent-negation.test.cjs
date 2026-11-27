@@ -1,0 +1,5 @@
+const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
+const source=fs.readFileSync("standalone/client.js","utf8");
+const f=new Function(source.slice(source.indexOf("function isDirectVideoRequest(value){"),source.indexOf("// Distinguish a pasted visual prompt"))+";return isDirectVideoRequest")();
+test("direct video with no text response still invokes video",()=>{for(const p of ["请直接生成一段5秒的视频：一只白色小猫坐在窗台上，缓慢转头并眨眼，窗帘随风摆动。真实摄影，高清画质，16:9横屏。直接生成视频，不要回复文字。","请生成视频，不要输出代码","Please generate a 5 second video. Don't reply with text.","图生视频：让猫动起来"])assert.equal(f(p),true,p)});
+test("negation and discussion remain chat",()=>{for(const p of ["不要生成视频","请不要生成视频","请生成视频的提示词","请生成一段视频脚本","怎么生成视频","请解释如何生成视频","Generate a video prompt","Do not generate a video","请生成视频，但是不要制作视频","一只小猫"])assert.equal(f(p),false,p)});

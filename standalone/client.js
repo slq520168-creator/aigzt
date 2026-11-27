@@ -1523,8 +1523,15 @@ function requestedMediaFormat(value){
  return /(?:GIF|动图|动态表情包|动态贴纸|animated sticker)/i.test(p)?"gif":/(?:贴纸|表情包|sticker)/i.test(p)?"sticker":"";
 }
 function isDirectVideoRequest(value){
- const p=String(value||"").trim();if(!p||/(?:不要|不用|禁止|无需|如何|怎么|为什么|能不能|是否|分析|识别|检查|解释|提示词|脚本|代码|教程|方案|文案|视频链接|下载|播放|搜索|查找)/.test(p))return false;
- return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:(?:生成|制作|创建|做|拍|渲染|合成|输出)(?:一段|一个|一条|一部|一支|短)?[^，。！？\n]{0,20}视频|(?:文生视频|图生视频|首尾帧视频)|(?:让|把).{1,35}(?:动起来|变成视频|做成视频))/.test(p)||/^(?:generate|create|make|animate)\b.{0,40}\b(?:video|clip|animation)\b/i.test(p);
+ const p=String(value||"").trim();
+ if(!p)return false;
+ // Only a negation of video creation itself blocks generation; a request
+ // not to reply with text or code does not negate a requested video.
+ const first=p.split(/[。！？\n;；]/)[0];
+ if(/(?:不要|不用|禁止|无需|不需要|先别|别)(?:再|直接|真的|实际)?\s*(?:生成|制作|创建|做|拍|渲染|合成|输出)\s*[^，。！？\n]{0,16}视频/.test(p)||/\b(?:do not|don't|never)\s+(?:generate|create|make|animate|render)\b[^.!?\n]{0,45}\b(?:video|clip|animation)\b/i.test(p))return false;
+ if(/^(?:(?:请|麻烦|帮我|请你|你|给我)\s*){0,4}(?:如何|怎么|为什么|能不能|是否|分析|识别|检查|解释|写|提供|给出|整理|优化|修改|下载|播放|搜索|查找)/.test(p)||/^(?:please\s+)?(?:how|why|can you explain|explain|write|provide|review|find|download|search)\b/i.test(p))return false;
+ if(/(?:生成|制作|创建|设计|输出|写|提供|给出).{0,22}(?:视频提示词|视频脚本|视频代码|视频教程|视频方案|视频文案)|(?:生成|制作|创建|输出).{0,20}视频(?:的|用的)?(?:提示词|脚本|代码|教程|方案|文案)|(?:video|animation)\s+(?:prompt|script|code|tutorial)\b/i.test(first))return false;
+ return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:(?:生成|制作|创建|做|拍|渲染|合成|输出)(?:一段|一个|一条|一部|一支|短)?[^，。！？\n]{0,20}视频|(?:文生视频|图生视频|首尾帧视频)|(?:让|把).{1,35}(?:动起来|变成视频|做成视频))/.test(p)||/^(?:please\s+)?(?:generate|create|make|animate|render)\b.{0,40}\b(?:video|clip|animation)\b/i.test(p);
 }
 // Distinguish a pasted visual prompt from requests to discuss or write prompts.
 function imagePromptDiscussion(value){
