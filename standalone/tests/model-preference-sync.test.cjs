@@ -1,6 +1,6 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
 const w=fs.readFileSync("standalone/worker.js","utf8"),c=fs.readFileSync("standalone/client.js","utf8");
-const normalize=new Function("HOSTS","validModelIdentifier","sharedFreeModelId",w.slice(w.indexOf("function normalizeModelPreference("),w.indexOf("function requireModelId("))+";return normalizeModelPreference")({groq:{},openrouter:{}},s=>/^[\\w.:/\\-]+$/.test(s),s=>s.startsWith("free:or/")?s.slice(8):null);
+const normalize=new Function("HOSTS","validModelIdentifier","sharedFreeModelId",w.slice(w.indexOf("function normalizeModelPreference("),w.indexOf("function requireModelId("))+";return normalizeModelPreference")({groq:{},openrouter:{}},s=>/^[\w.:/\-]+$/.test(s),s=>s.startsWith("free:or/")?s.slice(8):null);
 test("separate chat/work preference validation",()=>{
  assert.ok(normalize({mode:"chat",provider:"free",model:"free:auto",title:"自动模式"}));
  assert.ok(normalize({mode:"chat",provider:"free",model:"free:or/example/model:free",title:"Example"}));
