@@ -19,10 +19,10 @@ test("legacy route never truncates current user content",()=>{
 });
 test("Groq reasoning budgets preserve selected reply level",()=>{
  assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","short"),600);
- assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","long"),6500);
- assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","standard"),3500);
+ assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","long"),65536);
+ assert.equal(helpers.chatOutputBudget("groq","openai/gpt-oss-120b","standard"),4096);
  assert.equal(helpers.chatOutputBudget("openrouter","other/model","long"),4096);
- assert.equal(helpers.chatOutputBudget("openrouter","other/model","standard"),2048);
+ assert.equal(helpers.chatOutputBudget("openrouter","other/model","standard"),4096);
 });
 test("memory switch retains current, project and ordinary cross-chat context",()=>{
  assert.match(worker,/WHERE chat_id=\? AND user_id=\? ORDER BY created_at DESC LIMIT 12/);
@@ -43,8 +43,8 @@ test("continuation is explicit and updates the existing assistant message",()=>{
  assert.match(client,/messageTool\("continue-write","继续生成"/);
  assert.doesNotMatch(client,/next\.append\(node\("span","","继续生成"\)\)/);
  assert.match(worker,/不得缩成关键词/);
- assert.match(client,/text\.length<100000/);
- assert.match(worker,/continuation\.body\.length>=100000/);
+ assert.match(client,/text\.length<480000/);
+ assert.match(worker,/continuation\.body\.length>=CHAT_CONTINUATION_CHARS/);
  assert.match(client,/continueFrom:row\.dataset\.messageId/);
  assert.match(worker,/const messageId=continuation\?null:crypto\.randomUUID\(\)/);
  assert.match(worker,/UPDATE messages SET body=\?,model=\?,usage_json=\? WHERE id=\? AND chat_id=\? AND user_id=\? AND body=\?/);

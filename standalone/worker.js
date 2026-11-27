@@ -233,10 +233,44 @@ function legacyQueryPrompt(history){
  const room=Math.max(0,2796-current.length);
  return (room&&older?older.slice(-room)+"\n":"")+"用户："+current;
 }
-function chatOutputBudget(provider,model,level){
- if(level==="short")return 600;
- if(provider==="groq"&&/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return level==="long"?6500:3500;
- return level==="long"?4096:2048;
+const CHAT_REPLY_CHARS=240000,CHAT_CONTINUATION_CHARS=480000;
+const groqQuotaProfiles=new Map();
+function groqModelCapacity(model){
+ if(/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return {context:131072,output:65536};
+ if(model==="llama-3.3-70b-versatile")return {context:131072,output:32768};
+ if(model==="llama-3.1-8b-instant")return {context:131072,output:131072};
+ return {context:8192,output:4096};
+}
+function chatOutputBudget(provider,model,level,cap=null){
+ const known=provider==="groq"?groqModelCapacity(model).output:cap?.output;
+ const max=Number.isSafeInteger(known)&&known>0?Math.min(known,65536):4096;
+ return Math.min(max,level==="short"?600:level==="long"?max:Math.min(4096,max));
+}
+function groqTotalBudget(model,profile=null){
+ const cap=groqModelCapacity(model);
+ const limit=profile&&Date.now()-profile.at<600000?profile.limit:8000;
+ // Leave a small reservation margin; do not assume paid limits before seeing the actual key's headers.
+ return Math.min(cap.context,Math.floor(limit*0.975));
+}
+function captureGroqQuota(profiles,scope,headers,now=Date.now()){
+ if(!scope)return;
+ const raw=headers?.get?.("x-ratelimit-limit-tokens"),limit=Number(raw);
+ if(!raw||!Number.isSafeInteger(limit)||limit<1000||limit>100000000)return;
+ if(profiles.size>=256&&!profiles.has(scope))profiles.delete(profiles.keys().next().value);
+ profiles.set(scope,{limit,at:now});
+}
+function groqReasoning(model,level){
+ return /^openai\/gpt-oss-(?:20b|120b)$/.test(model)?{reasoning_effort:level==="short"?"low":"medium",include_reasoning:false}:{};
+}
+function catalogOutputCapacity(row){
+ const output=Number(row?.maxCompletion),context=Number(row?.context);
+ if(!Number.isSafeInteger(output)||output<=0)return null;
+ return {output:Math.min(output,65536),context:Number.isSafeInteger(context)&&context>0?context:null};
+}
+async function cachedChatCapacity(env,provider,model){
+ if(provider!=="openrouter")return null;
+ const catalog=await listModels(env,true);
+ return catalogOutputCapacity(catalog.models?.find(m=>m.id===model));
 }
 // Estimate token usage conservatively; actual account limits remain provider-controlled.
 function replyWasLimited(reason){return ["length","max_tokens","max_output_tokens","MAX_TOKENS","MAX_OUTPUT_TOKENS"].includes(reason)}
@@ -245,14 +279,16 @@ function groqMessageCost(m){
  for(const ch of String(m.content||"")){const n=ch.codePointAt(0);bytes+=n<128?1:n<2048?2:n<65536?3:4;}
  return Math.ceil(bytes/2)+16;
 }
-function groqRequestPlan(history,requestedOutput,totalBudget=7400){
+function groqRequestPlan(history,requestedOutput,totalBudget=7800){
  const latest=history.findLastIndex(m=>m.role==="user");
  const optionalMemory=m=>m.role==="system"&&m.content.startsWith("以下是同一用户的相关上下文");
  const required=history.map((m,i)=>i===latest||(m.role==="system"&&!optionalMemory(m)));
  let used=160+history.reduce((n,m,i)=>n+(required[i]?groqMessageCost(m):0),0);
  // Never truncate the current user turn or explicit directives.
  if(used+600>totalBudget)throw Object.assign(Error("当前内容超过 Groq 免费额度，请选择更大上下文的模型"),{status:413});
- const output=Math.min(requestedOutput,Math.max(600,totalBudget-used));
+ const historyCost=history.reduce((n,m,i)=>n+(!required[i]&&m.role!=="system"?groqMessageCost(m):0),0);
+ const reserve=Math.min(historyCost,Math.floor(Math.max(0,totalBudget-used-600)*0.15));
+ const output=Math.min(requestedOutput,Math.max(600,totalBudget-used-reserve));
  let room=Math.max(0,totalBudget-used-output);
  const selected=new Map();
  // Preserve the nearest conversation turns and saved memory as space permits.
@@ -315,7 +351,7 @@ async function listModels(env,cacheOnly=false){
   const zeroImage=free&&["image","file"].every(k=>m.pricing?.[k]==null||Number(m.pricing[k])===0);
   const media=outMods.includes("video")?"video":outMods.includes("image")&&!outMods.includes("text")?"image":outMods.length&&!outMods.includes("text")&&outMods.some(x=>x==="audio"||x==="music")?"audio":"text";
   return {id:m.id,name:m.name||m.id,provider:m.id.split("/")[0]||"其他",type:media,free,
-   context:m.context_length||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",zeroText,zeroImage,
+   context:m.context_length||null,maxCompletion:m.top_provider?.max_completion_tokens||null,inputPrice:priceIn,outputPrice:priceOut,availableWith:"openrouter-key",zeroText,zeroImage,
    inputImages:inMods.includes("image"),inputFiles:inMods.includes("file"),outputImages:outMods.includes("image"),outputText:outMods.includes("text"),description:truncate(m.description,160)};
  });
  return {ok:true,at:new Date().toISOString(),freeModels:availableFree,freeTierModels:PERSONAL_FREE_TIER_MODELS,sharedFreeModels:sharedFreeCatalog(env,models),models,count:models.length};
@@ -557,8 +593,8 @@ async function readChatCompletionStream(res,model,onDelta){
     if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
     const delta=event.choices?.[0]?.delta?.content;
     const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
-    if(token&&content.length<40000){
-     const piece=token.slice(0,40000-content.length);
+    if(token&&content.length<CHAT_REPLY_CHARS){
+     const piece=token.slice(0,CHAT_REPLY_CHARS-content.length);
      content+=piece;if(content.trim())onDelta(piece);
     }
    }
@@ -566,9 +602,9 @@ async function readChatCompletionStream(res,model,onDelta){
   }catch(error){if(!content.trim())throw Object.assign(Error("服务商回复中断"),{code:error?.code||"UPSTREAM_NETWORK"});}
   finally{void reader.cancel().catch(()=>{})}
   if(!content.trim())throw Object.assign(Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字"),{code:"UPSTREAM_EMPTY"});
-  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||replyWasLimited(finishReason)||content.length>=40000};
+  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||replyWasLimited(finishReason)||content.length>=CHAT_REPLY_CHARS};
 }
-async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false,inputParts=[],chatDeadline=null,zeroOnly=false){
+async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false,inputParts=[],chatDeadline=null,zeroOnly=false,policy=null){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
  if(typeof key!=="string"||key.length<12||key.length>1500||/[\r\n\0]/.test(key))throw Error("请先输入自己的 API Key");
@@ -586,6 +622,8 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  else headers.authorization="Bearer "+key;
  let target="https://"+host.host+(host.path||"/"),body;
  const history=chatProviderHistory(messages);
+ const groqScope=provider==="groq"&&policy?.scope?policy.scope+"\u0000"+model:null;
+ const groqBudget=provider==="groq"?groqTotalBudget(model,groqScope?groqQuotaProfiles.get(groqScope):null):null;
  if(provider==="gemini"){
   target="https://"+host.host+"/v1beta/models/"+model+":generateContent";
   body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]})),generationConfig:{maxOutputTokens:maxTokens}};
@@ -597,9 +635,8 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   body={model,max_tokens:maxTokens,messages:turns.length?turns:[{role:"user",content:"你好"}],...(system?{system}:{})};
  }else if(provider==="groq"){
   // Groq uses max_completion_tokens, not the deprecated max_tokens alias.
-  const plan=groqRequestPlan(history,maxTokens);
-   body={model,messages:plan.messages,max_completion_tokens:plan.maxTokens,stream:false};
-   if(/^openai\/gpt-oss-(?:20b|120b)$/.test(model)&&maxTokens>=6500){body.reasoning_effort="low";body.include_reasoning=false;}
+  const plan=groqRequestPlan(history,maxTokens,groqBudget);
+   body={model,messages:plan.messages,max_completion_tokens:plan.maxTokens,stream:false,...groqReasoning(model,policy?.level||"standard")};
  }else{
   body={model,messages:history,max_tokens:maxTokens,stream:false};
  }
@@ -625,17 +662,19 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  const streaming=!outputImages&&typeof onDelta==="function"&&["openrouter","groq"].includes(provider);
  if(streaming){body.stream=true;headers.accept="text/event-stream";if(provider==="groq")body.stream_options={include_usage:true}}
  let res;
- const deadline=Date.now()+(Number.isFinite(chatDeadline)?Math.max(1,Math.min(60000,chatDeadline)):Math.min(60000,Math.max(streaming?45000:30000,timeoutMs)));
+ const deadline=Date.now()+(Number.isFinite(chatDeadline)?Math.max(1,Math.min(180000,chatDeadline)):Math.min(60000,Math.max(streaming?45000:30000,timeoutMs)));
  const request=async()=>fetch(target,{method:"POST",headers,body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(Math.max(1,deadline-Date.now()))});
  try{
   res=await request();
+  if(groqScope)captureGroqQuota(groqQuotaProfiles,groqScope,res.headers);
   // Definitive 413: retry once, same provider/model and current user turn.
   if(provider==="groq"&&res.status===413&&Date.now()+1000<deadline){
-   const smaller=groqRequestPlan(history,Math.min(body.max_completion_tokens,1800),4800);
+   const retryBudget=Math.min(groqBudget,Math.max(4800,Math.floor(groqBudget*0.65)));
+   const smaller=groqRequestPlan(history,Math.min(body.max_completion_tokens,Math.max(600,Math.floor(retryBudget*0.7))),retryBudget);
    if(smaller.maxTokens<body.max_completion_tokens||JSON.stringify(smaller.messages).length<JSON.stringify(body.messages).length){
     await res.body?.cancel().catch(()=>{});
     body.messages=inputParts.length?attachNativeChatParts(smaller.messages,inputParts):smaller.messages;body.max_completion_tokens=smaller.maxTokens;
-    res=await request();
+    res=await request();if(groqScope)captureGroqQuota(groqQuotaProfiles,groqScope,res.headers);
    }
   }
  }catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503,code:"UPSTREAM_NETWORK"})}
@@ -650,7 +689,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  const text=parsed.content||out.output_text||"";
  if(!String(text).trim()&&!parsed.images.length)throw Object.assign(Error("服务商没有返回有效内容"),{code:"UPSTREAM_EMPTY"});
  const reason=out?.choices?.[0]?.finish_reason||out?.stop_reason||out?.candidates?.[0]?.finishReason||"";
- return {content:truncate(text,40000),images:parsed.images,actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:replyWasLimited(reason)||out?.status==="incomplete"||text.length>40000};
+ return {content:truncate(text,CHAT_REPLY_CHARS),images:parsed.images,actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:replyWasLimited(reason)||out?.status==="incomplete"||text.length>CHAT_REPLY_CHARS};
 }
 // Storage uploads retain bounded protection; ordinary free text and work do not use daily quotas.
 const FREE_ROUTER_SOURCE_IDS=Object.freeze(["vireonix","openrouter","groq","vexa"]);
@@ -673,8 +712,8 @@ async function automaticFreeSources(env,mode,level){
  const catalog=await listModels(env,true);
  const shared=(catalog.sharedFreeModels||[]).filter(m=>m.shared===true&&m.free===true&&m.type==="text"&&m.sharedModel?.endsWith(":free"));
  const score=m=>{const id=m.sharedModel.toLowerCase();return (mode==="code"&&/coder|code|deepseek|qwen|devstral/.test(id)?100:0)+(level==="long"&&/gpt-oss|deepseek|qwen|gemma|llama/.test(id)?30:0)+Math.min(20,Math.log2(Math.max(1,m.context||1)));};
- const named=shared.sort((a,b)=>score(b)-score(a)||a.id.localeCompare(b.id)).map(m=>({id:"openrouter",routeKey:m.id,name:m.name,endpoint:"https://openrouter.ai/api/v1/chat/completions",model:m.sharedModel,key:env.OPENROUTER_FREE_KEY,ms:level==="long"?32000:18000,zeroOnly:true}));
- const primary=base.filter(x=>x.key&&x.id!=="openrouter"),generic=base.filter(x=>x.id==="openrouter").map(x=>({...x,zeroOnly:true,ms:level==="long"?32000:18000}));
+ const named=shared.sort((a,b)=>score(b)-score(a)||a.id.localeCompare(b.id)).map(m=>({id:"openrouter",routeKey:m.id,name:m.name,endpoint:"https://openrouter.ai/api/v1/chat/completions",model:m.sharedModel,key:env.OPENROUTER_FREE_KEY,ms:level==="long"?65000:18000,zeroOnly:true,capacity:catalogOutputCapacity(catalog.models?.find(x=>x.id===m.sharedModel))}));
+ const primary=base.filter(x=>x.key&&x.id!=="openrouter"),generic=base.filter(x=>x.id==="openrouter").map(x=>({...x,zeroOnly:true,ms:level==="long"?65000:18000}));
  const publicRoutes=base.filter(x=>!x.key);
  return level==="long"||mode==="code"?[...named,...primary,...generic,...publicRoutes]:[...primary,...named,...generic,...publicRoutes];
 }
@@ -740,18 +779,18 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // Legacy prompt-only endpoints cannot receive a long request intact.
   if(source.query&&recent===null){errors.push(source.id+" 上下文容量不足");continue;}
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
-   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:chatFailover?chatOutputBudget(source.id,source.model,replyLevel):replyLevel==="short"?600:replyLevel==="long"?4096:1200,stream:false};
+   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:chatFailover?chatOutputBudget(source.id,source.model,replyLevel,source.capacity):replyLevel==="short"?600:replyLevel==="long"?4096:1200,stream:false};
   if(source.zeroOnly)payload.provider={max_price:{prompt:0,completion:0,request:0,image:0},allow_fallbacks:true};
   if(source.id==="groq"){
-   let plan;try{plan=groqRequestPlan(payload.messages,chatOutputBudget("groq",source.model,replyLevel))}catch(e){if(sharedAuto){errors.push(source.id+" 当前上下文超过免费额度");continue}throw e}
+   let plan;try{plan=groqRequestPlan(payload.messages,chatOutputBudget("groq",source.model,replyLevel),groqTotalBudget(source.model))}catch(e){if(sharedAuto){errors.push(source.id+" 当前上下文超过免费额度");continue}throw e}
    payload.messages=plan.messages;delete payload.max_tokens;payload.max_completion_tokens=plan.maxTokens;
-    if(/^openai\/gpt-oss-(?:20b|120b)$/.test(source.model)&&replyLevel==="long"){payload.reasoning_effort="low";payload.include_reasoning=false;}
+    Object.assign(payload,groqReasoning(source.model,replyLevel));
   }
   const streaming=typeof onDelta==="function"&&!source.query&&["groq","openrouter"].includes(source.id);
   if(streaming){payload.stream=true;if(source.id==="groq")payload.stream_options={include_usage:true}}
   let res,visible=false;
   const controller=new AbortController();
-  const totalMs=Math.min(streaming?Math.max(source.ms,35000):source.ms,remaining);
+  const totalMs=Math.min(streaming?Math.max(source.ms,replyLevel==="long"?65000:35000):source.ms,remaining);
   const totalTimer=setTimeout(()=>controller.abort(),totalMs);
   const firstMs=Math.min(totalMs,replyLevel==="long"||mode==="code"?9000:6000);
   const firstTimer=isAuto&&streaming?setTimeout(()=>controller.abort(),firstMs):null;
@@ -788,7 +827,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // When the upstream confirms almost no remaining budget, protect it until a later request.
   if(source.id==="vireonix"&&Number.isFinite(percent)&&percent<=1)
    await freeRouteFailure(env,routeKey,429,{failures:0},null);
-  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:replyWasLimited(out?.choices?.[0]?.finish_reason||out?.stop_reason)||out?.status==="incomplete"||answer.length>40000};
+  return {content:truncate(answer,CHAT_REPLY_CHARS),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:replyWasLimited(out?.choices?.[0]?.finish_reason||out?.stop_reason)||out?.status==="incomplete"||answer.length>CHAT_REPLY_CHARS};
   }catch(error){
    await freeRouteFailure(env,routeKey,controller.signal.aborted?503:502,sourceState,res?.headers);
    // Only automatic free routes may advance, sequentially, before any visible text.
@@ -895,7 +934,7 @@ async function chat(req,env,user,onDelta=null){
  const lookupQuery=provider==="free"&&!body.continueFrom?publicLookupQuery(typed):"";
  const lookup=lookupQuery?publicLookup(lookupQuery):null;
  const promptBatch=/(?:提示词|image\s*prompts?)/i.test(typed)&&/(?:[2-9]|[1-9]\d|[二三四五六七八九十]+)\s*(?:套|组|个|条|sets?|prompts?)/i.test(typed);
- const replyLevel=promptBatch?"long":["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
+ const replyLevel=promptBatch||body.mode==="code"&&body.replyLevel!=="short"?"long":["short","standard","long"].includes(body.replyLevel)?body.replyLevel:"standard";
 // The bounded transport size is independent of model context capacity.
 const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(attachments.length>4)throw Error("一次最多四个附件");
@@ -942,7 +981,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   if(!body.chatId||typeof body.continueFrom!=="string"||!/^[0-9a-f-]{36}$/i.test(body.continueFrom)||attachments.length)throw Object.assign(new Error("续写目标无效"),{status:400});
   continuation=await dbGet(env.DB,"SELECT body,created_at FROM messages WHERE id=? AND chat_id=? AND user_id=? AND role='assistant'",body.continueFrom,chatId,user.id);
   if(!continuation||!String(continuation.body||"").trim())throw Object.assign(new Error("找不到所选回复"),{status:404});
-  if(continuation.body.length>=100000||/^\[\[aigzt:|^!\[|^(?:图片|视频|图生图)已生成/.test(continuation.body)||body.outputImages||body.imageOnly)throw Object.assign(Error("此回复无法继续追加，请开启新消息"),{status:400});
+  if(continuation.body.length>=CHAT_CONTINUATION_CHARS||/^\[\[aigzt:|^!\[|^(?:图片|视频|图生图)已生成/.test(continuation.body)||body.outputImages||body.imageOnly)throw Object.assign(Error("此回复无法继续追加，请开启新消息"),{status:400});
  }
  const messageId=continuation?null:crypto.randomUUID();
  if(messageId)await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
@@ -983,16 +1022,17 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const custom=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);
  const selectedMessages=custom?.instruction?[{role:"system",body:"此用户为当前所选模型保存的自定义回复要求：\n"+truncate(custom.instruction,1600)},...messages]:messages;
  let result,freeFallback=false,primaryFailure=null,primarySucceeded=false;
- const requestStarted=Date.now(),remaining=()=>50000-(Date.now()-requestStarted);
+ const requestStarted=Date.now(),generationBudget=replyLevel==="long"?(provider==="free"?90000:165000):50000,remaining=()=>generationBudget-(Date.now()-requestStarted);
  let emitted=false;
  const forward=typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null;
  try{
   if(provider==="free"){
-   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward);
+   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel,await cachedChatCapacity(env,"openrouter",sharedModel)),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
-   const outputLimit=chatOutputBudget(provider,model,replyLevel);
-   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining());
+   const outputLimit=chatOutputBudget(provider,model,replyLevel,await cachedChatCapacity(env,provider,model));
+   const scope=provider==="groq"?await sha(connected.key):null;
+   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),false,{scope,level:replyLevel});
    primarySucceeded=true;
   }
   // Continuation is explicit: never automatically generate a second answer.
@@ -1011,7 +1051,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   for(let n=Math.min(400,continuation.body.length,tail.length);n>=24;n--){if(continuation.body.endsWith(tail.slice(0,n))){tail=tail.slice(n);break}}
   if(!tail.trim())throw Object.assign(Error("模型重复返回原文，请重试续写"),{status:409});
   storedReply=continuation.body+"\n\n"+tail;
-  if(storedReply.length>100000)throw Object.assign(Error("回复已达安全长度，请开启新消息"),{status:400});
+  if(storedReply.length>CHAT_CONTINUATION_CHARS)throw Object.assign(Error("回复已达安全长度，请开启新消息"),{status:400});
   result.usage=null;
   const changed=await dbRun(env.DB,"UPDATE messages SET body=?,model=?,usage_json=? WHERE id=? AND chat_id=? AND user_id=? AND body=?",storedReply,result.actualModel,JSON.stringify({incomplete:!!result.incomplete}),assistantMessageId,chatId,user.id,continuation.body);
   if(changed.meta?.changes!==1)throw Object.assign(Error("回复已在其他设备更新，请重新进入聊天"),{status:409});

@@ -2638,7 +2638,7 @@ function appendMessageCopy(row,content){
      setMessageMoreOpen(more,false);if(messageDraft(messageQuestion(row)))openModels();
     }));
    }
-   if(text.trim()&&text.length<100000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
+   if(text.trim()&&text.length<480000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
     const next=messageTool("continue-write","继续生成",b=>continueTextReply(row,text,b));
     next.classList.add("message-continue-btn");bar.append(next);
    }
@@ -3500,7 +3500,8 @@ function restoreWorkspaceRoute(){
 /* Streaming transport; only upstream emitted tokens are shown incrementally. */
 async function apiChatStream(payload,onDelta){
  const controller=new AbortController();let reader=null;
- const deadline=setTimeout(()=>controller.abort(),90000);
+ const extended=payload.replyLevel==="long"||payload.mode==="code";
+ const deadline=setTimeout(()=>controller.abort(),extended?210000:90000);
  try{
   const resp=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream"},credentials:"same-origin",cache:"no-store",body:JSON.stringify(payload),signal:controller.signal});
   if(!resp.ok){const data=await resp.json().catch(()=>null);throw Error(data?.error||"请求失败 HTTP "+resp.status)}

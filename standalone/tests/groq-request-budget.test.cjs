@@ -13,12 +13,13 @@ test("short question after long conversation fits normal and retry budget",()=>{
 test("long user input is not silently cut; memory is not changed",()=>{
  const input="测试".repeat(10000)+"END",turns=[{role:"system",content:"以下是同一用户的相关上下文\n记忆"},{role:"user",content:input}];
  const snapshot=JSON.stringify(turns);
- assert.equal(h.groqRequestPlan(turns,4096).messages.at(-1).content,input);
+ assert.equal(h.groqRequestPlan(turns,4096,64000).messages.at(-1).content,input);
  assert.equal(JSON.stringify(turns),snapshot);
 });
 test("413 retries once without switching provider or model",async()=>{
  const src=worker.slice(worker.indexOf("async function callExternal("),worker.indexOf("// Storage uploads retain bounded protection"));
- const factory=new Function("requireModelId","HOSTS","providerModelIsFree","chatProviderHistory","groqRequestPlan","fetch","replyMedia","verifiedTokenUsage","truncate","AbortSignal","replyWasLimited",src+";return callExternal;");
+ const helper=worker.slice(worker.indexOf("const CHAT_REPLY_CHARS="),worker.indexOf("const SHARED_FREE_PREFIX="));
+ const factory=new Function("requireModelId","HOSTS","providerModelIsFree","chatProviderHistory","groqRequestPlan","fetch","replyMedia","verifiedTokenUsage","truncate","AbortSignal","replyWasLimited",helper+"\n"+src+";return callExternal;");
  const attempts=[];
  const mock=async(url,options)=>{attempts.push(JSON.parse(options.body));return attempts.length===1?{status:413,ok:false,body:{cancel:async()=>{}}}:{status:200,ok:true,json:async()=>({model:"openai/gpt-oss-120b",choices:[{message:{content:"正常"},finish_reason:"stop"}]})}};
  const call=factory(()=>{}, {groq:{host:"api.groq.com",path:"/openai/v1/chat/completions"}},()=>false,h.chatProviderHistory,h.groqRequestPlan,mock,text=>({content:text,images:[],add(){}}),()=>null,(s,n)=>s.slice(0,n),{timeout:()=>undefined},reason=>reason==="length");
@@ -31,7 +32,7 @@ test("413 retries once without switching provider or model",async()=>{
 
 test("long creative output uses available Groq budget without exceeding free TPM guard",()=>{
  const p=h.groqRequestPlan([{role:"system",content:"完整输出"},{role:"user",content:"写20套提示词"}],h.chatOutputBudget("groq","openai/gpt-oss-120b","long"));
- assert.equal(p.maxTokens,6500);
- assert.ok(160+p.messages.reduce((n,m)=>n+h.groqMessageCost(m),0)+p.maxTokens<=7400);
- assert.match(worker,/body.reasoning_effort="low";body.include_reasoning=false/);
+ assert.ok(p.maxTokens>6500);
+ assert.ok(160+p.messages.reduce((n,m)=>n+h.groqMessageCost(m),0)+p.maxTokens<=7800);
+ assert.match(worker,/reasoning_effort:level==="short"\?"low":"medium"/);
 });
