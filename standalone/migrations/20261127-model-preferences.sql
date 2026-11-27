@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS user_model_preferences (user_id TEXT NOT NULL, mode TEXT NOT NULL CHECK(mode IN ('chat','work')), provider TEXT NOT NULL, model TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,mode), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);

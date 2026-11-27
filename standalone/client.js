@@ -466,9 +466,75 @@ function isFreeModel(provider,model){
 // Account-scoped model preference, independent of a chat's historical model.
 let restoredChatModelOwner=null,restoredWorkModelOwner=null,workModelPreference=null,chatModelPreferenceReady=false;
 function chatModelStorageKey(userId){return "aigzt:chat-model:v1:"+String(userId)}
+const modelPrefSync={owner:null,loaded:false,loading:null,attemptedAt:0,revision:{chat:0,work:0},serial:0,versions:{chat:0,work:0},queue:Promise.resolve()};
+function modelPrefLocalKey(owner,mode){return mode==="chat"?chatModelStorageKey(owner):workModelStorageKey(owner)}
+function modelPrefPendingKey(owner,mode){return modelPrefLocalKey(owner,mode)+":pending"}
+function readModelPref(key){try{return JSON.parse(localStorage.getItem(key)||"null")}catch{return null}}
+function writeModelPref(key,value){try{if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,JSON.stringify(value))}catch{}}
+function activateModelPrefOwner(owner){
+ if(modelPrefSync.owner===owner)return;
+ Object.assign(modelPrefSync,{owner,loaded:false,loading:null,attemptedAt:0,revision:{chat:0,work:0},versions:{chat:0,work:0},queue:Promise.resolve()});
+ modelPrefSync.serial++;
+}
+function enqueueModelPref(mode,pref,baseRevision){
+ const owner=String(S.user?.id||"");if(!owner)return;
+ activateModelPrefOwner(owner);
+ const serial=modelPrefSync.serial,version=++modelPrefSync.versions[mode],key=modelPrefPendingKey(owner,mode);
+ const selection={provider:pref.provider,model:pref.model,title:pref.title||""};
+ writeModelPref(key,{...selection,baseRevision:baseRevision??(modelPrefSync.loaded?modelPrefSync.revision[mode]:null)});
+ const run=async()=>{
+  if(S.user?.id!==owner||modelPrefSync.serial!==serial)return;
+  try{
+   const data=await api("/api/model-preferences",{owner,mode,...selection,...(baseRevision!==undefined?{baseRevision}:{})});
+   if(S.user?.id!==owner||modelPrefSync.serial!==serial||data.owner!==owner)return;
+   modelPrefSync.revision[mode]=data.preference.updatedAt;
+   if(modelPrefSync.versions[mode]===version)writeModelPref(key,null);
+  }catch(e){
+   if(S.user?.id===owner&&modelPrefSync.serial===serial&&modelPrefSync.versions[mode]===version){
+    if(baseRevision!==undefined&&/其他设备已更新/.test(String(e.message||""))){writeModelPref(key,null);modelPrefSync.loaded=false;modelPrefSync.attemptedAt=0;void hydrateModelPreferences(owner)}
+    else flashError("模型选择已保存在本机，云端同步暂未成功");
+   }
+  }
+ };
+ modelPrefSync.queue=modelPrefSync.queue.catch(()=>{}).then(run);
+}
 function rememberChatModelSelection(){
  if(!S.user?.id)return;
- try{localStorage.setItem(chatModelStorageKey(S.user.id),JSON.stringify({provider:S.provider,model:S.model,title:S.modelTitle}))}catch{}
+ const pref={provider:S.provider,model:S.model,title:S.modelTitle};
+ try{localStorage.setItem(chatModelStorageKey(S.user.id),JSON.stringify(pref))}catch{}
+ enqueueModelPref("chat",pref);
+}
+async function hydrateModelPreferences(owner){
+ if(!owner)return;
+ activateModelPrefOwner(owner);
+ if(modelPrefSync.loaded)return;
+ if(modelPrefSync.loading)return modelPrefSync.loading;
+ if(Date.now()-modelPrefSync.attemptedAt<15000)return;
+ modelPrefSync.attemptedAt=Date.now();
+ const serial=modelPrefSync.serial,versions={...modelPrefSync.versions};
+ const job=(async()=>{
+  try{
+   const data=await api("/api/model-preferences");
+   if(S.user?.id!==owner||modelPrefSync.serial!==serial||data.owner!==owner)return;
+   for(const mode of ["chat","work"]){
+    if(versions[mode]!==modelPrefSync.versions[mode])continue;
+    const localKey=modelPrefLocalKey(owner,mode),pendingKey=modelPrefPendingKey(owner,mode);
+    const remote=data.preferences?.[mode],pending=readModelPref(pendingKey),local=readModelPref(localKey);
+    const revision=remote?.updatedAt||0;modelPrefSync.revision[mode]=revision;
+    if(pending&&(!remote||pending.baseRevision===revision)){
+     enqueueModelPref(mode,pending,revision);continue;
+    }
+    if(remote){
+     writeModelPref(localKey,{provider:remote.provider,model:remote.model,title:remote.title||""});writeModelPref(pendingKey,null);
+     if(mode==="chat"){restoredChatModelOwner=null;restoreChatModelSelection()}
+     else{restoredWorkModelOwner=null;restoreWorkModelSelection();if(S.workMode&&!S.workTaskId)renderWorkEditor()}
+    }else if(local){enqueueModelPref(mode,local,0)}
+   }
+   modelPrefSync.loaded=true;updateModelTitle();updateWorkSelectedModel();
+  }catch(e){/* Local choice remains usable; retry on a later account refresh. */}
+ })();
+ modelPrefSync.loading=job;
+ try{await job}finally{if(modelPrefSync.loading===job)modelPrefSync.loading=null}
 }
 function restoreChatModelSelection(){
  const id=String(S.user?.id||"");
@@ -545,7 +611,7 @@ async function removeSavedKey(){
 }
 
 async function fetchMe(){
- try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();restoreWorkModelSelection();chatModelPreferenceReady=true;updateModelTitle();setAuthUI()}
+ try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();restoreWorkModelSelection();await hydrateModelPreferences(String(S.user?.id||""));chatModelPreferenceReady=true;updateModelTitle();setAuthUI()}
  catch(e){flashError("账号状态读取失败："+humanError(e))}
 }
 let chatFetchSerial=0,historyScope="",historyNextCursor=null,historyLoading=false;
@@ -3100,7 +3166,7 @@ function restoreWorkModelSelection(){
 }
 function rememberWorkModelSelection(provider,model){
  workModelPreference={provider:provider==="free"?"auto":provider,model:provider==="free"?"":model};
- if(S.user?.id)try{localStorage.setItem(workModelStorageKey(S.user.id),JSON.stringify(workModelPreference))}catch{}
+ if(S.user?.id){try{localStorage.setItem(workModelStorageKey(S.user.id),JSON.stringify(workModelPreference))}catch{} enqueueModelPref("work",workModelPreference)}
 }
 function resetWorkPlan(){
  S.workStages=[
@@ -4720,7 +4786,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;restoredWorkModelOwner=null;workModelPreference=null;S.workStages=[];setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;restoredWorkModelOwner=null;activateModelPrefOwner(null);workModelPreference=null;S.workStages=[];setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
