@@ -313,7 +313,7 @@ async function recordModelUsage(env,user,provider,model,level,started,result,act
 }
 // Aggregate only verified daily request pools, never token/minute/USD limits.
 function dailyRequestPool(quotas,kind,now){
- const items=quotas.filter(q=>q.kind===kind);
+ const items=quotas.filter(q=>q.kind===kind&&!q.sharesSitePool);
  const pools=new Map(),unknown=new Set();
  for(const q of items){
   // One account-wide OpenRouter limit; Groq only the configured route's model,
@@ -334,7 +334,10 @@ function dailyRequestPool(quotas,kind,now){
  }
  const entries=[...pools.values()];
  const total=entries.reduce((v,x)=>v+x.total,0),remaining=entries.reduce((v,x)=>v+x.remaining,0);
- return {total:entries.length?total:null,used:entries.length?total-remaining:null,remaining:entries.length?remaining:null,known:entries.length,unknown:unknown.size,entries};
+ // A published free-plan allowance is reference capacity, not measured account balance.
+ const referenceEntries=kind==="shared"?items.filter(q=>q.provider==="groq"&&q.selectedModel==="openai/gpt-oss-20b"&&!pools.has("groq")).slice(0,1).map(q=>({provider:q.provider,total:1000,source:"https://console.groq.com/docs/rate-limits"})):[];
+ const referenceTotal=total+referenceEntries.reduce((v,x)=>v+x.total,0);
+ return {total:entries.length?total:null,used:entries.length?total-remaining:null,remaining:entries.length?remaining:null,known:entries.length,unknown:unknown.size,entries,referenceEntries,referenceTotal:referenceTotal||null,referencePercent:entries.length&&referenceEntries.length?100*(total-remaining)/referenceTotal:null};
 }
 async function modelUsageOverview(env,user){
  requireUser(user);
@@ -345,11 +348,13 @@ async function modelUsageOverview(env,user){
   env.DB.prepare("SELECT provider,iv,ciphertext,model_id FROM user_api_keys WHERE user_id=? ORDER BY provider").bind(user.id).all(),
   dbGet(env.DB,"SELECT COUNT(*) AS reported,COALESCE(SUM(json_extract(usage_json,'$.input')),0) AS input_tokens,COALESCE(SUM(json_extract(usage_json,'$.output')),0) AS output_tokens,COALESCE(SUM(json_extract(usage_json,'$.total')),0) AS total_tokens FROM messages WHERE user_id=? AND role='assistant' AND created_at>=? AND created_at<? AND CASE WHEN json_valid(usage_json) THEN typeof(json_extract(usage_json,'$.total'))='integer' AND COALESCE(json_extract(usage_json,'$.dailyTracked'),0)<>1 ELSE 0 END",user.id,dayStart,dayStart+86400000)
  ]);
- const quotas=[];
+ const quotas=[],sharedKeys=new Map(freeSources(env).filter(r=>r.key).map(r=>[r.id,r.key]));
  async function entry(provider,key,kind,selectedModel){
   const base={provider,kind,selectedModel:selectedModel||"",snapshots:[]};
   if(!key)return {...base,unavailable:true};
   try{
+   // Same exact key must not become a second independent quota pool.
+   if(kind==="personal"&&sharedKeys.get(provider)===key)return {...base,sharesSitePool:true};
    const scope=quotaKeyScope(kind==="personal"?user.id:null,await sha(key));
    const snapshots=await readQuotaSnapshots(env,scope,provider);
    if(provider==="openrouter"){
@@ -373,9 +378,12 @@ async function modelUsageOverview(env,user){
  await Promise.all(quotaJobs);
  const at=Date.now();
  const pools={shared:dailyRequestPool(quotas,"shared",at),personal:dailyRequestPool(quotas,"personal",at)};
- let sharedModels=[];
- try{const catalog=await listModels(env,true);sharedModels=(catalog.sharedFreeModels||[]).filter(m=>m.shared===true&&m.free===true&&m.type==="text").map(m=>({provider:"openrouter",model:m.sharedModel,name:m.name}));}catch{}
- return {ok:true,day,at,startedAt:Number(meta?.started_at)||now,rows:daily.results||[],historical,quotas,pools,sharedModels,siteDailyLimit:null};
+ let sharedModels=[],catalogComplete=false;
+ try{const catalog=await listModels(env,true);catalogComplete=Array.isArray(catalog.models)&&catalog.models.length>0;sharedModels=(catalog.sharedFreeModels||[]).filter(m=>m.shared===true&&m.free===true&&m.type==="text").map(m=>({provider:"openrouter",model:m.sharedModel,name:m.name}));}catch{}
+ // Every configured automatic route is represented, but the OpenRouter router is not an extra model.
+ const automaticModels=[...sharedModels,...routes.filter(r=>r.id!=="openrouter").map(r=>({provider:r.id,model:r.model,name:r.id==="groq"?"GPT-OSS 20B":r.name+" 自动线路"}))];
+ const personalFreeModels=PERSONAL_FREE_TIER_MODELS.map(m=>({provider:m.provider,model:m.id,name:m.name,connected:(keys.results||[]).some(k=>k.provider===m.provider)}));
+ return {ok:true,day,at,startedAt:Number(meta?.started_at)||now,rows:daily.results||[],historical,quotas,pools,sharedModels,automaticModels,catalogComplete,personalFreeModels,siteDailyLimit:null};
 }
 
 function groqModelCapacity(model){

@@ -524,7 +524,7 @@ html.aigzt-ios-pwa .workspace-view.settings-dialog[open]{top:var(--aigzt-ios-saf
 .usage-progress-fill{display:block;height:100%;border-radius:inherit;background:#4388d9}
 .usage-mode:nth-child(2) .usage-progress-fill{background:#38a681}
 .usage-mode:nth-child(3) .usage-progress-fill{background:#8d76c6}
-.usage-progress.unknown{background:repeating-linear-gradient(135deg,#e5eaef,#e5eaef 5px,#dbe2e8 5px,#dbe2e8 9px)}
+.usage-progress.unknown,.usage-progress.reference{background:repeating-linear-gradient(135deg,#e5eaef,#e5eaef 5px,#dbe2e8 5px,#dbe2e8 9px)}
 .usage-explanation{border-bottom:1px solid #e7ebee;padding:4px 0 12px}
 .usage-explanation[hidden]{display:none}
 #settingsUsageResults .usage-table td:first-child{word-break:break-word}

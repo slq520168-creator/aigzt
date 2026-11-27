@@ -1025,22 +1025,30 @@ function usageTable(headers,rows){
  table.append(body);wrap.append(table);return wrap;
 }
 function usageProviderName(p){return p?providerLabel(p):"未确定"}
+function usagePercent(pool){
+ if(!pool||!pool.known||!Number.isFinite(pool.total)||pool.total<=0)return {percent:null,label:"额度待核实",reference:false};
+ if(!pool.unknown)return {percent:100*pool.used/pool.total,label:"已用",reference:false};
+ if(Number.isFinite(pool.referencePercent))return {percent:pool.referencePercent,label:"已知消耗 / 参考额度",reference:true};
+ return {percent:null,label:"总体额度待核实",reference:false};
+}
 function usageModeBar(title,mode,total,pool){
  const section=node("section","usage-mode"),head=node("div","usage-mode-head");
- head.append(node("strong","",title),node("span","usage-mode-count","本人今日 "+usageNum(total.requests)+" 次"));
+ const p=usagePercent(pool),shared=mode!=="personal";
+ head.append(node("strong","",title),node("span","usage-mode-count",p.percent===null?"—%":p.percent.toLocaleString("zh-CN",{maximumFractionDigits:1})+"%"+(p.reference?" 参考":"")));
  section.append(head);
- const known=pool&&pool.known>0&&Number.isFinite(pool.total)&&pool.total>0;
- const track=node("div","usage-progress"+(known?"":" unknown"));
- track.setAttribute("role","progressbar");track.setAttribute("aria-label",title+(mode==="personal"?" 可核实额度":" 共用额度"));
- if(known){
-  const fill=node("span","usage-progress-fill");fill.style.width=Math.max(0,Math.min(100,pool.used/pool.total*100))+"%";
-  track.append(fill);track.setAttribute("aria-valuemin","0");track.setAttribute("aria-valuemax",String(pool.total));track.setAttribute("aria-valuenow",String(pool.used));
- }else track.setAttribute("aria-valuetext","总额度未知");
+ const track=node("div","usage-progress"+(p.percent===null?" unknown":p.reference?" reference":""));
+ track.setAttribute("role","progressbar");track.setAttribute("aria-label",title+" "+p.label);
+ if(p.percent!==null){
+  const fill=node("span","usage-progress-fill");fill.style.width=Math.max(0,Math.min(100,p.percent))+"%";
+  track.append(fill);track.setAttribute("aria-valuemin","0");track.setAttribute("aria-valuemax","100");track.setAttribute("aria-valuenow",String(p.percent));
+  if(p.reference)track.setAttribute("aria-valuetext",p.percent.toFixed(1)+"% 已知消耗占参考额度，其他用量未知");
+ }else track.setAttribute("aria-valuetext",p.label);
  section.append(track);
  const foot=node("div","usage-mode-foot");
- if(known){
-  foot.append(node("span","",(mode==="personal"?"已用 ":"共享已用 ")+usageNum(pool.used)+"/"+usageNum(pool.total)),node("span","","剩余 "+usageNum(pool.remaining)+(pool.unknown?" · 部分":"")));
- }else foot.append(node("span","",pool&&pool.unknown===0?"暂无已接入额度":"额度未知"));
+ foot.append(node("span","","本人今日 "+usageNum(total.requests)+" 次"));
+ if(p.reference)foot.append(node("span","","参考 "+usageNum(pool.referenceTotal)+" 次 · 用量未齐"));
+ else if(p.percent!==null)foot.append(node("span","",(shared?"共享剩余 ":"剩余 ")+usageNum(pool.remaining)+"/"+usageNum(pool.total)));
+ else foot.append(node("span","",p.label));
  section.append(foot);return section;
 }
 function usageModelRows(d){
@@ -1052,8 +1060,9 @@ function usageModelRows(d){
   const item=models.get(key);if(name)item.name=name;
   if(record)item.requests+=Number(record.requests)||0;
  }
- for(const m of [...(d.sharedModels||[]),...(S.sharedFreeModels||[]).map(m=>({provider:"openrouter",model:m.sharedModel||m.id,name:m.name}))])if(m.model)add(m.provider,m.model,m.name);
- for(const q of d.quotas||[])add(q.provider,q.selectedModel||"未指定模型",q.selectedModel==="auto"?usageProviderName(q.provider)+" · 自动":null);
+ for(const m of [...(d.automaticModels||d.sharedModels||[]),...(!d.catalogComplete?(S.sharedFreeModels||[]).map(m=>({provider:"openrouter",model:m.sharedModel||m.id,name:m.name})):[])])if(m.model)add(m.provider,m.model,m.name);
+ for(const m of d.personalFreeModels||[])if(m.connected)add(m.provider,m.model,m.name);
+ for(const q of d.quotas||[])if(q.selectedModel&&q.selectedModel!=="openrouter/free")add(q.provider,q.selectedModel,q.selectedModel==="auto"?usageProviderName(q.provider)+" · 自动":null);
  for(const r of d.rows||[]){
   const provider=r.actual_provider||(r.provider==="free"?(String(r.model).startsWith("free:or/")?"openrouter":"unknown"):r.provider);
   add(provider,r.actual_model||r.model,null,r);
@@ -1066,7 +1075,8 @@ function renderUsageOverview(d){
  fragment.append(usageModeBar("自动模式","auto",usageSum(rows.filter(r=>r.mode==="auto")),pools.shared));
  fragment.append(usageModeBar("自由模式","shared",usageSum(rows.filter(r=>r.mode==="shared")),pools.shared));
  fragment.append(usageModeBar("个人模式","personal",usageSum(rows.filter(r=>r.mode==="personal")),pools.personal));
- fragment.append(node("h3","usage-title","模型用量"));
+ const automaticCount=new Set([...(d.automaticModels||d.sharedModels||[]),...(!d.catalogComplete?(S.sharedFreeModels||[]).map(m=>({provider:"openrouter",model:m.sharedModel||String(m.id||"").replace(/^free:or\//,"")})):[])].filter(m=>m.model).map(m=>m.provider+"|"+m.model)).size;
+ const modelHeading=node("div","usage-mode-head usage-title");modelHeading.append(node("strong","","模型用量"),node("span","usage-mode-count",(d.catalogComplete?"":"已知 ")+"免费自动线路 "+automaticCount+" 项"));fragment.append(modelHeading);
  const list=usageModelRows(d);if(list.length)fragment.append(usageTable(["模型名称","今日用量"],list));else fragment.append(node("p","small-note","暂无模型统计"));
  root.replaceChildren(fragment);
  renderUsageDetails(d);
@@ -1074,7 +1084,12 @@ function renderUsageOverview(d){
 function renderUsageDetails(d){
  const root=$("settingsUsageDetails");root.replaceChildren();
  root.append(node("p","settings-hint","自动与自由模式共用同一免费额度池，两个进度条展示相同的共享余额，不可相加。本人请求按模式分别统计。仅汇总已核实且未过恢复时间的每日请求额度；未知线路不计入总额，分钟限流、Tokens、费用均独立统计。共享额度不是个人余额。"));
- if(d.pools?.shared)root.append(node("p","settings-hint","共享已知 "+d.pools.shared.known+" 条 · 未知 "+d.pools.shared.unknown+" 条；个人已知 "+d.pools.personal.known+" 条 · 未知 "+d.pools.personal.unknown+" 条。额度为上次服务商实测，不保证此刻可用。"));
+ if(d.pools?.shared){
+  const p=d.pools.shared;
+  root.append(node("p","settings-hint","共享已知 "+p.known+" 个额度池 · 未知 "+p.unknown+" 个；个人已知 "+d.pools.personal.known+" 个 · 未知 "+d.pools.personal.unknown+" 个。额度为上次实测，不保证此刻可用。"));
+  if(p.referenceEntries?.length)root.append(node("p","settings-hint","参考值：Groq GPT-OSS 20B 官方免费方案每日 1,000 次；参考总量 "+usageNum(p.referenceTotal)+" 次。参考百分比只计算已测额度池消耗占参考总量的比例，Groq 实际使用量和其他线路总额度未知，不是实际整体使用率。官方来源：https://console.groq.com/docs/rate-limits"));
+  const same=(d.quotas||[]).filter(q=>q.sharesSitePool);if(same.length)root.append(node("p","settings-hint",same.map(q=>usageProviderName(q.provider)).join("、")+" 与本站使用同一密钥，不另算个人额度。"));
+ }
  root.append(node("p","settings-hint","本站统计目前覆盖聊天请求；图片、视频等其他计量单位不混入请求额度。"));
 
  const rows=Array.isArray(d.rows)?d.rows:[],all=usageSum(rows);
@@ -1097,7 +1112,7 @@ function renderUsageDetails(d){
    const providerRows=rows.filter(r=>(kind==="personal"?r.mode==="personal":r.mode!=="personal")&&(r.actual_provider||r.provider)===q.provider),used=usageSum(providerRows);
    box.append(node("p","settings-hint","本人今日本站请求 "+usageNum(used.requests)+" 次 · Tokens "+usageToken(used.total_tokens,used.reported,used.requests)));
    if(!q.snapshots?.length){
-    box.append(node("p","settings-hint",(q.selectedModel?q.selectedModel+" · ":"")+(q.unavailable?"额度暂时无法读取":"总额度及剩余额度未提供；已使用量见上方")));
+    box.append(node("p","settings-hint",(q.selectedModel?q.selectedModel+" · ":"")+(q.sharesSitePool?"共用本站额度":q.unavailable?"额度暂时无法读取":"总额度及剩余额度未提供；已使用量见上方")));
    }else for(const snap of q.snapshots){
     const current=Date.now(),age=Number(snap.at)||0;
     box.append(node("p","usage-observed",(snap.model==="account"?"账号额度":snap.model)+" · "+(age?new Date(age).toLocaleString():"未知时间")+(snap.stale?" · 读取失败，保留上次":" · 上次实测")));
