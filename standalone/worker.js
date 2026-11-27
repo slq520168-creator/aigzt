@@ -311,6 +311,31 @@ async function recordModelUsage(env,user,provider,model,level,started,result,act
   return true;
  }catch{return false}
 }
+// Aggregate only verified daily request pools, never token/minute/USD limits.
+function dailyRequestPool(quotas,kind,now){
+ const items=quotas.filter(q=>q.kind===kind);
+ const pools=new Map(),unknown=new Set();
+ for(const q of items){
+  // One account-wide OpenRouter limit; Groq only the configured route's model,
+  // since different model snapshots can share an organization rate-limit group.
+  const id=q.provider;
+  const label=id==="openrouter"?"免费模型每日请求":id==="groq"?"每日请求":null;
+  const expectedModel=id==="openrouter"?"account":q.selectedModel;
+  const snap=(q.snapshots||[]).filter(x=>x.model===expectedModel).sort((a,b)=>b.at-a.at)[0];
+  const field=label&&snap?.fields?.find(f=>f.label===label);
+  if(!field||snap.stale||!Number.isFinite(snap.at)||snap.at>now||now-snap.at>=86400000||
+     !Number.isFinite(field.resetAt)||field.resetAt<=now||
+     !Number.isSafeInteger(field.limit)||field.limit<=0||!Number.isSafeInteger(field.remaining)||field.remaining<0||field.remaining>field.limit){
+   if(!pools.has(id))unknown.add(id);continue;
+  }
+  const previous=pools.get(id);
+  if(!previous||snap.at>previous.at)pools.set(id,{provider:id,total:field.limit,remaining:field.remaining,at:snap.at,resetAt:field.resetAt});
+  unknown.delete(id);
+ }
+ const entries=[...pools.values()];
+ const total=entries.reduce((v,x)=>v+x.total,0),remaining=entries.reduce((v,x)=>v+x.remaining,0);
+ return {total:entries.length?total:null,used:entries.length?total-remaining:null,remaining:entries.length?remaining:null,known:entries.length,unknown:unknown.size,entries};
+}
 async function modelUsageOverview(env,user){
  requireUser(user);
  const now=Date.now(),day=utcUsageDay(now),dayStart=Date.parse(day+"T00:00:00Z");
@@ -346,7 +371,11 @@ async function modelUsageOverview(env,user){
   if(["groq","openai","claude","openrouter"].includes(row.provider))quotaJobs.push((async()=>{try{const key=await revealKey(env,user.id,row.provider,row.iv,row.ciphertext);quotas[i]=await entry(row.provider,key,"personal",row.model_id)}catch{quotas[i].unavailable=true}})());
  }
  await Promise.all(quotaJobs);
- return {ok:true,day,at:Date.now(),startedAt:Number(meta?.started_at)||now,rows:daily.results||[],historical,quotas,siteDailyLimit:null};
+ const at=Date.now();
+ const pools={shared:dailyRequestPool(quotas,"shared",at),personal:dailyRequestPool(quotas,"personal",at)};
+ let sharedModels=[];
+ try{const catalog=await listModels(env,true);sharedModels=(catalog.sharedFreeModels||[]).filter(m=>m.shared===true&&m.free===true&&m.type==="text").map(m=>({provider:"openrouter",model:m.sharedModel,name:m.name}));}catch{}
+ return {ok:true,day,at,startedAt:Number(meta?.started_at)||now,rows:daily.results||[],historical,quotas,pools,sharedModels,siteDailyLimit:null};
 }
 
 function groqModelCapacity(model){

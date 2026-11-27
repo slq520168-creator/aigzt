@@ -1025,8 +1025,58 @@ function usageTable(headers,rows){
  table.append(body);wrap.append(table);return wrap;
 }
 function usageProviderName(p){return p?providerLabel(p):"未确定"}
+function usageModeBar(title,mode,total,pool){
+ const section=node("section","usage-mode"),head=node("div","usage-mode-head");
+ head.append(node("strong","",title),node("span","usage-mode-count","本人今日 "+usageNum(total.requests)+" 次"));
+ section.append(head);
+ const known=pool&&pool.known>0&&Number.isFinite(pool.total)&&pool.total>0;
+ const track=node("div","usage-progress"+(known?"":" unknown"));
+ track.setAttribute("role","progressbar");track.setAttribute("aria-label",title+(mode==="personal"?" 可核实额度":" 共用额度"));
+ if(known){
+  const fill=node("span","usage-progress-fill");fill.style.width=Math.max(0,Math.min(100,pool.used/pool.total*100))+"%";
+  track.append(fill);track.setAttribute("aria-valuemin","0");track.setAttribute("aria-valuemax",String(pool.total));track.setAttribute("aria-valuenow",String(pool.used));
+ }else track.setAttribute("aria-valuetext","总额度未知");
+ section.append(track);
+ const foot=node("div","usage-mode-foot");
+ if(known){
+  foot.append(node("span","",(mode==="personal"?"已用 ":"共享已用 ")+usageNum(pool.used)+"/"+usageNum(pool.total)),node("span","","剩余 "+usageNum(pool.remaining)+(pool.unknown?" · 部分":"")));
+ }else foot.append(node("span","",pool&&pool.unknown===0?"暂无已接入额度":"额度未知"));
+ section.append(foot);return section;
+}
+function usageModelRows(d){
+ const models=new Map();
+ function add(provider,model,name,record){
+  provider=provider||"unknown";model=String(model||"未确定").replace(/^free:or\//,"");
+  const key=JSON.stringify([provider,model]);
+  if(!models.has(key))models.set(key,{provider,model,name:name||model,requests:0});
+  const item=models.get(key);if(name)item.name=name;
+  if(record)item.requests+=Number(record.requests)||0;
+ }
+ for(const m of [...(d.sharedModels||[]),...(S.sharedFreeModels||[]).map(m=>({provider:"openrouter",model:m.sharedModel||m.id,name:m.name}))])if(m.model)add(m.provider,m.model,m.name);
+ for(const q of d.quotas||[])add(q.provider,q.selectedModel||"未指定模型",q.selectedModel==="auto"?usageProviderName(q.provider)+" · 自动":null);
+ for(const r of d.rows||[]){
+  const provider=r.actual_provider||(r.provider==="free"?(String(r.model).startsWith("free:or/")?"openrouter":"unknown"):r.provider);
+  add(provider,r.actual_model||r.model,null,r);
+ }
+ return [...models.values()].sort((a,b)=>b.requests-a.requests||a.name.localeCompare(b.name,"zh-CN")).map(m=>[m.name+(m.name.startsWith(usageProviderName(m.provider))?"":" · "+usageProviderName(m.provider)),usageNum(m.requests)+" 次"]);
+}
 function renderUsageOverview(d){
- const root=$("settingsUsageResults");root.replaceChildren();
+ const root=$("settingsUsageResults"),fragment=document.createDocumentFragment();
+ const rows=Array.isArray(d.rows)?d.rows:[],pools=d.pools||{};
+ fragment.append(usageModeBar("自动模式","auto",usageSum(rows.filter(r=>r.mode==="auto")),pools.shared));
+ fragment.append(usageModeBar("自由模式","shared",usageSum(rows.filter(r=>r.mode==="shared")),pools.shared));
+ fragment.append(usageModeBar("个人模式","personal",usageSum(rows.filter(r=>r.mode==="personal")),pools.personal));
+ fragment.append(node("h3","usage-title","模型用量"));
+ const list=usageModelRows(d);if(list.length)fragment.append(usageTable(["模型名称","今日用量"],list));else fragment.append(node("p","small-note","暂无模型统计"));
+ root.replaceChildren(fragment);
+ renderUsageDetails(d);
+}
+function renderUsageDetails(d){
+ const root=$("settingsUsageDetails");root.replaceChildren();
+ root.append(node("p","settings-hint","自动与自由模式共用同一免费额度池，两个进度条展示相同的共享余额，不可相加。本人请求按模式分别统计。仅汇总已核实且未过恢复时间的每日请求额度；未知线路不计入总额，分钟限流、Tokens、费用均独立统计。共享额度不是个人余额。"));
+ if(d.pools?.shared)root.append(node("p","settings-hint","共享已知 "+d.pools.shared.known+" 条 · 未知 "+d.pools.shared.unknown+" 条；个人已知 "+d.pools.personal.known+" 条 · 未知 "+d.pools.personal.unknown+" 条。额度为上次服务商实测，不保证此刻可用。"));
+ root.append(node("p","settings-hint","本站统计目前覆盖聊天请求；图片、视频等其他计量单位不混入请求额度。"));
+
  const rows=Array.isArray(d.rows)?d.rows:[],all=usageSum(rows);
  const modeRows=[["自动模式",rows.filter(r=>r.mode==="auto")],["自由模式（共享）",rows.filter(r=>r.mode==="shared")],["自由模式（个人）",rows.filter(r=>r.mode==="personal")],["合计",rows]];
  root.append(node("h3","usage-title","今日聊天使用量"),usageTable(["模式","请求","成功/失败","Tokens"],modeRows.map(([label,list])=>{const t=usageSum(list);return [label,usageNum(t.requests),usageNum(t.succeeded)+"/"+usageNum(t.failed),usageToken(t.total_tokens,t.reported,t.requests)]})));
@@ -1066,12 +1116,12 @@ function renderUsageOverview(d){
    root.append(box);
   }
  }
- $("settingsQuotaSummary").textContent=d.day+" · UTC 日统计";
+ $("settingsQuotaSummary").textContent="更新 "+new Date(d.at).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
 }
 async function loadUsageOverview(force=false){
  const owner=S.user?.id;if(!owner||!$("settingsUsage").open)return;
  const target=$("settingsQuotaSummary"),button=$("settingsUsageRefresh");
- if(usageOverviewCache?.owner!==owner){usageOverviewCache=null;$("settingsUsageResults").replaceChildren()}
+ if(usageOverviewCache?.owner!==owner){usageOverviewCache=null;$("settingsUsageResults").replaceChildren();$("settingsUsageDetails").replaceChildren();$("settingsUsageExplanation").hidden=true;$("settingsUsageExplain").setAttribute("aria-expanded","false")}
  if(!force&&usageOverviewCache&&Date.now()-usageOverviewCache.at<30000&&usageOverviewCache.data.day===new Date().toISOString().slice(0,10)){renderUsageOverview(usageOverviewCache.data);return}
  if(usageOverviewFlight?.owner===owner)return usageOverviewFlight.job;
  const flight={owner,job:null};usageOverviewFlight=flight;button.disabled=true;target.textContent="正在读取真实用量…";
@@ -4671,6 +4721,7 @@ function wire(){
  });
  $("settingsUsage").addEventListener("toggle",()=>{if($("settingsUsage").open)void loadUsageOverview()});
  $("settingsUsageRefresh").addEventListener("click",()=>void loadUsageOverview(true));
+ $("settingsUsageExplain").addEventListener("click",()=>{const panel=$("settingsUsageExplanation"),button=$("settingsUsageExplain");panel.hidden=!panel.hidden;button.setAttribute("aria-expanded",String(!panel.hidden))});
  $("settingsDictationLang").addEventListener("change",event=>{
   const lang=event.target.value;
   if(!["auto","zh-CN","zh-TW","en-US","ja-JP"].includes(lang))return;
