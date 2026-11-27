@@ -287,7 +287,7 @@ function groqRequestPlan(history,requestedOutput,totalBudget=7800){
  // Never truncate the current user turn or explicit directives.
  if(used+600>totalBudget)throw Object.assign(Error("当前内容超过 Groq 免费额度，请选择更大上下文的模型"),{status:413});
  const historyCost=history.reduce((n,m,i)=>n+(!required[i]&&m.role!=="system"?groqMessageCost(m):0),0);
- const reserve=Math.min(historyCost,Math.floor(Math.max(0,totalBudget-used-600)*0.15));
+ const reserve=Math.min(historyCost,Math.floor(Math.max(0,totalBudget-used-600)*0.20));
  const output=Math.min(requestedOutput,Math.max(600,totalBudget-used-reserve));
  let room=Math.max(0,totalBudget-used-output);
  const selected=new Map();
@@ -1030,9 +1030,10 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
    result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel,await cachedChatCapacity(env,"openrouter",sharedModel)),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
-   const outputLimit=chatOutputBudget(provider,model,replyLevel,await cachedChatCapacity(env,provider,model));
+   const capacity=await cachedChatCapacity(env,provider,model);
+   const outputLimit=chatOutputBudget(provider,model,replyLevel,capacity);
    const scope=provider==="groq"?await sha(connected.key):null;
-   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),false,{scope,level:replyLevel});
+   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),false,{scope,level:replyLevel,capacity});
    primarySucceeded=true;
   }
   // Continuation is explicit: never automatically generate a second answer.

@@ -1,6 +1,6 @@
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
 const w=fs.readFileSync("standalone/worker.js","utf8"),c=fs.readFileSync("standalone/client.js","utf8");
-const src=w.slice(w.indexOf("async function readChatCompletionStream("),w.indexOf("async function callExternal("))+w.slice(w.indexOf("async function freeText("),w.indexOf("/* Reuse the site's existing free text providers"));
+const src=w.slice(w.indexOf("const CHAT_REPLY_CHARS="),w.indexOf("const SHARED_FREE_PREFIX="))+"\n"+w.slice(w.indexOf("async function readChatCompletionStream("),w.indexOf("async function callExternal("))+w.slice(w.indexOf("async function freeText("),w.indexOf("/* Reuse the site's existing free text providers"));
 function sse(lines){let i=0;return {ok:true,headers:{get:()=>null},body:{getReader:()=>({read:async()=>i<lines.length?{done:false,value:new TextEncoder().encode(lines[i++])}:{done:true},cancel:async()=>{}})}}}
 const token=x=>"data: "+JSON.stringify({choices:[{delta:{content:x}}]})+"\n";
 async function scenario(kind,level="standard"){

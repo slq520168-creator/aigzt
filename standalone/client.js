@@ -3500,7 +3500,7 @@ function restoreWorkspaceRoute(){
 /* Streaming transport; only upstream emitted tokens are shown incrementally. */
 async function apiChatStream(payload,onDelta){
  const controller=new AbortController();let reader=null;
- const extended=payload.replyLevel==="long"||payload.mode==="code";
+ const extended=payload.replyLevel==="long"||payload.mode==="code"||/(?:提示词|image\s*prompts?)/i.test(payload.message||"")&&/(?:[2-9]|[1-9]\d|[二三四五六七八九十]+)\s*(?:套|组|个|条|sets?|prompts?)/i.test(payload.message||"");
  const deadline=setTimeout(()=>controller.abort(),extended?210000:90000);
  try{
   const resp=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream"},credentials:"same-origin",cache:"no-store",body:JSON.stringify(payload),signal:controller.signal});
