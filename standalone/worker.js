@@ -148,10 +148,18 @@ function normalizeModelPreference(input){
 }
 function requireModelId(model){if(!validModelIdentifier(model))throw Error("模型编号不合法")}
 function truncate(s,max){return typeof s==="string"?s.slice(0,max):""}
+// Media jobs have their own renderer; historical text providers must not receive private task IDs as assistant answers.
+function historicalMediaText(body){
+ const value=String(body||"");
+ const pending=value.match(/^\[\[aigzt:(image-job|video-job|paid-video|video):[^\]\n]+\]\]$/i);
+ if(pending)return pending[1]==="video"?"[此前有视频生成结果；文字模型未收到视频内容。]":pending[1]==="image-job"?"[此前提交了图片生成任务；任务标记不代表已完成，文字模型未收到图片内容。]":"[此前提交了视频或动图生成任务；任务标记不代表已完成，文字模型未收到媒体内容。]";
+ if(/^(?:图片|图生图|视频)已生成[（(]/.test(value))return value+"\n[文字模型未收到此前生成的媒体文件，请根据前文用户描述继续回答，不要声称已经看过媒体。]";
+ return value;
+}
 // Preserve the full current user turn; bound only historical context.
 function chatProviderHistory(messages){
  const newest=messages.findLastIndex(m=>m.role==="user");
- return messages.map((m,i)=>({role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?String(m.body||""):m.role==="assistant"&&String(m.body||"").length>3000?String(m.body).slice(0,900)+"\n[中间内容省略]\n"+String(m.body).slice(-2080):truncate(m.body,m.role==="system"?8000:3000)}));
+ return messages.map((m,i)=>{const body=m.role==="assistant"?historicalMediaText(m.body):String(m.body||"");return {role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?body:m.role==="assistant"&&body.length>3000?body.slice(0,900)+"\n[中间内容省略]\n"+body.slice(-2080):truncate(body,m.role==="system"?8000:3000)}});
 }
 function groqVisionModel(model){
  return ["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(model);

@@ -4048,24 +4048,31 @@ function exportWorkTask(){
 
 /* Streaming transport; only upstream emitted tokens are shown incrementally. */
 async function apiChatStream(payload,onDelta){
- const resp=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream"},credentials:"same-origin",cache:"no-store",body:JSON.stringify(payload)});
- if(!resp.ok){const data=await resp.json().catch(()=>null);throw Error(data?.error||"请求失败 HTTP "+resp.status)}
- if(!resp.body)throw Error("浏览器不支持流式传输");
- const reader=resp.body.getReader(),decoder=new TextDecoder();let buffer="",final=null;
- for(;;){
-  const {done,value}=await reader.read();if(done)break;
-  buffer+=decoder.decode(value,{stream:true});if(buffer.length>8500000)throw Error("回复流格式异常");
-  let end;while((end=buffer.indexOf("\n\n"))>=0){
-   const packet=buffer.slice(0,end);buffer=buffer.slice(end+2);
-   const data=packet.split("\n").find(line=>line.startsWith("data:"));if(!data)continue;
-   let event;try{event=JSON.parse(data.slice(5).trim())}catch{continue}
-   if(event.type==="delta"&&typeof event.text==="string")onDelta(event.text);
-   else if(event.type==="error")throw Object.assign(Error(event.error||"回复中断"),{code:event.code||null,upstreamStatus:event.upstreamStatus||null});
-   else if(event.type==="done")final=event;
+ const controller=new AbortController();let reader=null;
+ const deadline=setTimeout(()=>controller.abort(),90000);
+ try{
+  const resp=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream"},credentials:"same-origin",cache:"no-store",body:JSON.stringify(payload),signal:controller.signal});
+  if(!resp.ok){const data=await resp.json().catch(()=>null);throw Error(data?.error||"请求失败 HTTP "+resp.status)}
+  if(!resp.body)throw Error("浏览器不支持流式传输");
+  reader=resp.body.getReader();const decoder=new TextDecoder();let buffer="";
+  for(;;){
+   const {done,value}=await reader.read();if(done)break;
+   buffer+=decoder.decode(value,{stream:true});if(buffer.length>8500000)throw Error("回复流格式异常");
+   let end;while((end=buffer.indexOf("\n\n"))>=0){
+    const packet=buffer.slice(0,end);buffer=buffer.slice(end+2);
+    const data=packet.split("\n").find(line=>line.startsWith("data:"));if(!data)continue;
+    let event;try{event=JSON.parse(data.slice(5).trim())}catch{continue}
+    if(event.type==="delta"&&typeof event.text==="string")onDelta(event.text);
+    else if(event.type==="error")throw Object.assign(Error(event.error||"回复中断"),{code:event.code||null,upstreamStatus:event.upstreamStatus||null});
+    else if(event.type==="done"){
+     if(!event.chatId||typeof event.reply!=="string")throw Error("回复中断，未收到完整结果");
+     return event;
+    }
+   }
   }
- }
- if(!final?.chatId||typeof final.reply!=="string")throw Error("回复中断，未收到完整结果");
- return final;
+  throw Error("回复中断，未收到完整结果");
+ }catch(e){if(controller.signal.aborted)throw Object.assign(Error("回复等待超时，原消息已保留，请重试"),{code:"UPSTREAM_NETWORK"});throw e}
+ finally{clearTimeout(deadline);if(reader)void reader.cancel().catch(()=>{})}
 }
 // One user click, one continuation request; retain the original row and draft.
 async function continueTextReply(row,original,button){
@@ -4081,7 +4088,7 @@ async function continueTextReply(row,original,button){
   if(result.assistantMessageId!==row.dataset.messageId)throw Error("续写消息编号不一致");
   status.remove();delete row.dataset.usage;
   appendMessage("assistant",result.reply,result.usedModel||result.model||null,row,Boolean(result.incomplete),result.assistantMessageId,row.dataset.saved==="1",Number(row.dataset.feedback)||0,result.usage||null,result.createdAt);
-  setPortraitState(row,"finished");await fetchChats();
+  setPortraitState(row,"finished");void fetchChats();
  }catch(e){
   status.remove();
   if(row.isConnected&&S.chatId===chatId){
@@ -4156,7 +4163,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   if(incompatible&&!imageOutput){flashError("当前个人模型不支持此附件，可选择自动模式识图");return}
  }
  if(submittedMode==="text"&&forceFreeOnce){requestProvider="free";requestModel="free:auto"}
- S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
+ hideWelcome();flashError("");
  const mediaOwner=S.user?.id;
  const isNew=!S.chatId;
  const isFreeMessage=submittedMode==="text"&&requestProvider==="free";
@@ -4184,6 +4191,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
   waitLabel.textContent="正在创建您的图片 · "+Math.max(1,Math.floor((Date.now()-startedAt)/1000)+1)+"秒";
  },1000):null;
+ S.busy=true;$("sendBtn").disabled=true;
  try{
   let result;
   if(submittedMode==="text"){
@@ -4219,7 +4227,6 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   else{
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
   }
-  const replyMediaCached=await cacheReplyImages(mediaOwner,result.assistantMessageId,result.images||[]);
   // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
@@ -4232,14 +4239,14 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
-     if(!replyMediaCached)mediaCacheWarning(loading.querySelector(".bubble"));
+     if(result.images?.length){void cacheReplyImages(mediaOwner,result.assistantMessageId,result.images).catch(()=>false).then(saved=>{if(!saved&&loading.isConnected&&S.user?.id===mediaOwner&&loading.dataset.messageId===result.assistantMessageId)mediaCacheWarning(loading.querySelector(".bubble"))})}
     if(submittedMode==="text")setPortraitState(loading,"finished");
   }
   if(VOICE_CHAT_ENABLED&&submittedMode==="text"&&voiceSession.active&&voiceSession.pending){
    voiceSession.pending=false;voiceSession.lastReply=result.reply;$("voiceReply").textContent=result.reply;$("voiceReplay").disabled=false;
    if(!voiceSpeak(result.reply,$("voiceReplay"),true)){voiceReady();sayStatus("本设备无法自动播报，可点击播放回答重试")}
   }
-  await fetchChats();void fetchMe();
+  void fetchChats();void fetchMe();
  }catch(e){
    if(submittedMode==="text"&&["MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","AUTH","ACCESS","UPSTREAM_NETWORK","UPSTREAM_EMPTY","FREE_FALLBACK_FAILED"].includes(e?.code))recordModelOutcome(requestProvider,requestModel,false,e.code);
    if(submittedMode==="text"&&requestProvider!=="free"&&["MODEL_RETIRED","MODEL_UNAVAILABLE"].includes(e?.code)){
@@ -4280,7 +4287,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   }
   bubble.append(status);if(submittedMode!=="text"&&!isImageMessage)status.title=humanError(e);flashError("");
  }
- finally{releaseReadingSpace?.();if(imageTimer!==null)window.clearInterval(imageTimer);S.busy=false;$("sendBtn").disabled=false;if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
+ finally{S.busy=false;$("sendBtn").disabled=false;if(imageTimer!==null)window.clearInterval(imageTimer);releaseReadingSpace?.();if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
 // Keep confirmed failures scoped to the current account, provider and exact model.
 const unavailableChatModels=new Map();
