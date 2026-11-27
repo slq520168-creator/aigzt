@@ -21,3 +21,12 @@ test("voice API requires authentication and uses only the existing rate-limited 
  assert.match(w,/path==="\/api\/voice\/transcribe"/);
  assert.doesNotThrow(()=>new Function(c));assert.doesNotThrow(()=>new Function(w.replace("export default {","return {")));
 });
+
+test("voice silence detector sends only after actual speech and avoids silent requests",()=>{
+ const f=new Function(c.slice(c.indexOf("function voiceSilenceStep("),c.indexOf("function voiceAutoNext("))+";return voiceSilenceStep")();
+ const a={started:1,speechSince:0,lastLoud:0,heard:false};assert.equal(f(a,0,1000),"");assert.equal(f(a,0,15002),"idle");
+ const b={started:1,speechSince:0,lastLoud:0,heard:false};assert.equal(f(b,.04,100),"");assert.equal(f(b,.04,300),"");assert.equal(f(b,0,1000),"");assert.equal(f(b,0,1400),"send");
+});
+test("voice session reuses chat persistence and resumes without a click",()=>{
+ assert.match(c,/sendMessage\(null,false,turn\)/);assert.match(c,/voiceTurn===voiceSession.turn/);assert.match(c,/voiceAutoNext\(\)/);assert.match(c,/voiceTranscript\("assistant",result.reply\)/);assert.match(h,/id="voiceTranscript"/);assert.match(w,/INSERT INTO messages/);
+});
