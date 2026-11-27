@@ -1100,11 +1100,12 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .model-header-menu{position:relative;flex:none;z-index:12}
 .model-header-menu>summary{display:grid;place-items:center;width:36px;height:36px;list-style:none;cursor:pointer;color:var(--ink,#29434f);border:0;background:transparent;border-radius:9px}
 .model-header-menu>summary::-webkit-details-marker{display:none}
-.model-header-menu>summary .ui-icon,.model-header-menu>summary svg{width:20px;height:20px}
+.model-header-menu>summary .ui-icon,.model-header-menu>summary svg{width:14px;height:14px;flex:none}
+#chatModeMenu>summary{width:auto;min-width:86px;display:flex;align-items:center;justify-content:center;gap:5px;padding:6px 10px;border-radius:18px;color:var(--text,#40576a);font-size:13px;white-space:nowrap}#chatModeCurrent{font-weight:600}
 .model-header-menu[open]>summary{background:#f2f5f8}
 .model-header-menu-panel{position:absolute;right:0;top:calc(100% + 5px);width:min(250px,calc(100vw - 32px));padding:6px;display:flex;flex-direction:column;gap:4px;border:1px solid #e4e9ed;border-radius:13px;background:var(--surface,#fff);box-shadow:0 8px 26px #182b4020}
 .model-header-menu-panel .model-mode-button{min-height:46px;border:0;border-radius:8px;padding:7px 9px}
-.model-mode-current{display:flex;flex-direction:column;gap:3px;padding:4px 2px 6px}.model-mode-current>span{font-size:11px;color:#7a8894}.model-mode-current>strong{font-size:15px;color:#263b47;font-weight:600;overflow-wrap:anywhere}
+
 .model-mode-button{display:flex;align-items:center;gap:11px;min-width:0;width:100%;min-height:58px;text-align:left;border:1px solid #e3e7ec;background:#fff;border-radius:12px;padding:10px 12px;color:#40576a;cursor:pointer}.model-mode-button.selected{border-color:#a49bc8;background:#f6f3fb;color:#6955a4}.model-mode-text{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.model-mode-text strong{font-size:13px;font-weight:600;color:#273e4b}.model-mode-text small{font-size:11px;color:#73818c;overflow-wrap:anywhere}.model-mode-mark{width:20px;text-align:center;flex:none;font-weight:650;color:#6955a4}.model-mode-choice{margin:10px 0 8px}
 .work-model-explain{font-size:12px;color:#6c8297;line-height:1.6;margin:0 0 13px}
 .work-model-dialog .work-agent-catalog{display:block;width:100%;min-width:0;max-height:none;overflow:visible;margin:0}

@@ -259,17 +259,20 @@ function flashError(message){
  const bar=$("errorBanner");bar.textContent=message;bar.hidden=!message;
  if(message)setTimeout(()=>{if(bar.textContent===message)bar.hidden=true},9000);
 }
-async function api(path,body){
+async function api(path,body,timeoutMs=0){
  const options={headers:{Accept:"application/json"},credentials:"same-origin",cache:"no-store"};
  if(body!==undefined){
   options.method="POST";options.headers["content-type"]="application/json";options.body=JSON.stringify(body);
  }
- let resp;
- try{resp=await fetch(path,options)}
- catch{throw Error("网络连接失败，请检查当前网络")}
- const data=await resp.json().catch(()=>null);
- if(!resp.ok||!data?.ok)throw Object.assign(Error(data?.error||"请求失败，HTTP "+resp.status),{code:data?.code||null,upstreamStatus:data?.upstreamStatus||null});
- return data;
+ const controller=timeoutMs?new AbortController():null,timer=controller?setTimeout(()=>controller.abort(),timeoutMs):null;
+ if(controller)options.signal=controller.signal;
+ try{
+  let resp;
+  try{resp=await fetch(path,options)}catch(e){throw Error(e?.name==="AbortError"?"连接超时，请重试":"网络连接失败，请检查当前网络")}
+  const data=await resp.json().catch(()=>null);
+  if(!resp.ok||!data?.ok)throw Object.assign(Error(data?.error||"请求失败，HTTP "+resp.status),{code:data?.code||null,upstreamStatus:data?.upstreamStatus||null});
+  return data;
+ }finally{if(timer!==null)clearTimeout(timer)}
 }
 let avatarOwner=null,avatarEpoch=0;
 /* Same-origin avatar URLs comply with the site's img-src CSP. Never use blob: here. */
@@ -437,26 +440,35 @@ function refreshKeyPanel(){
  $("keyStatus").textContent=rec?(VIDEO_ONLY_PROVIDERS.has(provider)?"视频密钥已加密保存（未收费测试）":rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
  $("openrouterLogin").hidden=provider!=="openrouter";
 }
+let connectionsFlight=null;
 async function fetchConnections(){
- if(!S.user){S.savedProviders={};S.connected={};S.connectionsLoaded=false;return}
- if(S.connectionsLoading)return;
- S.connectionsLoading=true;
+ const owner=String(S.user?.id||"");
+ if(!owner){S.savedProviders={};S.connected={};S.connectionsLoaded=false;return false}
+ if(connectionsFlight?.owner===owner)return connectionsFlight.promise;
+ const flight={owner,promise:null};connectionsFlight=flight;S.connectionsLoading=true;
+ flight.promise=(async()=>{
  try{
-  const result=await api("/api/connections"),saved={};
+  const result=await api("/api/connections",undefined,10000),saved={};
+  if(String(S.user?.id||"")!==owner||connectionsFlight!==flight)return false;
   for(const item of result.connections||[]){
    saved[item.provider]={model:item.model||"",consent:!!item.consent,verified:!!item.verified,updatedAt:item.updatedAt};
    if(item.model&&!S.connected[item.provider])S.connected[item.provider]=[{id:item.model,name:item.model,type:/(?:^|[\/_-])whisper(?:$|[\/_-])/i.test(item.model)?"audio":"text"}];
   }
   S.savedProviders=saved;S.connectionsLoaded=true;refreshSourceChips();
-  // Never silently switch the user to a different model during connection refresh.
   S.allowPaid=Boolean(S.savedProviders[S.provider]?.consent);
   S.selectedFree=isFreeModel(S.provider,S.model);
   updateModelTitle();
   if(!$("keyDialog").open||!$("personalKey").value)refreshKeyPanel();
+  if($("modelDialog").open)renderModels();
+  return true;
  }catch(e){
-  S.connectionsLoaded=false;
-  flashError("密钥状态暂未同步："+humanError(e));
- }finally{S.connectionsLoading=false}
+  if(String(S.user?.id||"")===owner&&connectionsFlight===flight){
+   if($("keyDialog").open){refreshKeyPanel();$("keyStatus").textContent="连接同步失败："+humanError(e)+"，可重试或使用自动模式"}
+  }
+  return false;
+ }finally{if(connectionsFlight===flight){connectionsFlight=null;S.connectionsLoading=false}}
+ })();
+ return flight.promise;
 }
 function isFreeModel(provider,model){
  if(provider==="free")return true;
@@ -467,7 +479,7 @@ function isFreeModel(provider,model){
  return false;
 }
 // Account-scoped model preference, independent of a chat's historical model.
-let restoredChatModelOwner=null,chatModelPreferenceReady=false;
+let restoredChatModelOwner=null,chatModelPreferenceReady=false,freeModeChoosing=false,accountFetchEpoch=0;
 function chatModelStorageKey(userId){return "aigzt:chat-model:v1:"+String(userId)}
 const modelPrefSync={owner:null,loaded:false,loading:null,attemptedAt:0,revision:{chat:0},serial:0,versions:{chat:0},queue:Promise.resolve()};
 function modelPrefLocalKey(owner,mode){return chatModelStorageKey(owner)}
@@ -504,6 +516,7 @@ function enqueueModelPref(mode,pref,baseRevision){
 function rememberChatModelSelection(){
  if(!S.user?.id)return;
  const pref={provider:S.provider,model:S.model,title:S.modelTitle};
+ freeModeChoosing=false;if(!isAutoChatModel())writeModelPref(chatModelStorageKey(S.user.id)+":manual",pref);
  try{localStorage.setItem(chatModelStorageKey(S.user.id),JSON.stringify(pref))}catch{}
  enqueueModelPref("chat",pref);
 }
@@ -517,7 +530,7 @@ async function hydrateModelPreferences(owner){
  const serial=modelPrefSync.serial,versions={...modelPrefSync.versions};
  const job=(async()=>{
   try{
-   const data=await api("/api/model-preferences");
+   const data=await api("/api/model-preferences",undefined,8000);
    if(S.user?.id!==owner||modelPrefSync.serial!==serial||data.owner!==owner)return;
    for(const mode of ["chat"]){
     if(versions[mode]!==modelPrefSync.versions[mode])continue;
@@ -553,11 +566,12 @@ function restoreChatModelSelection(){
   // Respect saved consent only after connections have loaded; login requests may finish in either order.
   S.allowPaid=S.connectionsLoaded===true&&Boolean(S.savedProviders[S.provider]?.consent);
   S.selectedFree=isFreeModel(S.provider,S.model);
+  if(!isAutoChatModel())writeModelPref(chatModelStorageKey(id)+":manual",{provider:S.provider,model:S.model,title:S.modelTitle});
  }else setFreeDefault(false);
  updateModelTitle();
 }
 function setFreeDefault(render=true){
- S.provider="free";S.model="free:auto";S.modelTitle="免费自动";S.allowPaid=false;S.selectedFree=true;
+ freeModeChoosing=false;S.provider="free";S.model="free:auto";S.modelTitle="免费自动";S.allowPaid=false;S.selectedFree=true;
  if(render)updateModelTitle();
 }
 async function useSavedConnection(){
@@ -612,8 +626,15 @@ async function removeSavedKey(){
 }
 
 async function fetchMe(){
- try{const v=await api("/api/me");S.user=v.user;S.quota=v.quota;restoreChatModelSelection();await hydrateModelPreferences(String(S.user?.id||""));chatModelPreferenceReady=true;updateModelTitle();setAuthUI()}
- catch(e){flashError("账号状态读取失败："+humanError(e))}
+ const epoch=++accountFetchEpoch;
+ try{
+  const v=await api("/api/me",undefined,8000);if(epoch!==accountFetchEpoch)return;
+  const old=String(S.user?.id||""),owner=String(v.user?.id||"");
+  if(old!==owner){S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
+  S.user=v.user;S.quota=v.quota;restoreChatModelSelection();
+  chatModelPreferenceReady=true;updateModelTitle();setAuthUI();
+  if(owner){void hydrateModelPreferences(owner);void fetchConnections()}
+ }catch(e){if(epoch!==accountFetchEpoch)return;chatModelPreferenceReady=true;updateModelTitle();flashError("账号状态读取失败："+humanError(e))}
 }
 let chatFetchSerial=0,historyScope="",historyNextCursor=null,historyLoading=false;
 function chatHistoryScope(){return JSON.stringify([S.user?.id||"",S.activeProjectId||"",!!S.archivedView])}
@@ -2876,8 +2897,20 @@ async function loadChat(id){
   renderHistory();closeMenu();
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
+function isAutoChatModel(){return S.provider==="free"&&S.model==="free:auto"}
+function chatModeLabel(){return freeModeChoosing||!isAutoChatModel()?"自由模式":"自动模式"}
+function refreshChatModeUI(){
+ const current=$("chatModeCurrent"),auto=$("chatAutoChoice"),mark=$("chatAutoMark"),manual=$("chatBoundChoice"),manualMark=$("chatBoundMark");
+ if(!current||!auto||!mark||!manual||!manualMark)return;
+ const selected=chatModeLabel()==="自动模式";current.textContent=chatModeLabel();current.title=freeModeChoosing?"请选择模型":chatSelectedName();
+ auto.classList.toggle("selected",selected);auto.setAttribute("aria-pressed",String(selected));mark.textContent=selected?"✓":"";
+ manual.classList.toggle("selected",!selected);manual.setAttribute("aria-pressed",String(!selected));manualMark.textContent=selected?"":"✓";
+}
+function chooseFreeChatMode(){
+ $("chatModeMenu").open=false;freeModeChoosing=true;S.query="";$("modelSearch").value="";activateSource("all");updateModelTitle();$("modelScroll").scrollTop=0;
+}
 function chatSelectedName(){
- if(!chatModelPreferenceReady)return "恢复模型…";
+ if(freeModeChoosing)return "自由模式 · 选择模型";
  if(S.provider==="free")return S.model==="free:auto"?"自动模式":(S.modelTitle||S.model);
  const raw=String(S.modelTitle||S.model||"").trim(),label=raw.startsWith(S.provider+" · ")?raw.slice(S.provider.length+3):raw;
  return providerRouteLabel(S.provider)+" · "+(WORK_PROVIDER_SHORT[S.provider]||S.provider)+" · "+(label||S.model);
@@ -2896,8 +2929,8 @@ function updateComposerModel(){
  switcher.title=(videoMode||imageMode||S.code)?"切回普通聊天":"切换聊天模型";
 }
 function updateModelTitle(){
- $("modelTitle").textContent=!chatModelPreferenceReady?"恢复模型…":S.provider==="free"&&S.model==="free:auto"?"自动模式":S.modelTitle;
- updateComposerModel();
+ $("modelTitle").textContent=freeModeChoosing?"自由模式":isAutoChatModel()?"自动模式":S.modelTitle;
+ updateComposerModel();refreshChatModeUI();
 }
 function setModel(row){
  const route=row.availableWith==="openrouter-key"?"openrouter":row.provider;
@@ -2910,7 +2943,7 @@ function setModel(row){
   
   return;
  }
- setComposerMode("text");
+ setComposerMode("text");freeModeChoosing=false;chatModelPreferenceReady=true;
  // Models returned by the OpenRouter catalog must use OpenRouter authentication, not the model author's API.
  const via=row.availableWith==="openrouter-key"?"openrouter":row.provider;
  S.provider=via;S.model=row.id;S.modelTitle=row.name||row.id;
@@ -3507,6 +3540,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  
  if(S.busy)return;
+ if(freeModeChoosing){openModels();flashError("请选择自由模式使用的模型");return}
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  const submittedCode=S.code,submittedTool=S.miniToolChoice;
  const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel,tool:submittedTool});
@@ -3541,9 +3575,10 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
  // Request routing is independent of the selected model preference.
  let requestProvider=S.provider,requestModel=S.model;
  if(submittedMode==="text"&&S.provider!=="free"&&!forceFreeOnce){
-  if(!S.connectionsLoaded){
-   if(!S.connectionsLoading)void fetchConnections();
-   flashError("正在同步模型连接，请稍后再发送");return;
+  if(!S.connectionsLoaded&&!connected(S.provider)){
+   const selectedProvider=S.provider,selectedModel=S.model;
+   if(!await fetchConnections()){flashError("个人模型连接暂未同步，可重试或切换自动模式");return}
+   if(S.busy||S.provider!==selectedProvider||S.model!==selectedModel||$("prompt").value.trim()!==prompt)return;
   }
   const imageOutput=S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages);
   const incompatible=S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")&&
@@ -3776,7 +3811,7 @@ async function loadCatalog(){
  catalogRefreshAt=Date.now();
  catalogRefreshPromise=(async()=>{
   try{
-   const d=await api("/api/models");
+   const d=await api("/api/models",undefined,12000);
    S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
    if(Array.isArray(d.sharedFreeModels)&&!d.catalogError)S.sharedFreeModels=d.sharedFreeModels.filter(m=>m.shared===true&&m.free===true&&m.provider==="free"&&typeof m.id==="string"&&m.id.startsWith("free:or/"));
    if(Array.isArray(d.freeTierModels))S.freeTierModels=d.freeTierModels.filter(m=>m.freeTier===true&&m.requiresPersonalKey===true&&["groq","gemini"].includes(m.provider)&&m.type==="text");
@@ -3907,17 +3942,16 @@ function modelMatches(m){
 function modelIsSelected(m){
  const via=m.availableWith==="openrouter-key"?"openrouter":m.provider;
  if(m.type==="video")return S.composerMode==="video"&&S.videoProvider===m.provider&&S.videoModel===m.id;
- return S.composerMode==="text"&&(m.type==="text"||m.outputImages)&&S.provider===via&&S.model===m.id;
+ return !freeModeChoosing&&S.composerMode==="text"&&(m.type==="text"||m.outputImages)&&S.provider===via&&S.model===m.id;
 }
 function renderModels(){
- const current=$("chatModeCurrent"),auto=$("chatAutoChoice"),mark=$("chatAutoMark");
- if(current&&auto&&mark){const selected=S.provider==="free"&&S.model==="free:auto";current.textContent=chatSelectedName();auto.classList.toggle("selected",selected);auto.setAttribute("aria-pressed",String(selected));mark.textContent=selected?"✓":"";}
+ refreshChatModeUI();
  const models=allModels();ensureModelHistory();
  const history=Object.entries(modelHistoryRecords).filter(([,v])=>v.success).sort((a,b)=>b[1].success-a[1].success).slice(0,40);
  const recentChip=$("sourceChips").querySelector('[data-source="recent"]');if(recentChip)recentChip.textContent="常用成功"+(history.length?" "+history.length:"");
  if(S.source==="recent"){const known=new Set(models.map(m=>modelHistoryKey(modelRoute(m),m.id)));for(const [key] of history){const [provider,id]=key.split("\0");if(!provider||!id||known.has(key))continue;models.push({id,name:id,provider,type:"text",free:provider==="free",unlisted:true});known.add(key)}}
  renderChinaBrands(models);
- const visible=models.filter(modelMatches);
+ const visible=models.filter(m=>modelMatches(m)&&(!freeModeChoosing||m.id!=="free:auto"));
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
   const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model),unlisted:true};
   if(modelMatches(active))visible.unshift(active);
@@ -3930,7 +3964,7 @@ function renderModels(){
  $("modelCount").textContent=count+" 个条目"+(S.source==="recent"?" · 最近成功使用":S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 免费优先 · 成功优先");
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
- const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
+ const signature=viewKey+"|"+chatModeLabel()+":"+freeModeChoosing+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
  if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
@@ -4363,7 +4397,7 @@ async function login(event){
  $("authSubmit").disabled=true;$("authError").textContent="";
  try{
   const d=await api(S.authRegister?"/api/register":"/api/login",{email,password});
-  S.user=d.user;hide("authDialog");form.reset();newChat();
+  ++accountFetchEpoch;S.user=d.user;restoredChatModelOwner=null;activateModelPrefOwner(String(d.user.id));restoreChatModelSelection();chatModelPreferenceReady=true;setAuthUI();hide("authDialog");form.reset();newChat();
   await Promise.all([fetchMe(),fetchProjects(),fetchChats(),fetchConnections()]);
   const brand=pendingHomeBrand;pendingHomeBrand=null;if(brand)openHomeBrand(brand);
  }catch(e){$("authError").textContent=humanError(e)}
@@ -4380,7 +4414,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;restoredWorkModelOwner=null;activateModelPrefOwner(null);workModelPreference=null;S.workStages=[];setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();++accountFetchEpoch;connectionsFlight=null;S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;restoredWorkModelOwner=null;activateModelPrefOwner(null);workModelPreference=null;S.workStages=[];setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
@@ -4583,8 +4617,8 @@ function wire(){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
  for(const [id,format] of [["miniSticker","sticker"],["miniGif","gif"]])$(id).addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode(format==="gif"?"video":"image");S.miniToolChoice=format;syncMiniTools();updateComposerModel();$("prompt").placeholder=format==="gif"?"描述动图内容和动作…":"描述贴纸内容…";$("prompt").focus({preventScroll:true})});
- $("chatAutoChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;setModel({provider:"free",id:"free:auto",name:"自动模式",type:"text",free:true})});
- $("chatBoundChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;S.query="";$("modelSearch").value="";activateSource("connected");$("modelScroll").scrollTop=0});
+ $("chatAutoChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;setFreeDefault(false);rememberChatModelSelection();updateModelTitle();renderModels()});
+ $("chatBoundChoice").addEventListener("click",chooseFreeChatMode);
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
  $("composerSwitchModel").addEventListener("click",()=>{
   hideAttachMenu();
@@ -4642,7 +4676,7 @@ function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
- applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();document.documentElement.classList.remove("pwa-boot-rainbow");setFreeDefault();resizePrompt();await fetchMe();await Promise.all([fetchProjects(),fetchChats(),fetchConnections()]);await finishOpenRouterOAuth();
- // Fresh launches always start at the homepage; opening history explicitly restores local media.
+ applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();document.documentElement.classList.remove("pwa-boot-rainbow");setFreeDefault();resizePrompt();
  syncWorkspaceRoute("");showWelcome();updateModelTitle();
+ await fetchMe();void fetchProjects();void fetchChats();void finishOpenRouterOAuth();
 });
