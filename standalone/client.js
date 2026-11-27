@@ -1446,15 +1446,24 @@ function normalizeAssistantMarkdown(answer){
 // Recover model-generated prompt sections without treating real program code as prompts.
 function imagePromptLabel(line){
  const s=String(line||"").trim().replace(/^(?:(?:>\s*)|(?:#{1,6}\s+)|(?:[-*]\s+)|(?:\d+[.)、]\s+))+/,"").replace(/^\*\*/,"");
- const m=s.match(/^((?:(?:中文|英文|Chinese|English)\s*(?:正向\s*)?(?:作图|绘图|图像|图片)?\s*(?:提示词|prompt)|(?:正向|负面|反向|作图|绘图|图像|图片)\s*提示词|(?:negative|positive|image)\s*prompt)(?:\s*[（(][^）)]{1,30}[）)])?)\s*(?:\*\*)?(?:[:：]\s*(?:\*\*)?\s*(.*)|$)/i);
- if(!m)return null;return {label:m[1],body:(m[2]||"").trim(),negative:/负面|反向|negative/i.test(m[1])};
+ const m=s.match(/^((?:(?:(?:中文|英文|English|Chinese)\s*)?(?:正向|负面|反向|positive|negative)?\s*(?:作图|绘图|图像|图片|摄影|image|drawing)?\s*(?:提示词|prompts?)|(?:正向|负面|反向|positive|negative)\s*(?:提示词|prompts?))(?:(?:\s*[（(][^）)]{1,40}[）)])|\s*(?:中文版|英文版|中文|英文|Chinese|English))?)\s*(?:\*\*)?(?:[:：]\s*(?:\*\*)?\s*(.*)|$)/i);
+ if(!m)return null;return {label:m[1],body:(m[2]||"").trim(),negative:/负面|反向|negative/i.test(m[1]),generic:/^(?:提示词|prompts?)$/i.test(m[1].trim())};
 }
 function promptSectionBoundary(line){
  const s=String(line||"").trim().replace(/^(?:>\s*|#{1,6}\s+|\*\*)+/,"");
  return !!imagePromptLabel(line)||/^(?:主题|人物(?:档案|姓名|设定|一致性)|固定(?:身份|档案)|推荐(?:画面|图片)?比例|比例|摄影(?:风格|参数)|镜头|光圈|继续完成|第\s*\d+\s*[套组]|[-]{3,})(?:\s*[:：、.]|\s|$)/.test(s)||/^\s*#{1,6}\s+\S/.test(line)||/^\s*\d{1,2}[.)、]\s+\S/.test(line);
 }
-function normalizePromptSections(lines){
- if(!lines.some(imagePromptLabel))return lines;
+function isImagePromptContext(value){
+ const s=String(value||"");
+ return /(?:提示词|prompts?)/i.test(s)&&/(?:作图|画图|绘图|图像|图片|照片|摄影|人物|插画|海报|写实|角色|image|photo|portrait|illustration|midjourney|stable diffusion|flux)/i.test(s)&&!/(?:视频|音乐|编程|代码|系统提示词|system prompt)/i.test(s);
+}
+function looksLikeImagePrompt(value){
+ const s=String(value||"").trim();
+ if(s.length<25||/^\s*(?:def |class |function |const |let |var |import |export |SELECT\s|CREATE\s|<\/?\w|#!|package\s|return\s|\{|\[)/m.test(s))return false;
+ return /(?:photorealistic|portrait|photography|cinematic|lighting|camera|lens|background|full.body|close.up|high.quality|ultra.detailed|illustration|anime|render|bokeh|composition|写实|摄影|画面|镜头|光线|光影|背景|高清|服装|发型|构图|特写|全身|景深|插画)/i.test(s);
+}
+function normalizePromptSections(lines,imageContext=false){
+ if(!lines.some(imagePromptLabel)&&!imageContext)return lines;
  const out=[];let outside=null;
  const mark=line=>String(line||"").trim().match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
  for(let i=0;i<lines.length;i++){
@@ -1485,8 +1494,13 @@ function normalizePromptSections(lines){
    }
    const payload=body.join("\n").trim();
    out.push("**"+label.label+"**");
-   if(payload){out.push("\x60\x60\x60"+(label.negative?"text":"image-prompt"),payload,"\x60\x60\x60")}
+   if(payload){out.push("\x60\x60\x60"+(label.negative||label.generic&&!imageContext&&!looksLikeImagePrompt(payload)?"text":"image-prompt"),payload,"\x60\x60\x60")}
    i=j-1;continue;
+  }
+  if(f&&!outside&&/^(?:text|plaintext|txt)?$/i.test(f[2])){
+   let end=i+1;while(end<lines.length){const close=mark(lines[end]);if(close&&!close[2]&&close[1][0]===f[1][0]&&close[1].length>=f[1].length)break;end++}
+   const body=lines.slice(i+1,end).join("\n"),prev=lines.slice(Math.max(0,i-3),i).join(" ");
+   if((imageContext||looksLikeImagePrompt(body))&&looksLikeImagePrompt(body)&&!/负面|反向|negative/i.test(prev)&&!/^\s*(?:negative|负面|反向)\s*[:：]/i.test(body)){out.push(f[1]+"image-prompt",...lines.slice(i+1,end));if(end<lines.length)out.push(lines[end]);i=end;continue}
   }
   if(f){
    if(outside&&f[1][0]===outside.mark[0]&&!f[2])outside=null;
@@ -1524,8 +1538,8 @@ function isDirectImageRequest(value){
  if(/(?:写|生成|输出|提供).{0,20}(?:代码|网页|网站|功能|按钮|指令|视频|文章|故事)/.test(s))return false;
  return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:画(?:一张|一幅|个|出|一下)?|绘制|作图|生成(?:一张|一幅|一组|一套)?(?:图片|图像|照片|写真|海报|插画|头像|壁纸|人物图|效果图)|制作(?:一张|一幅)?(?:图片|图像|照片|海报|头像|壁纸))/.test(s)||/^(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画)(?:一张|一幅)?(?:图片|图像|照片)/.test(s);
 }
-function renderAssistantText(bubble,answer){
- const lines=normalizePromptSections(normalizeAssistantMarkdown(answer));
+function renderAssistantText(bubble,answer,imageContext=false){
+ const lines=normalizePromptSections(normalizeAssistantMarkdown(answer),imageContext);
  bubble.classList.remove("chat-revealing");bubble.replaceChildren();let paragraph=[],list=null,pre=null,code=null,activeFence=null;
  function inline(target,value){
   const pattern=/(!\[[^\]]*\]\((?:https:\/\/[^\s)]+|\/api\/files\/[0-9a-f-]{36})\)|\*\*[^*]+\*\*|(\x60+)[^\x60]+\2)/gi;
@@ -1722,7 +1736,9 @@ function updateAssistantText(bubble,answer,complete=false){
  const text=complete?String(answer||""):streamingMarkdownPrefix(answer);
  if(assistantTextState.get(bubble)===text)return;
  const staged=node("div");
- renderAssistantText(staged,text);
+ const row=bubble.closest(".message");
+ const imageContext=!!row&&isImagePromptContext(messageQuestion(row));
+ renderAssistantText(staged,text,imageContext);
  bubble.classList.remove("chat-revealing");
  syncAssistantChildren(bubble,staged);
  assistantTextState.set(bubble,text);
