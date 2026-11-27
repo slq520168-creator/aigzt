@@ -2907,7 +2907,7 @@ function refreshChatModeUI(){
  manual.classList.toggle("selected",!selected);manual.setAttribute("aria-pressed",String(!selected));manualMark.textContent=selected?"":"✓";
 }
 function chooseFreeChatMode(){
- $("chatModeMenu").open=false;freeModeChoosing=true;S.query="";$("modelSearch").value="";activateSource("all");updateModelTitle();$("modelScroll").scrollTop=0;
+ $("chatModeMenu").open=false;freeModeChoosing=true;S.query="";$("modelSearch").value="";activateSource("all");updateModelTitle();$("modelScroll").scrollTop=0;void loadCatalog();
 }
 function chatSelectedName(){
  if(freeModeChoosing)return "自由模式 · 选择模型";
@@ -3804,24 +3804,39 @@ async function refreshConnectedModelCatalog(provider){
  })();
  return entry.pending;
 }
-async function loadCatalog(){
+const PUBLIC_MODEL_CACHE="aigzt:public-model-catalog:v2";
+let catalogError="",catalogCacheLoaded=false;
+function validCatalogRows(rows){return Array.isArray(rows)?rows.filter(m=>m&&typeof m.id==="string"&&m.id.length>0&&typeof m.provider==="string"&&typeof m.type==="string"):[]}
+function applyPublicCatalog(d){
+ const routes=validCatalogRows(d.freeModels);if(routes.length)S.freeModels=routes.map(m=>({...m,provider:"free"}));
+ const tier=validCatalogRows(d.freeTierModels).filter(m=>m.freeTier===true&&m.requiresPersonalKey===true&&["groq","gemini"].includes(m.provider)&&m.type==="text");if(tier.length)S.freeTierModels=tier;
+ const rows=validCatalogRows(d.models);
+ if(!d.catalogError&&rows.length){
+  S.remoteModels=rows.map(m=>({...m,author:m.provider,provider:"openrouter"}));
+  S.sharedFreeModels=validCatalogRows(d.sharedFreeModels).filter(m=>m.shared===true&&m.free===true&&m.provider==="free"&&m.id.startsWith("free:or/"));
+  S.loadedCatalog=true;return true;
+ }
+ return false;
+}
+function restorePublicCatalog(){
+ if(catalogCacheLoaded)return;catalogCacheLoaded=true;
+ try{const cache=JSON.parse(localStorage.getItem(PUBLIC_MODEL_CACHE)||"null");if(cache?.at&&Date.now()-cache.at<7*86400000&&applyPublicCatalog(cache.data||{}))catalogError="正在更新上次目录"}catch{}
+}
+function storePublicCatalog(d){
+ try{localStorage.setItem(PUBLIC_MODEL_CACHE,JSON.stringify({at:Date.now(),data:{freeModels:d.freeModels,freeTierModels:d.freeTierModels,sharedFreeModels:d.sharedFreeModels,models:d.models}}))}catch{}
+}
+async function loadCatalog(force=false){
+ restorePublicCatalog();
  if(catalogRefreshPromise)return catalogRefreshPromise;
- if(S.loadedCatalog&&Date.now()-catalogRefreshAt<15*60000)return;
- if(!S.loadedCatalog)$("modelCount").textContent="模型目录";
+ if(!force&&S.loadedCatalog&&!catalogError&&Date.now()-catalogRefreshAt<15*60000)return;
  catalogRefreshAt=Date.now();
  catalogRefreshPromise=(async()=>{
   try{
-   const d=await api("/api/models",undefined,12000);
-   S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
-   if(Array.isArray(d.sharedFreeModels)&&!d.catalogError)S.sharedFreeModels=d.sharedFreeModels.filter(m=>m.shared===true&&m.free===true&&m.provider==="free"&&typeof m.id==="string"&&m.id.startsWith("free:or/"));
-   if(Array.isArray(d.freeTierModels))S.freeTierModels=d.freeTierModels.filter(m=>m.freeTier===true&&m.requiresPersonalKey===true&&["groq","gemini"].includes(m.provider)&&m.type==="text");
-   if(!d.catalogError&&Array.isArray(d.models)&&d.models.length){
-    S.remoteModels=d.models.map(m=>({...m,author:m.provider,provider:"openrouter"}));
-    S.loadedCatalog=true;
-   }
-   
-  }catch{/* Keep the last successful model directory. */}
-  finally{catalogRefreshPromise=null;renderModels()}
+   const d=await api("/api/models",undefined,25000);
+   if(applyPublicCatalog(d)){catalogError="";storePublicCatalog(d)}
+   else catalogError=d.catalogError||"模型目录暂未返回完整数据";
+  }catch(e){catalogError=humanError(e)}
+  finally{catalogRefreshPromise=null;if($("modelDialog").open)renderModels()}
  })();
  return catalogRefreshPromise;
 }
@@ -3962,13 +3977,14 @@ function renderModels(){
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  const sharedCount=visible.filter(m=>m.free===true&&(m.provider==="free"||m.builtinVideo)).length,personalFree=visible.filter(m=>m.freeTier===true||(m.free===true&&m.provider!=="free"&&!m.builtinVideo)).length;
  $("modelCount").textContent=count+" 个条目"+(S.source==="recent"?" · 最近成功使用":S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 免费优先 · 成功优先");
+ const retry=$("modelCatalogRetry");retry.hidden=!catalogError;retry.title=catalogError;retry.textContent=S.loadedCatalog?"更新目录":"重试目录";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
  const signature=viewKey+"|"+chatModeLabel()+":"+freeModeChoosing+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
- if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
+ if(shown.length&&list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
- if(!shown.length){list.append(node("p","hint",!$("modelRegionLinks").hidden?"暂无符合当前筛选的已列出模型，可在上方连接对应服务商获取真实目录":S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));dialog.scrollTop=previousTop;return}
+ if(!shown.length){list.append(node("p","hint",S.source==="recent"?"暂无成功记录，切换全部模型即可选择":!$("modelRegionLinks").hidden?"暂无符合当前筛选的已列出模型，可在上方连接对应服务商获取真实目录":catalogError?"目录暂未加载成功，请重试目录":S.loadedCatalog?"暂无符合条件的模型，请切换筛选":"模型目录加载中；免费自动仍可使用"));dialog.scrollTop=previousTop;return}
  for(const item of shown){
   const via=item.availableWith==="openrouter-key"?"openrouter":item.provider,selected=modelIsSelected(item);
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
@@ -4052,9 +4068,11 @@ function openHomeBrand(brand){
  if(route.family==="llama"&&S.connectionsLoaded)$("keyStatus").textContent="Meta Llama 通过 OpenRouter 接入；绑定后选择 Llama 模型。";
 }
 function openModels(){
+ restorePublicCatalog();
+ S.source="all";S.filter="all";S.query="";
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
- S.modelPage=0;$("chatModeMenu").open=false;show("modelDialog");renderModels();$("modelScroll").scrollTop=0;$("sourceChips").scrollLeft=0;void loadModelHistory();void loadCatalog();
+ S.modelPage=0;$("chatModeMenu").open=false;show("modelDialog");void loadCatalog();renderModels();$("modelScroll").scrollTop=0;$("sourceChips").scrollLeft=0;void loadModelHistory();
  if(S.source==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
  else if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
@@ -4619,6 +4637,7 @@ function wire(){
  for(const [id,format] of [["miniSticker","sticker"],["miniGif","gif"]])$(id).addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode(format==="gif"?"video":"image");S.miniToolChoice=format;syncMiniTools();updateComposerModel();$("prompt").placeholder=format==="gif"?"描述动图内容和动作…":"描述贴纸内容…";$("prompt").focus({preventScroll:true})});
  $("chatAutoChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;setFreeDefault(false);rememberChatModelSelection();updateModelTitle();renderModels()});
  $("chatBoundChoice").addEventListener("click",chooseFreeChatMode);
+ $("modelCatalogRetry").addEventListener("click",()=>{void loadCatalog(true)});
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
  $("composerSwitchModel").addEventListener("click",()=>{
   hideAttachMenu();
@@ -4678,5 +4697,5 @@ document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
  applyTheme(enabled?"rainbow":"plain");syncHomeAmbient();document.documentElement.classList.remove("pwa-boot-rainbow");setFreeDefault();resizePrompt();
  syncWorkspaceRoute("");showWelcome();updateModelTitle();
- await fetchMe();void fetchProjects();void fetchChats();void finishOpenRouterOAuth();
+ restorePublicCatalog();void loadCatalog();await fetchMe();void fetchProjects();void fetchChats();void finishOpenRouterOAuth();
 });
