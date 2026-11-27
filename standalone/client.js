@@ -2737,7 +2737,7 @@ async function loadChat(id){
  if(S.workMode)setWorkMode(false);
  try{
   const v=await api("/api/chats/"+id);
-  S.chatId=id;$("messageList").replaceChildren();hideWelcome();
+  S.chatId=id;restoreChatInputMode();$("messageList").replaceChildren();hideWelcome();
   for(const m of v.messages){let incomplete=false;try{incomplete=Boolean(JSON.parse(m.usage_json||"null")?.incomplete)}catch{}appendMessage(m.role,m.body,m.model,null,incomplete,m.id,Boolean(m.saved),m.feedback,m.usage_json,m.created_at)}
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
@@ -2904,6 +2904,10 @@ function chooseMiniTool(action){
  $("prompt").focus({preventScroll:true});
 }
 
+function restoreChatInputMode(){
+ S.code=false;S.miniToolChoice=null;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
+ setComposerMode("text");hideAttachMenu();$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false");
+}
 function setComposerMode(mode){
  if(mode!=="image")S.miniToolChoice=null;
  S.composerMode=mode;
@@ -3978,36 +3982,49 @@ async function continueTextReply(row,original,button){
   }
  }finally{S.busy=false;button.disabled=false;$("sendBtn").disabled=false}
 }
+// Resolve each turn independently; the chosen chat model is never overwritten by media tools.
+function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel}){
+ const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+ if(mode==="text"&&!code&&!continueFrom&&compatible){
+  if(provider==="free"&&isDirectVideoRequest(prompt)){
+   if(attachments.length>2)return {error:"自动视频最多使用两张首尾帧图片"};
+   const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
+   return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
+  }
+  if(isDirectImageRequest(prompt))return {mode:"image",videoProvider,videoModel};
+ }
+ return {mode,videoProvider,videoModel};
+}
 async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
- const autoVideo=S.composerMode==="text"&&S.provider==="free"&&!S.code&&!continueFrom&&S.attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type))&&isDirectVideoRequest(prompt);
- if(autoVideo){if(S.attachments.length>2){flashError("自动视频最多使用两张首尾帧图片");return}const provider=S.attachments.length===2?"freeloop":S.attachments.length===1?"freewan":"freetext";selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);}
- const autoImage=!autoVideo&&S.composerMode==="text"&&!S.code&&!continueFrom&&S.attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type))&&isDirectImageRequest(prompt);
- const submittedMode=autoVideo?"video":autoImage?"image":S.composerMode;
- const submittedVideoProvider=S.videoProvider,submittedVideoModel=S.videoModel,submittedVideoRatio=S.videoRatio;
+ const submittedCode=S.code,submittedTool=S.miniToolChoice;
+ const turn=resolveChatTurn({mode:S.composerMode,provider:S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel});
+ if(turn.error){flashError(turn.error);return}
+ const submittedMode=turn.mode;
+ const submittedVideoProvider=turn.videoProvider,submittedVideoModel=turn.videoModel,submittedVideoRatio=S.videoRatio;
  if(!S.user){show("authDialog");return}
- const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
+ const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(submittedVideoProvider);
  const videoImages=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
  if(submittedMode==="video"&&!freeVideo){
   if(!prompt){flashError("请输入视频描述");return}
   if(S.attachments.length){flashError("当前个人 API 视频接口仅支持文字描述，请选择图生视频处理附件");return}
-  if(!videoKeyPermitted(S.videoProvider)){S.videoPendingKeyReturn=true;openKeyPanel(S.videoProvider);return}
-  if(!confirm("确认使用 "+VIDEO_PROVIDER_NAMES[S.videoProvider]+" 个人 API 额度生成视频？可能产生费用。"))return;
+  if(!videoKeyPermitted(submittedVideoProvider)){S.videoPendingKeyReturn=true;openKeyPanel(submittedVideoProvider);return}
+  if(!confirm("确认使用 "+VIDEO_PROVIDER_NAMES[submittedVideoProvider]+" 个人 API 额度生成视频？可能产生费用。"))return;
  }
  if(freeVideo&&!prompt){flashError("请输入视频描述");return}
- if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
+ if(freeVideo&&submittedVideoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
- if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
+ if(submittedMode==="image"&&submittedTool==="image-edit"&&!S.attachments.length){
   flashError("请点击＋中的照片上传参考图片");showAttachMenu();return
  }
- if(freeVideo&&S.videoProvider!=="freetext"&&videoImages.length<(S.videoProvider==="freeloop"?2:1)){
-  flashError(S.videoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
+ if(freeVideo&&submittedVideoProvider!=="freetext"&&videoImages.length<(submittedVideoProvider==="freeloop"?2:1)){
+  flashError(submittedVideoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
   showAttachMenu();return
  }
- if(freeVideo&&S.videoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
+ if(freeVideo&&submittedVideoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
   flashError("首尾帧需要两张不同的图片附件");return
  }
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
@@ -4034,7 +4051,10 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
- const sentRow=appendMessage("user",sentBody);$("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
+ const sentRow=appendMessage("user",sentBody);$("prompt").value="";S.attachments=[];renderAttachments();
+ // Consume explicit tool choice once. Pending media owns its message, not the composer.
+ if(submittedMode!=="text"||(submittedCode&&requestProvider==="free"))restoreChatInputMode();
+ settlePromptSize();
  const loading=appendMessage("assistant","");
   setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
@@ -4073,7 +4093,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
      },100);
     };
     try{result=await apiChatStream({chatId:S.chatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
-      mode:S.code?"code":"general",freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined},onDelta);}
+      mode:submittedCode?"code":"general",freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined},onDelta);}
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
@@ -4082,7 +4102,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   }
   else if(freeVideo){
    const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:S.videoProvider,model:S.videoModel,imageId:img?.id,endImageId:S.videoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:S.videoRatio,prompt});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,imageId:img?.id,endImageId:submittedVideoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:submittedVideoRatio,prompt});
   }
   else{
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
@@ -4127,15 +4147,15 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
-   if(isImageMessage&&S.composerMode!=="image")setComposerMode("image");
-   if(freeVideo){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;if(S.composerMode!=="video")setComposerMode("video")}
-   else if(!isImageMessage&&S.composerMode!=="text")setComposerMode("text");
+   if(isImageMessage){setComposerMode("image");S.miniToolChoice=submittedTool;syncMiniTools()}
+   else if(submittedMode==="video"){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;setComposerMode("video")}
+   else{restoreChatInputMode();if(submittedCode){S.code=true;$("codeToggle").classList.add("active");$("codeToggle").setAttribute("aria-pressed","true");setComposerMode("text")}}
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom,forceFreeOnce);
   });
   const detail=submittedMode==="text"?(attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")?humanError(e):"当前线路暂时繁忙，原消息已保留，可继续重试。"):humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
-  if(!isImageMessage&&submittedMode==="text"&&requestProvider!=="free"){
+  if(submittedMode==="text"&&requestProvider!=="free"){
    const alternate=messageTool("layers","手动使用免费自动重试",()=>{
     if(S.busy||S.workMode||S.freeToolsMode||!sentRow.isConnected)return;
     if(($("prompt").value.trim()||S.attachments.length)&&!confirm("重试会替换未发送的草稿及附件，继续吗？"))return;
