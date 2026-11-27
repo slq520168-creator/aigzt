@@ -6,6 +6,9 @@ test("work routes keep personal API pinned, auto never uses personal keys",()=>{
  assert.deepEqual(fn({steps:[{provider:"auto"}],fallback_enabled:1},saved).map(r=>r.id),["free:auto"]);
  assert.deepEqual(fn({steps:[{provider:"groq",model:"a"}],fallback_enabled:1},saved).map(r=>r.id),["groq:a"]);
  assert.equal(fn({steps:[{provider:"groq",model:"a"}]},[]).length,0);
+ const locked=new Function("workStepPlan","validModelIdentifier","providerModelIsFree",w.slice(w.indexOf("function workRoutes(t,"),w.indexOf("async function workPrompt("))+";return workRoutes")(t=>t.steps,()=>true,()=>false);
+ assert.equal(locked({steps:[{provider:"openrouter",model:"test/free:free"}]},[{provider:"openrouter",model_id:"test/free:free",consent:0}]).length,1);
+ assert.equal(locked({steps:[{provider:"openrouter",model:"test/paid"}]},[{provider:"openrouter",model_id:"test/paid",consent:0}]).length,0);
 });
 test("all direct shared free text catalog entries are eligible for auto routing",async()=>{
  const src=w.slice(w.indexOf("async function automaticFreeSources("),w.indexOf("async function freeRouteStates("));

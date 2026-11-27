@@ -9,7 +9,7 @@ test("fallback never persists a model preference",()=>{
  assert.match(send,/if\(!S\.connectionsLoaded\)/);
 });
 test("restore selection before showing model name",()=>{
- assert.match(c,/restoreChatModelSelection\(\);chatModelPreferenceReady=true;updateModelTitle\(\)/);
+ assert.match(c,/restoreChatModelSelection\(\);restoreWorkModelSelection\(\);chatModelPreferenceReady=true;updateModelTitle\(\)/);
  assert.match(c,/if\(!chatModelPreferenceReady\)return "恢复模型…"/);
  assert.match(c,/localStorage\.setItem\(chatModelStorageKey\(S\.user\.id\)/);
 });

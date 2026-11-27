@@ -2347,7 +2347,8 @@ function workRoutes(t,saved,index=0){
  const key=saved.find(x=>x.provider===provider);
  if(!key)return [];
  const model=step.model||key.model_id;
- if(!validModelIdentifier(model)||!(key.consent===1||providerModelIsFree(provider,model)))return [];
+ const openRouterFree=provider==="openrouter"&&(model==="openrouter/free"||model.endsWith(":free"));
+ if(!validModelIdentifier(model)||!(key.consent===1||providerModelIsFree(provider,model)||openRouterFree))return [];
  return [{id:provider+":"+model,provider,model,label:provider,entry:key}];
 }
 async function workPrompt(env,user,t,index,prior){
