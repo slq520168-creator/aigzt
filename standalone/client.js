@@ -25,7 +25,7 @@ const ICONS={
  'list-checks':'<path d="m3 7 2 2 3-3M3 15l2 2 3-3M12 8h9M12 16h9"/>',
  x:'<path d="M18 6 6 18M6 6l12 12"/>',
  plus:'<path d="M12 5v14M5 12h14"/>',
- 'square-pen':'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.37 3.63a1 1 0 0 1 3 3L12 16l-4 1 1-4Z"/>',
+ 'square-pen':'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M16 3a2.83 2.83 0 1 1 4 4l-9 9-4 1 1-4Z"/>',
  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
  'audio-lines':'<path d="M2 10v4m4-8v12m4-15v18m4-13v8m4-11v14m4-11v6"/>',
  'copy':'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
@@ -34,14 +34,15 @@ const ICONS={
  paperclip:'<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 1 1 5.66 5.66L9.4 17.41a2 2 0 0 1-2.83-2.83l8.48-8.49"/>',
  link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
  'circle-user':'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="9" r="3"/><path d="M6 19a6 6 0 0 1 12 0"/>',
- settings:'<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m19.4 15 .6 1-2 2-1-.6a2 2 0 0 0-2 .1L14 20h-4l-.5-2.5a2 2 0 0 0-2-.1l-1 .6-2-2 .6-1a2 2 0 0 0-.1-2L2.5 12v-2l2.5-.5a2 2 0 0 0 .1-2l-.6-1 2-2 1 .6a2 2 0 0 0 2-.1L10 2.5h4l.5 2.5a2 2 0 0 0 2 .1l1-.6 2 2-.6 1a2 2 0 0 0 .1 2l2.5.5v2l-2.5.5a2 2 0 0 0-.1 2Z"/>',
+ settings:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
  languages:'<path d="M2 5h12M7 2h1M4 14l6-6 2-3M5 8l6 6"/><path d="m22 22-5-10-5 10M14 18h6"/>',
  scan:'<path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="8" y="8" width="8" height="8" rx="1"/><circle cx="12" cy="12" r="1"/>',
  film:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/><path d="m10 8 5 4-5 4z"/>',
  clapperboard:'<rect x="3" y="10" width="18" height="11" rx="2"/><path d="M3 10V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4M7 4l4 6M15 4l4 6"/><path d="m10 13 5 3-5 3z"/>',
  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
- history:'<path d="M3 12a9 9 0 1 1 3 6.7M3 5v7h7M12 7v5l3 2"/>',
+ 'chevron-right':'<path d="m9 18 6-6-6-6"/>',
+ history:'<path d="M3 12a9 9 0 1 1 9 9 9.75 9.75 0 0 1-6.74-2.74L3 15"/><path d="M3 21v-6h6"/><path d="M12 7v5l4 2"/>',
  ellipsis:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
  palette:'<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8" cy="7" r="1"/><circle cx="6.5" cy="12" r="1"/><path d="M12 22a10 10 0 1 1 10-10c0 2-1 3-3 3h-3a2 2 0 0 0-2 2 2 2 0 0 1-2 5"/>',
  camera:'<path d="M14 4h-4l-2 3H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-4z"/><circle cx="12" cy="13" r="3"/>',
@@ -94,6 +95,7 @@ function renderIcons(scope=document){
  if(scope.matches?.("[data-icon]"))icons.unshift(scope);
  for(const el of icons){
   const name=el.dataset.icon,path=ICONS[name]||ICONS.info;
+  if(el.closest(".work-intro-actions,.work-model-choose,.model-mode-button,.composer-model-switch")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
   const [from,to]=(el.closest(".message-copy-btn")&&MESSAGE_ICON_COLORS[name])||ICON_GRADIENTS[ICON_TONES[name]||"blue"];
   const id="aigzt-icon-"+(++iconGradientSerial);
   el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#'+id+')" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+from+'"/><stop offset="100%" stop-color="'+to+'"/></linearGradient></defs>'+path+'</svg>';
@@ -2751,6 +2753,7 @@ function updateComposerModel(){
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
  const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
+ $("toolsAction").hidden=work;if(work)$("toolTray").hidden=true;
  $("replyLevelTrigger").hidden=work;if(work)closeReplyLevel();
  name.classList.toggle("is-auto-model",work?["auto","free"].includes(currentWorkStage().step.provider):S.provider==="free"&&S.model==="free:auto");
  name.textContent=imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(S.videoProvider==="freeloop"?"首尾帧视频":S.videoProvider==="freewan"?"图生视频":VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频"):S.code?"代码 · "+active:active;
@@ -2760,7 +2763,7 @@ function updateComposerModel(){
  switcher.title=(videoMode||imageMode||S.code)?"切回普通聊天":work?"切换工作模型":"切换聊天模型";
 }
 function updateModelTitle(){
- $("modelTitle").textContent=!chatModelPreferenceReady?"恢复模型…":S.provider==="free"&&S.model==="free:auto"?"免费自动":S.modelTitle;
+ $("modelTitle").textContent=!chatModelPreferenceReady?"恢复模型…":S.provider==="free"&&S.model==="free:auto"?"自动模式":S.modelTitle;
  updateComposerModel();
 }
 function setModel(row){
@@ -3089,11 +3092,12 @@ function renderWorkProviderModels(provider){
 function renderWorkAgentCatalog(){
  updateWorkSelectedModel();
  const target=$("workAgentCatalog");target.replaceChildren();
- const regions=["推荐","中国","国际","俄罗斯"];
+ const regions=["已连接","推荐","中国","国际","俄罗斯"];
  const regionMap={
-  推荐:["free","groq","openrouter","deepseek","yandex","gigachat"],
-  中国:["free","qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","stepfun","xiaomi","longcat","baichuan","iflytek","sensetime","novai_pro"],
-  国际:["free","groq","openrouter","cerebras","openai","claude","novai","grok","gemini"],
+  已连接:Object.keys(S.savedProviders).filter(p=>Object.hasOwn(WORK_PROVIDER_NAMES,p)&&p!=="free"&&!VIDEO_ONLY_PROVIDERS.has(p)),
+  推荐:["groq","openrouter","deepseek","yandex","gigachat"],
+  中国:["qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","stepfun","xiaomi","longcat","baichuan","iflytek","sensetime","novai_pro"],
+  国际:["groq","openrouter","cerebras","openai","claude","novai","grok","gemini"],
   俄罗斯:["yandex","gigachat"]
  };
  if(!regions.includes(S.workModelRegion))S.workModelRegion="推荐";
@@ -3109,8 +3113,14 @@ function renderWorkAgentCatalog(){
   });
   selector.append(button);
  }
+ const auto=$("workAutoChoice");auto.replaceChildren();
+ const automatic=["auto","free"].includes(currentWorkStage().step.provider);
+ const autoBtn=node("button","model-mode-button"+(automatic?" selected":""));autoBtn.type="button";autoBtn.setAttribute("aria-pressed",String(automatic));
+ const autoText=node("span","model-mode-text");autoText.append(node("strong","","自动模式"),node("small","","后台切换直接免费模型"));
+ autoBtn.append(iconSlot("layers"),autoText,node("span","model-mode-mark",automatic?"✓":""));autoBtn.addEventListener("click",()=>void chooseDedicatedWorkModel("free",""));auto.append(autoBtn);renderIcons(auto);
  target.append(selector);
  const grid=node("div","work-region-models");
+ if(!regionMap[S.workModelRegion].length)grid.append(node("p","hint","暂无已连接的文字模型，可从其他分类连接 API。"));
  for(const provider of regionMap[S.workModelRegion]){
   const name=provider==="free"?"自动模式":WORK_PROVIDER_NAMES[provider];
   const record=S.savedProviders[provider];
@@ -3120,7 +3130,7 @@ function renderWorkAgentCatalog(){
   const button=node("button","work-model-option "+(ready?"ready":"connect")+(selected?" selected":""));
   button.type="button";button.setAttribute("aria-pressed",String(selected));
   const top=node("span","work-model-option-head");
-  top.append(node("strong","",WORK_PROVIDER_SHORT[provider]||name),node("span","work-model-option-action",selected?"✓ 当前使用":ready?"选择":"连接"));
+  const brand=node("strong","",WORK_PROVIDER_SHORT[provider]||name);brand.prepend(providerLogo(provider));top.append(brand,node("span","work-model-option-action",selected?"✓ 当前使用":ready?"选择":"连接"));
   button.append(top,node("small","",selected?(provider==="free"?"自动匹配站内直接免费模型":"已选模型："+(active.model||record?.model||"未指定")):provider==="free"?"自动调用真实免费线路":ready?"已验证连接 · 点击选择模型":record?"需要验证连接或授权":"连接官方 API 后使用"));button.title=selected?(provider==="free"?"当前使用：免费自动线路":"当前使用："+name+" / "+(active.model||record?.model||"未指定")):name;
   button.addEventListener("click",()=>{
    if(S.workBusy||S.workDetail?.task?.status==="running"){$("workModelMessage").textContent="当前任务正在执行，不能更换模型";return}
@@ -3942,11 +3952,11 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(freeVideo&&S.videoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
  if(submittedMode==="image"&&S.miniToolChoice==="image-edit"&&!S.attachments.length){
-  flashError("请点击＋中的照片上传参考图片");$("attachMenu").hidden=false;return
+  flashError("请点击＋中的照片上传参考图片");showAttachMenu();return
  }
  if(freeVideo&&S.videoProvider!=="freetext"&&videoImages.length<(S.videoProvider==="freeloop"?2:1)){
   flashError(S.videoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
-  $("attachMenu").hidden=false;return
+  showAttachMenu();return
  }
  if(freeVideo&&S.videoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
   flashError("首尾帧需要两张不同的图片附件");return
@@ -4322,6 +4332,8 @@ function modelIsSelected(m){
  return S.composerMode==="text"&&(m.type==="text"||m.outputImages)&&S.provider===via&&S.model===m.id;
 }
 function renderModels(){
+ const current=$("chatModeCurrent"),auto=$("chatAutoChoice"),mark=$("chatAutoMark");
+ if(current&&auto&&mark){const selected=S.provider==="free"&&S.model==="free:auto";current.textContent=chatSelectedName();auto.classList.toggle("selected",selected);auto.setAttribute("aria-pressed",String(selected));mark.textContent=selected?"✓":"";}
  const models=allModels();renderChinaBrands(models);
  const visible=models.filter(modelMatches);
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
@@ -4907,7 +4919,7 @@ function wire(){
   $("workSpecificChooser").replaceChildren();
   S.workPickingProvider="";
   const p=currentWorkStage().step.provider;
-  S.workModelRegion=["yandex","gigachat"].includes(p)?"俄罗斯":
+  S.workModelRegion=(p!=="auto"&&S.savedProviders[p])?"已连接":["yandex","gigachat"].includes(p)?"俄罗斯":
     ["qwen","deepseek","zhipu","kimi","minimax","siliconflow","doubao","qianfan","hunyuan","novai_pro"].includes(p)?"中国":
     ["groq","openrouter","cerebras","openai","claude","novai","grok","gemini"].includes(p)?"国际":"推荐";
   renderWorkAgentCatalog();show("workModelDialog");
@@ -4997,7 +5009,7 @@ function wire(){
  $("modelInstructionSave").addEventListener("click",()=>void saveModelInstruction());
  $("savedMessagesBtn").addEventListener("click",()=>void toggleSavedMessages());
  
- $("attachButton").addEventListener("click",()=>{if($("attachMenu").hidden){$("attachMenu").hidden=false}else hideAttachMenu()});
+ $("attachButton").addEventListener("click",()=>{if($("attachMenu").hidden){showAttachMenu()}else hideAttachMenu()});
  // Native <label for=file-input> activation is a real iPhone user gesture.
  for(const id of ["cameraAction","photosAction","filesAction"]){
   // Leave native label's default activation untouched until the OS picker opens.
@@ -5028,6 +5040,8 @@ function wire(){
  for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
+ $("chatAutoChoice").addEventListener("click",()=>setModel({provider:"free",id:"free:auto",name:"自动模式",type:"text",free:true}));
+ $("chatBoundChoice").addEventListener("click",()=>{S.query="";$("modelSearch").value="";activateSource("connected");$("modelList").scrollIntoView({block:"start"})});
  $("composerSwitchModel").addEventListener("click",()=>{
   hideAttachMenu();
   if(S.composerMode!=="text"||S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");setComposerMode("text");$("prompt").focus({preventScroll:true})}
@@ -5079,7 +5093,8 @@ function wire(){
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();wireChatScrollArrows();
 }
-function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false")}
+function showAttachMenu(){closeReplyLevel();$("attachMenu").hidden=false;$("attachButton").setAttribute("aria-expanded","true")}
+function hideAttachMenu(){$("attachMenu").hidden=true;$("toolTray").hidden=true;$("attachButton").setAttribute("aria-expanded","false");$("toolsAction").setAttribute("aria-expanded","false")}
 
 document.addEventListener("DOMContentLoaded",async()=>{
  wire();renderIcons();applyChatTextSize(savedChatTextSize());let enabled=true;try{enabled=localStorage.getItem("aigzt:rainbow")!=="0"}catch{}
