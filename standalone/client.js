@@ -4011,7 +4011,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   const incompatible=S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")&&
    (S.attachments.some(x=>x.type==="application/pdf")||!["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(S.model));
   if(!connected(S.provider)||(!isFreeModel(S.provider,S.model)&&!S.allowPaid)){openKeyPanel(S.provider);return}
-  if(incompatible&&!imageOutput){flashError("当前模型不支持该附件，请手动切换模型后发送");return}
+  if(incompatible&&!imageOutput){flashError("当前个人模型不支持此附件，可选择自动模式识图");return}
  }
  if(submittedMode==="text"&&forceFreeOnce){requestProvider="free";requestModel="free:auto"}
  S.busy=true;$("sendBtn").disabled=true;hideWelcome();flashError("");
@@ -4080,7 +4080,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   if(loading.isConnected){
    S.chatId=result.chatId;
    if(submittedMode==="text"){
-    if(!result.incomplete&&(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined))){recordModelOutcome(requestProvider,requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel))}
+    if(!result.incomplete&&(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined))){recordModelOutcome(requestProvider,requestProvider==="free"&&attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")?"free:auto":requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel))}
     else if(result.primaryFailure)recordModelOutcome(requestProvider,requestModel,false,result.primaryFailure);
     if(result.freeFallback===true&&!result.incomplete)recordModelOutcome("free","free:auto",true);
    }
@@ -4120,7 +4120,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom,forceFreeOnce);
   });
-  const detail=submittedMode==="text"?"当前线路暂时繁忙，原消息已保留，可继续重试。":humanError(e);
+  const detail=submittedMode==="text"?(attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")?humanError(e):"当前线路暂时繁忙，原消息已保留，可继续重试。"):humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(!isImageMessage&&submittedMode==="text"&&requestProvider!=="free"){
    const alternate=messageTool("layers","手动使用免费自动重试",()=>{
