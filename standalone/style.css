@@ -762,15 +762,26 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
 .work-error-detail>p{margin:9px 0 0;font-size:11px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;color:#73655b}
 .work-continue-primary{background:linear-gradient(120deg,#376ee0,#24a5b3)!important;border-color:#4485d3!important;color:#fff!important;box-shadow:0 5px 15px rgba(53,111,202,.16)!important}
 .work-continue-primary:disabled{opacity:.6}
-.work-progress{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:15px}
-.work-progress-step{font-size:12px;padding:6px 11px;background:#edf3fc;color:#6582a6;border-radius:13px;border:1px solid #e1e9f6}
-.work-progress-step.done{background:#e4f2ec;color:#3e7758}
-.work-progress-step.current{background:linear-gradient(115deg,#dae8ff,#ddf9f2);border-color:#80b5d4;color:#215e89;font-weight:700}
+.work-progress{display:flex;flex-direction:column;gap:9px;margin:15px 0;padding:16px;border:1px solid #e3e8ec;border-radius:15px;background:var(--surface,#fff)}
+.work-progress-head{display:flex;align-items:center;justify-content:space-between;font-size:14px}.work-progress-head small,.work-progress-step small{font-size:11px;color:#77858e}
+.work-progress-meter{width:100%;height:5px;accent-color:#32967b;margin:0 0 7px}
+.work-step-mark{display:grid;place-items:center;width:22px;height:22px;flex:none;border-radius:50%;border:1px solid #d7e0e4;font-size:11px}
+.work-step-name{flex:1;min-width:0}
+.work-goal{background:#f2f5f7;border-radius:13px;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;margin:12px 0;line-height:1.6;color:#293e4a}
+.work-action-history{border-top:1px solid #e3e8ec;padding:12px 0}.work-action-history summary{cursor:pointer;font-size:13px}.work-audit-row{display:flex;flex-direction:column;gap:4px;padding:10px 0;overflow-wrap:anywhere;font-size:13px}.work-audit-row small{color:#77858e}
+.work-settings-content{flex:1;min-height:0;overflow:auto;width:min(100%,790px);margin:0 auto;padding:12px 0 20px}
+.work-quick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;width:min(100%,440px);margin-top:18px}
+.work-quick{display:flex;align-items:center;gap:9px;border:1px solid #e3e8ec;border-radius:12px;padding:13px 12px;background:#fff;color:#324752;text-align:left;cursor:pointer;font-size:13px;min-height:48px}
+.work-quick:hover{background:#f4f7fa}.work-hero-icon{display:grid;place-items:center;width:56px;height:56px;border-radius:17px;background:#f1effb;margin-bottom:7px}.work-hero-icon svg{width:32px;height:32px}
+.work-home-note{font-size:13px;color:#7e8d92}
+.work-progress-step{display:flex;align-items:center;gap:10px;font-size:13px;min-height:30px;color:#697d88}
+.work-progress-step.done .work-step-mark{background:#e4f2ec;color:#287f62;border-color:transparent}
+.work-progress-step.current{color:#215e89;font-weight:650}.work-progress-step.current .work-step-mark{border-color:#6896c7;color:#215e89;background:#eef5fc}
 .work-step{padding:15px 0;border-top:1px solid #edf0f1}
 .work-step-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:9px}
 .work-step-head strong{font-size:14px}
 .work-step-head small{font-size:11px;color:#859599;overflow-wrap:anywhere;text-align:right}
-.work-step-body{font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+.work-step-body{font-size:15px;overflow-wrap:anywhere;line-height:1.75}.work-step-body p{white-space:pre-wrap;margin:0 0 10px}.work-step-body pre{overflow:auto;max-width:100%}.work-step-body table{border-collapse:collapse;width:100%;font-size:13px}.work-step-body th,.work-step-body td{border:1px solid #e2e8eb;padding:6px;text-align:left}
 .work-switch-note{font-size:12px;color:#567c73;margin-top:8px}
 .work-actions{display:flex;flex-wrap:wrap;gap:9px;margin:16px 0}
 .work-actions button{font-size:12px;padding:8px 12px}
@@ -982,7 +993,7 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
 .work-agents,.work-config{border:1px solid #e8ebef;box-shadow:0 1px 3px rgba(35,60,78,.025);margin-top:10px}
 .work-agents>summary,.work-config>summary{padding:11px 13px;font-size:13px}
 .work-agents>summary small,.work-config>summary span{font-size:11px}
-.work-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;text-align:center;min-height:140px;padding:19px 12px;color:#7e8d92;font-size:13px}
+.work-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;text-align:center;min-height:65%;padding:24px 12px;color:#7e8d92;font-size:13px}
 .work-empty strong{font-size:18px;letter-spacing:-.3px;color:#243941}
 .work-detail{max-width:870px}
 .work-stage-editor,.work-route-editor{gap:9px}
@@ -1021,7 +1032,7 @@ html,body{min-width:0;max-width:100%;height:100%;overflow:hidden}
  .work-intro h2{font-size:19px}
  .work-intro p{font-size:11px}
  .work-agents,.work-config{margin-top:9px}
- .work-empty{min-height:150px;padding:22px 8px}
+ .work-empty{min-height:64%;padding:22px 8px}
  .work-intro-actions{gap:5px}
  .work-config-body{padding:0 11px 13px}
  .work-config-row{padding:10px}

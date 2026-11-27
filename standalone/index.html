@@ -58,72 +58,20 @@
     <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button></div>
    </div>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <div class="page-heading work-intro"><button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>工作</h2><div class="work-intro-actions"><button type="button" id="workNewTask" class="outline">新任务</button></div></div>
+    <div class="page-heading work-intro"><button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>工作</h2><div class="work-intro-actions"><button type="button" id="workHistoryOpen" class="icon-btn" aria-label="历史工作" title="历史工作"><span class="ui-icon" data-icon="history"></span></button><button type="button" id="workSettingsOpen" class="icon-btn" aria-label="工作设置" title="工作设置"><span class="ui-icon" data-icon="settings"></span></button><button type="button" id="workNewTask" class="icon-btn" aria-label="新建工作" title="新建工作"><span class="ui-icon" data-icon="square-pen"></span></button></div></div>
     <div class="work-page-content" id="workScroll">
-    <div class="page-intro"><p>输入任务，自动规划与执行</p></div>
-    <div class="work-model-toolbar" aria-label="工作专用模型设置">
-     <div class="work-model-ident"><span>工作专用模型</span><strong id="workSelectedModel">免费自动</strong><small>独立于聊天模型 · 仅用于工作任务</small></div>
-     <button type="button" class="work-model-choose" id="workModelChoose"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span>选择工作模型</button>
-    </div>
-    
-    <details id="workToolPanel" class="work-tool-panel">
-     <summary><strong>项目连接与实际操作</strong><small>GitHub · 数据库 · 提交 · 部署</small></summary>
-     <div class="work-tool-inner">
-      <div class="work-tool-grid">
-       <form id="workGithubForm" class="work-tool-card">
-        <h3>GitHub 仓库</h3><p id="workGithubInfo">未连接</p>
-        <label>仓库 owner/repo<input id="workGithubRepo" placeholder="owner/repo" required></label>
-        <label>工作分支<input id="workGithubBranch" value="main" required></label>
-        <label>GitHub 细粒度 Token<input id="workGithubToken" type="password" autocomplete="off" required></label>
-        <div class="work-tool-actions"><button class="outline" type="submit">验证并连接</button><button class="outline" type="button" id="workGithubDisconnect">断开</button></div>
-       </form>
-       <form id="workDbForm" class="work-tool-card">
-        <h3>Supabase 只读连接</h3><p id="workDbInfo">未连接</p>
-        <label>Project Ref<input id="workDbRef" placeholder="项目引用名" required></label>
-        <label>Publishable / anon key<input id="workDbToken" type="password" placeholder="禁止 service_role 密钥" autocomplete="off" required></label>
-        <div class="work-tool-actions"><button class="outline" type="submit">加密保存</button><button class="outline" type="button" id="workDbDisconnect">断开</button></div>
-       </form>
-      </div>
-      <section class="work-tool-card">
-       <h3>GitHub 文件 · 真实读取和修改</h3>
-       <div class="work-tool-actions"><input id="workRepoPath" placeholder="文件路径，例如 src/app.js" aria-label="仓库文件路径"><button class="outline" type="button" id="workRepoRead">读取文件</button><button class="outline" type="button" id="workRepoContext">加入任务上下文</button></div>
-       <div id="workRepoEntries" class="work-tool-actions"></div><pre id="workRepoPreview" class="work-code-preview" hidden></pre>
-       <label>修改定位（可选）<input id="workPatchAnchor" placeholder="函数名或原文片段"></label>
-       <label>补充修改要求<input id="workPatchInstruction" placeholder="只修复目标代码，不改变无关功能"></label>
-       <button type="button" class="outline" id="workPropose">让 AI 生成可审核的修改草稿</button>
-       <div id="workDraftArea" hidden>
-        <h3>修改审核</h3><p id="workDraftMeta"></p>
-        <div class="work-diff"><div><strong>原文</strong><pre id="workDiffOld" class="work-code-preview"></pre></div><div><strong>替换建议</strong><pre id="workDiffNew" class="work-code-preview"></pre></div></div>
-        <button id="workCommit" type="button" class="primary">确认后提交到 GitHub</button>
-       </div>
-      </section>
-      <section class="work-tool-card">
-       <h3>数据库表 · 只读查询</h3>
-       <div class="work-tool-actions"><input id="workDbTable" placeholder="输入表名" aria-label="数据库表名"><button type="button" class="outline" id="workDbPreview">查询前 5 行</button><button type="button" class="outline" id="workDbContext">加入任务上下文</button></div>
-       <pre id="workDbRows" class="work-code-preview" hidden></pre>
-      </section>
-      <section class="work-tool-card">
-       <h3>GitHub Actions · 部署核验</h3>
-       <p>仅触发已经存在的工作流，不会自动判定部署成功。</p>
-       <div class="work-tool-actions"><input id="workWorkflow" placeholder="已有工作流，例如 deploy.yml"><button class="outline" type="button" id="workDeploy">确认触发</button><button class="outline" type="button" id="workRuns">核对运行状态</button></div>
-       <div id="workRunResults"></div>
-      </section>
-      <p id="workToolStatus" role="status"></p>
-     </div>
-    </details>
-<details class="work-config" id="workConfig">
-     <summary>高级任务配置 <span id="workConfigSummary">默认自动 · 点击自定义步骤与接力</span></summary>
-     <div class="work-config-body">
-      <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
-      <div class="work-config-section"><div class="work-section-heading"><strong>模型接力</strong><span>仅已授权的 API 模型参与自动切换</span></div><div id="workRouteEditor" class="work-route-editor"></div><button type="button" class="work-add" id="workAddRoute">+ 添加候补模型</button><label class="work-checkbox"><input type="checkbox" id="workFallback" checked>当前模型不可用时，自动尝试其他授权模型</label></div>
-      <div class="work-config-foot"><button type="button" class="outline" id="workSaveConfig">保存任务配置</button><span id="workConfigMessage" role="status"></span></div>
-     </div>
-    </details>
-    <div id="workEmpty" class="work-empty"><strong>开始一项工作</strong><span>输入任务即可开始，更多选项在高级配置中。</span></div>
+    <div id="workEmpty" class="work-empty">
+ <span class="work-hero-icon ui-icon" data-icon="layers" aria-hidden="true"></span>
+ <strong>今天要完成什么工作？</strong><span class="work-home-note">描述任务，自动安排步骤并保存成果。</span>
+ <div class="work-quick-grid" aria-label="工作类型">
+ <button type="button" data-work-draft="研究并比较以下主题，整理有依据的结论：" class="work-quick"><span class="ui-icon" data-icon="search"></span><span>资料研究</span></button>
+ <button type="button" data-work-draft="检查以下代码或需求，提出可执行的实现和验证方案：" class="work-quick"><span class="ui-icon" data-icon="code-2"></span><span>代码开发</span></button>
+ <button type="button" data-work-draft="根据以下要求制作一份完整文档：" class="work-quick"><span class="ui-icon" data-icon="file-text"></span><span>文档制作</span></button>
+ <button type="button" data-work-draft="分析以下数据，核对来源并整理结论：" class="work-quick"><span class="ui-icon" data-icon="scan"></span><span>数据分析</span></button></div></div>
     <div id="workDetail" class="work-detail" hidden>
-     <h3 id="workTitle"></h3><div id="workState" class="work-state" role="status"></div><div id="workErrorSlot" class="work-error-slot"></div>
+     <h3 id="workTitle"></h3><div id="workGoal" class="work-goal"></div><div id="workState" class="work-state" role="status"></div><div id="workErrorSlot" class="work-error-slot"></div>
      <div id="workProgress" class="work-progress"></div>
-     <div id="workStepList" class="work-step-list"></div>
+     <div id="workStepList" class="work-step-list"></div><details id="workActionHistory" class="work-action-history" hidden><summary>真实工具操作记录</summary><div id="workAuditList"></div></details>
      <div class="work-actions">
       <button type="button" id="workContinue" class="primary work-continue-primary">继续执行</button>
       <button type="button" id="workStop" class="outline">停止</button>
@@ -131,7 +79,7 @@
       <button type="button" id="workDelete" class="danger-link">删除</button>
      </div>
     </div>
-    <details class="work-history"><summary>历史任务</summary><div id="workTaskList" class="work-task-list"></div></details>
+    
     </div>
    </section>
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
@@ -362,6 +310,66 @@
   </div>
  </dialog>
 
+ <dialog id="workSettingsDialog" class="modal workspace-view" aria-label="工作设置">
+ <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workSettingsDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left"></span></button><h2>工作设置</h2></div>
+ <div class="work-settings-content"><div class="work-model-toolbar" aria-label="工作专用模型设置">
+     <div class="work-model-ident"><span>工作专用模型</span><strong id="workSelectedModel">免费自动</strong><small>独立于聊天模型 · 仅用于工作任务</small></div>
+     <button type="button" class="work-model-choose" id="workModelChoose"><span class="ui-icon" data-icon="brain-circuit" aria-hidden="true"></span>选择工作模型</button>
+    </div><details class="work-config" id="workConfig">
+     <summary>高级任务配置 <span id="workConfigSummary">默认自动 · 点击自定义步骤与接力</span></summary>
+     <div class="work-config-body">
+      <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>每步先选 API 服务商，再选该服务商的真实模型 ID</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
+      <div class="work-config-section"><div class="work-section-heading"><strong>模型接力</strong><span>仅已授权的 API 模型参与自动切换</span></div><div id="workRouteEditor" class="work-route-editor"></div><button type="button" class="work-add" id="workAddRoute">+ 添加候补模型</button><label class="work-checkbox"><input type="checkbox" id="workFallback" checked>当前模型不可用时，自动尝试其他授权模型</label></div>
+      <div class="work-config-foot"><button type="button" class="outline" id="workSaveConfig">保存任务配置</button><span id="workConfigMessage" role="status"></span></div>
+     </div>
+    </details><details id="workToolPanel" class="work-tool-panel">
+     <summary><strong>项目连接与实际操作</strong><small>GitHub · 数据库 · 提交 · 部署</small></summary>
+     <div class="work-tool-inner">
+      <div class="work-tool-grid">
+       <form id="workGithubForm" class="work-tool-card">
+        <h3>GitHub 仓库</h3><p id="workGithubInfo">未连接</p>
+        <label>仓库 owner/repo<input id="workGithubRepo" placeholder="owner/repo" required></label>
+        <label>工作分支<input id="workGithubBranch" value="main" required></label>
+        <label>GitHub 细粒度 Token<input id="workGithubToken" type="password" autocomplete="off" required></label>
+        <div class="work-tool-actions"><button class="outline" type="submit">验证并连接</button><button class="outline" type="button" id="workGithubDisconnect">断开</button></div>
+       </form>
+       <form id="workDbForm" class="work-tool-card">
+        <h3>Supabase 只读连接</h3><p id="workDbInfo">未连接</p>
+        <label>Project Ref<input id="workDbRef" placeholder="项目引用名" required></label>
+        <label>Publishable / anon key<input id="workDbToken" type="password" placeholder="禁止 service_role 密钥" autocomplete="off" required></label>
+        <div class="work-tool-actions"><button class="outline" type="submit">加密保存</button><button class="outline" type="button" id="workDbDisconnect">断开</button></div>
+       </form>
+      </div>
+      <section class="work-tool-card">
+       <h3>GitHub 文件 · 真实读取和修改</h3>
+       <div class="work-tool-actions"><input id="workRepoPath" placeholder="文件路径，例如 src/app.js" aria-label="仓库文件路径"><button class="outline" type="button" id="workRepoRead">读取文件</button><button class="outline" type="button" id="workRepoContext">加入任务上下文</button></div>
+       <div id="workRepoEntries" class="work-tool-actions"></div><pre id="workRepoPreview" class="work-code-preview" hidden></pre>
+       <label>修改定位（可选）<input id="workPatchAnchor" placeholder="函数名或原文片段"></label>
+       <label>补充修改要求<input id="workPatchInstruction" placeholder="只修复目标代码，不改变无关功能"></label>
+       <button type="button" class="outline" id="workPropose">让 AI 生成可审核的修改草稿</button>
+       <div id="workDraftArea" hidden>
+        <h3>修改审核</h3><p id="workDraftMeta"></p>
+        <div class="work-diff"><div><strong>原文</strong><pre id="workDiffOld" class="work-code-preview"></pre></div><div><strong>替换建议</strong><pre id="workDiffNew" class="work-code-preview"></pre></div></div>
+        <button id="workCommit" type="button" class="primary">确认后提交到 GitHub</button>
+       </div>
+      </section>
+      <section class="work-tool-card">
+       <h3>数据库表 · 只读查询</h3>
+       <div class="work-tool-actions"><input id="workDbTable" placeholder="输入表名" aria-label="数据库表名"><button type="button" class="outline" id="workDbPreview">查询前 5 行</button><button type="button" class="outline" id="workDbContext">加入任务上下文</button></div>
+       <pre id="workDbRows" class="work-code-preview" hidden></pre>
+      </section>
+      <section class="work-tool-card">
+       <h3>GitHub Actions · 部署核验</h3>
+       <p>仅触发已经存在的工作流，不会自动判定部署成功。</p>
+       <div class="work-tool-actions"><input id="workWorkflow" placeholder="已有工作流，例如 deploy.yml"><button class="outline" type="button" id="workDeploy">确认触发</button><button class="outline" type="button" id="workRuns">核对运行状态</button></div>
+       <div id="workRunResults"></div>
+      </section>
+      <p id="workToolStatus" role="status"></p>
+     </div>
+    </details></div></dialog>
+ <dialog id="workHistoryDialog" class="modal workspace-view" aria-label="历史工作">
+ <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workHistoryDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left"></span></button><h2>历史工作</h2></div>
+ <div class="work-settings-content"><div id="workTaskList" class="work-task-list"></div></div></dialog>
  <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">
   <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workModelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>选择工作模型</h2></div>
   <div class="work-model-dialog-content">

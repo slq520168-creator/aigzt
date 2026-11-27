@@ -41,6 +41,7 @@ const ICONS={
  film:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/><path d="m10 8 5 4-5 4z"/>',
  clapperboard:'<rect x="3" y="10" width="18" height="11" rx="2"/><path d="M3 10V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4M7 4l4 6M15 4l4 6"/><path d="m10 13 5 3-5 3z"/>',
  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
+ history:'<path d="M3 12a9 9 0 1 1 3 6.7M3 5v7h7M12 7v5l3 2"/>',
  ellipsis:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
  palette:'<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8" cy="7" r="1"/><circle cx="6.5" cy="12" r="1"/><path d="M12 22a10 10 0 1 1 10-10c0 2-1 3-3 3h-3a2 2 0 0 0-2 2 2 2 0 0 1-2 5"/>',
  camera:'<path d="M14 4h-4l-2 3H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-4z"/><circle cx="12" cy="13" r="3"/>',
@@ -2985,7 +2986,8 @@ async function chooseDedicatedWorkModel(provider,model){
  }
  if(["completed","cancelled"].includes(S.workDetail?.task?.status))newWorkDraft();
  if(!S.workStages.length)resetWorkPlan();
- const before=S.workStages.map(s=>({...s})),start=S.workDetail?.task?.nextStep||0;
+ const before=S.workStages.map(s=>({...s})),beforeFallback=S.workFallback,start=S.workDetail?.task?.nextStep||0;
+ S.workFallback=provider==="free";
  for(let i=start;i<S.workStages.length;i++){
   S.workStages[i].provider=provider==="free"?"auto":provider;
   S.workStages[i].model=provider==="free"?"":model;
@@ -2996,7 +2998,7 @@ async function chooseDedicatedWorkModel(provider,model){
   const promise=saveWorkConfiguration();pendingWorkModelSave=promise;
   let ok=false;try{ok=await promise}finally{if(pendingWorkModelSave===promise)pendingWorkModelSave=null}
   if(!ok){
-   S.workStages=before;renderWorkEditor();updateWorkSelectedModel();
+   S.workStages=before;S.workFallback=beforeFallback;renderWorkEditor();updateWorkSelectedModel();
    $("workModelMessage").textContent="未保存，已恢复先前选择";return;
   }
  }
@@ -3664,7 +3666,7 @@ function setWorkMode(on){
   $("prompt").placeholder="描述要完成的工作任务…";
   hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
  }else{
-  $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");
+  $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");hide("workSettingsDialog");hide("workHistoryDialog");
   if(wasWork){restoreComposer(chatComposerBeforeWork);chatComposerBeforeWork=null}
   else $("prompt").placeholder="向 AI 提问…";
   syncWorkspaceRoute("");
@@ -3679,37 +3681,46 @@ function renderWorkTasks(){
  for(const t of S.workTasks){
   const b=node("button","work-task-row"+(S.workTaskId===t.id?" active":""));
   b.type="button";b.append(node("span","work-task-name",t.title),node("small","",workStatus(t)));
-  b.addEventListener("click",()=>void selectWorkTask(t.id));box.append(b);
+  b.addEventListener("click",()=>{if(S.workBusy&&S.workTaskId!==t.id)return;hide("workHistoryDialog");void selectWorkTask(t.id)});box.append(b);
  }
 }
 function renderWorkDetail(){
  const d=S.workDetail,task=d?.task,container=$("workDetail");
  container.hidden=!task;$("workEmpty").hidden=!!task;
- if(!task){$("workStepList").replaceChildren();$("workTitle").textContent="";$("workState").textContent="";$("workErrorSlot").replaceChildren();return;}
+ if(!task){$("workStepList").replaceChildren();$("workTitle").textContent="";$("workGoal").textContent="";$("workState").textContent="";$("workErrorSlot").replaceChildren();$("workProgress").replaceChildren();$("workActionHistory").hidden=true;$("workAuditList").replaceChildren();return;}
  $("workTitle").textContent=task.title;
+ $("workGoal").textContent=task.prompt||"";
  const failed=task.status==="paused",stageName=task.steps?.[task.nextStep]?.name||"当前阶段";
- $("workState").textContent=failed?"执行暂停 · "+stageName+"未完成，请选择可用模型再继续":workStatus(task);
+ const partial=(d.steps||[]).some(x=>x.step===task.nextStep);
+ $("workState").textContent=failed?"执行暂停 · "+stageName+(partial?"已保存断点，可继续执行":"未完成，可重试或调整模型"):workStatus(task);
  const errorSlot=$("workErrorSlot");errorSlot.replaceChildren();
  if(task.error){
   const details=node("details","work-error-detail"),summary=node("summary","",failed?"查看线路失败详情":"查看执行详情");
   details.append(summary,node("p","",task.error));errorSlot.append(details);
  }
  const progress=$("workProgress");progress.replaceChildren();
+ const progressHead=node("div","work-progress-head");progressHead.append(node("strong","","任务进度"),node("small","",Math.min(task.nextStep,task.totalSteps)+" / "+task.totalSteps));
+ const meter=node("progress","work-progress-meter");meter.max=Math.max(1,task.totalSteps);meter.value=Math.min(task.nextStep,task.totalSteps);meter.setAttribute("aria-label","已完成步骤");progress.append(progressHead,meter);
  for(let i=0;i<task.totalSteps;i++){
-  const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1);
-  const item=node("span","work-progress-step"+(i<task.nextStep?" done":i===task.nextStep?" current":""),name);
-  if(configured?.provider&&configured.provider!=="auto")item.title="执行："+(WORK_PROVIDER_NAMES[configured.provider]||configured.provider)+(configured.model?" / "+configured.model:"");
-  progress.append(item);
+  const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1),done=i<task.nextStep,active=i===task.nextStep&&!["completed","cancelled"].includes(task.status);
+  const item=node("div","work-progress-step"+(done?" done":active?" current":""));
+  const mark=node("span","work-step-mark",done?"✓":String(i+1));mark.setAttribute("aria-hidden","true");
+  const label=done?"已完成":active?(task.status==="paused"?"已暂停":task.status==="running"||S.workBusy?"执行中":"待执行"):"待执行";
+  item.append(mark,node("span","work-step-name",name),node("small","",label));progress.append(item);
  }
- const list=$("workStepList");list.replaceChildren();
+ const list=$("workStepList"),keep=new Map(Array.from(list.children).map(el=>[el.dataset.step,el]));
  for(const step of d.steps||[]){
-  const section=node("section","work-step");
-  const header=node("div","work-step-head");
-  header.append(node("strong","",step.phase),node("small","",step.provider==="free"?"免费自动":step.provider+(step.model&&step.model!==step.provider?" · "+step.model:"")));
-  section.append(header,node("div","work-step-body",step.body));
-  if(step.attempts?.length&&step.provider!=="free"){section.append(node("div","work-switch-note","已切换 "+step.attempts.length+" 条不可用线路，继续使用 "+step.provider))}
-  list.append(section);
+  const key=String(step.step),signature=JSON.stringify([step.body,step.provider,step.model,step.attempts,step.step>=task.nextStep]);let section=keep.get(key);
+  if(section?.dataset.signature===signature){keep.delete(key);continue}
+  const next=node("section","work-step");next.dataset.step=key;next.dataset.signature=signature;
+  const header=node("div","work-step-head");header.append(node("strong","",step.phase+(step.step>=task.nextStep?" · 未完成":"")),node("small","",step.model||step.provider||"上游未公开"));
+  const content=node("div","work-step-body");renderAssistantText(content,step.body);next.append(header,content);
+  if(step.attempts?.length)next.append(node("div","work-switch-note","实际尝试 "+step.attempts.length+" 条未成功线路"));
+  if(section)section.replaceWith(next);else list.append(next);keep.delete(key);
  }
+ for(const obsolete of keep.values())obsolete.remove();
+ const audit=$("workAuditList"),actions=d.actions||[];$("workActionHistory").hidden=!actions.length;audit.replaceChildren();
+ for(const action of actions){const row=node("div","work-audit-row");row.append(node("strong","",action.action),node("span","",String(action.detail||"")),node("small","",new Date(action.created_at).toLocaleString()));audit.append(row)}
  $("workContinue").hidden=task.status==="completed"||task.status==="cancelled";
  $("workContinue").disabled=S.workBusy;
  $("workStop").hidden=task.status==="completed"||task.status==="cancelled";
@@ -3721,7 +3732,7 @@ async function fetchWorkTasks(){
  if(!S.user){S.workTasks=[];renderWorkTasks();renderProjects();return}
  try{
   const data=await api("/api/work/tasks");S.workTasks=data.tasks||[];renderWorkTasks();renderProjects();
-  if(!S.workDetail&&S.workTasks.length&&!S.workTaskId&&S.workMode)void selectWorkTask(S.workTasks[0].id);
+  
  }catch(e){$("workState").textContent="任务列表读取失败："+humanError(e)}
 }
 async function selectWorkTask(id){
@@ -3740,7 +3751,7 @@ async function startWorkTask(){
  $("sendBtn").disabled=true;$("workState").textContent="正在创建工作任务…";
  try{
   const data=await api("/api/work/tasks",{prompt,projectId:S.activeProjectId,
-   attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback});
+   attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:S.workRoutes,fallback:S.workFallback,autoPlan:S.workStages.length===3&&S.workStages.every((step,i)=>step.name===["规划","制作","检查交付"][i]&&step.instruction===["理解需求，明确任务与交付内容","根据规划完成可用成果","核对并修正问题，提供最终成果"][i]&&step.provider===S.workStages[0].provider&&step.model===S.workStages[0].model)});
   if(epoch!==S.workEpoch)return;
   $("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
   S.workTaskId=data.id;S.workDetail=null;
@@ -4821,6 +4832,9 @@ function wire(){
  $("domesticProviderList");initDomesticProviderLinks();
  $("workClose").addEventListener("click",returnWorkspace);
  $("workNewTask").addEventListener("click",newWorkDraft);
+ $("workSettingsOpen").addEventListener("click",()=>{renderWorkEditor();show("workSettingsDialog");void wkConnections()});
+ $("workHistoryOpen").addEventListener("click",()=>{renderWorkTasks();show("workHistoryDialog");void fetchWorkTasks()});
+ $("workEmpty").querySelectorAll("[data-work-draft]").forEach(button=>button.addEventListener("click",()=>{if(S.workBusy)return;const input=$("prompt");if(input.value.trim())return input.focus();input.value=button.dataset.workDraft+"\n";settlePromptSize();input.focus()}));
  $("workModelChoose").addEventListener("click",()=>{
   $("workModelMessage").textContent="";
   $("workSpecificChooser").hidden=true;
