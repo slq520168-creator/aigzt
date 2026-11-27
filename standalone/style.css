@@ -808,6 +808,7 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
 .top-work{flex:none;border:1px solid transparent;border-radius:10px;padding:7px 10px;color:#566970;font-size:13px;font-weight:550;white-space:nowrap}
 .top-work:hover,.top-work.active{color:#244b58;background:#f1f5f6}
 .top-work.active{border-color:#e4ebec}
+.work-execution-mode{flex:none;max-width:106px;min-width:65px;border:0;border-radius:8px;background:#f2f5f7;color:#35576c;font-size:12px;padding:6px 4px;min-height:30px}
 .work-intro-actions{display:flex;align-items:center;gap:6px;margin-left:auto}.work-intro-actions .icon-btn{color:#34434c;width:36px;height:36px;border-radius:50%;padding:0}.work-intro-actions .ui-icon,.work-intro-actions .ui-icon svg{width:22px;height:22px}
 .work-intro-actions .outline{font-size:12px;padding:7px 11px;border-radius:10px}
 .work-config{border:1px solid #e4e9ec;border-radius:14px;margin-top:15px;background:#fff}

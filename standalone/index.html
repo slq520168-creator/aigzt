@@ -58,7 +58,7 @@
     <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button></div>
    </div>
    <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <div class="page-heading work-intro"><button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>工作</h2><div class="work-intro-actions"><button type="button" id="workHistoryOpen" class="icon-btn" aria-label="历史工作" title="历史工作"><span class="ui-icon" data-icon="history"></span></button><button type="button" id="workSettingsOpen" class="icon-btn" aria-label="工作设置" title="工作设置"><span class="ui-icon" data-icon="settings"></span></button><button type="button" id="workNewTask" class="icon-btn" aria-label="新建工作" title="新建工作"><span class="ui-icon" data-icon="square-pen"></span></button></div></div>
+    <div class="page-heading work-intro"><button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>工作</h2><select id="workExecutionMode" class="work-execution-mode" aria-label="工作执行模式"><option value="standard">标准</option><option value="fast">快速交付</option><option value="check">快速检查</option><option value="edit">定向修改</option><option value="deploy">部署验证</option></select><div class="work-intro-actions"><button type="button" id="workHistoryOpen" class="icon-btn" aria-label="历史工作" title="历史工作"><span class="ui-icon" data-icon="history"></span></button><button type="button" id="workSettingsOpen" class="icon-btn" aria-label="工作设置" title="工作设置"><span class="ui-icon" data-icon="settings"></span></button><button type="button" id="workNewTask" class="icon-btn" aria-label="新建工作" title="新建工作"><span class="ui-icon" data-icon="square-pen"></span></button></div></div>
     <div class="work-page-content" id="workScroll">
     <div id="workEmpty" class="work-empty">
  <div class="work-welcome"><span class="work-eyebrow">IMAI WORK</span><strong>把想法变成成果。</strong><span class="work-home-note">研究、分析、创作与开发</span></div>
@@ -72,7 +72,7 @@
      <div id="workProgress" class="work-progress"></div><div id="workEvidenceInfo" class="work-evidence-info" hidden></div>
      <div id="workStepList" class="work-step-list"></div><details id="workActionHistory" class="work-action-history" hidden><summary>真实工具操作记录</summary><div id="workAuditList"></div></details>
      <div class="work-actions">
-      <button type="button" id="workContinue" class="primary work-continue-primary">继续执行</button>
+      <button type="button" id="workContinue" class="primary work-continue-primary">继续执行</button><button type="button" id="workReviewPatch" class="outline" hidden>审核修改</button>
       <button type="button" id="workStop" class="outline">停止</button>
       <button type="button" id="workExport" class="outline">导出 Markdown</button>
       <button type="button" id="workDelete" class="danger-link">删除</button>

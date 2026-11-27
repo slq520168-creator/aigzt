@@ -1456,6 +1456,10 @@ function imagePromptPayload(value){
  }
  return (started?positive.join("\n"):String(value||"")).trim();
 }
+function isDirectVideoRequest(value){
+ const p=String(value||"").trim();if(!p||/(?:不要|不用|禁止|无需|如何|怎么|为什么|能不能|是否|分析|识别|检查|解释|提示词|脚本|代码|教程|方案|文案|视频链接|下载|播放|搜索|查找)/.test(p))return false;
+ return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:(?:生成|制作|创建|做|拍|渲染|合成|输出)(?:一段|一个|一条|一部|一支|短)?[^，。！？\n]{0,20}视频|(?:文生视频|图生视频|首尾帧视频)|(?:让|把).{1,35}(?:动起来|变成视频|做成视频))/.test(p)||/^(?:generate|create|make|animate)\b.{0,40}\b(?:video|clip|animation)\b/i.test(p);
+}
 function isDirectImageRequest(value){
  const s=String(value||"").trim();if(!s)return false;
  if(/(?:只|仅|不要|不用|无需|禁止|先别|不需要)(?:直接)?(?:生成|制作|画|绘制)(?:任何)?(?:图片|图像|照片|图)|(?:只|仅)(?:写|生成|输出|提供|给出).{0,16}提示词|(?:怎么|如何|为什么|能不能|是否|什么是).{0,24}(?:作图|画图|生成图片)/.test(s))return false;
@@ -3287,12 +3291,12 @@ function renderWorkEditor(){
  }
  $("workAddStage").disabled=locked||S.workStages.length>=12;
  $("workSaveConfig").disabled=locked;
- $("workConfigSummary").textContent=S.workStages.length+" 个步骤 · 手动模型不自动切换";
+ $("workConfigSummary").textContent=S.workStages.length+" 个步骤 · 个人模型独立选择";
  updateWorkSelectedModel();
 }
 function newWorkDraft(){
  if(S.workBusy)return;
- S.workTaskId=null;S.workDetail=null;resetWorkPlan();renderWorkDetail();renderWorkTasks();renderProjects();renderWorkEditor();if(S.workMode)renderWorkAgentCatalog();
+ S.workTaskId=null;S.workDetail=null;resetWorkPlan();syncWorkExecutionMode();renderWorkDetail();renderWorkTasks();renderProjects();renderWorkEditor();if(S.workMode)renderWorkAgentCatalog();
  $("workConfigMessage").textContent="已准备新任务";$("prompt").value="";$("workConfig").open=false;$("workScroll").scrollTop=0;
 }
 function loadWorkEditor(task){
@@ -3828,7 +3832,9 @@ function renderWorkDetail(){
  const audit=$("workAuditList"),actions=d.actions||[];$("workActionHistory").hidden=!actions.length;audit.replaceChildren();
  const evidence=actions.filter(x=>["读取仓库","查询数据库目录"].includes(x.action));$("workEvidenceInfo").hidden=!evidence.length;$("workEvidenceInfo").textContent=evidence.map(x=>x.action+" · "+x.detail).join("\n");
  for(const action of actions){const row=node("div","work-audit-row");row.append(node("strong","",action.action),node("span","",String(action.detail||"")),node("small","",new Date(action.created_at).toLocaleString()));audit.append(row)}
- $("workContinue").hidden=task.status==="completed"||task.status==="cancelled";
+ const patchReview=task.steps?.[0]?.kind==="edit"&&task.status==="paused"&&task.error==="修改草稿待审核确认";
+ $("workReviewPatch").hidden=!patchReview;syncWorkExecutionMode();
+ $("workContinue").hidden=patchReview||task.status==="completed"||task.status==="cancelled";
  $("workContinue").disabled=S.workBusy;
  $("workStop").hidden=task.status==="completed"||task.status==="cancelled";
  $("workExport").disabled=!(d.steps||[]).length;
@@ -3846,25 +3852,30 @@ async function selectWorkTask(id){
  if(S.workBusy&&S.workTaskId!==id)return;
  try{
   const d=await api("/api/work/tasks/"+id);S.workTaskId=id;S.workDetail=d;
-  loadWorkEditor(d.task);$("workConfig").open=false;renderWorkDetail();renderWorkTasks();renderProjects();
+  loadWorkEditor(d.task);workExecutionMode=d.task.steps?.[0]?.kind||"standard";syncWorkExecutionMode();$("workConfig").open=false;renderWorkDetail();renderWorkTasks();renderProjects();
   void wkLoadProposal();
  }catch(e){$("workState").textContent=humanError(e)}
 }
+let workExecutionMode="standard";
+function syncWorkExecutionMode(){const el=$("workExecutionMode");el.value=workExecutionMode;el.disabled=S.workBusy;}
 async function startWorkTask(){
  if(S.workBusy)return;
  if(!S.user){show("authDialog");return}
  const prompt=$("prompt").value.trim();if(prompt.length<3){flashError("请描述需要完成的任务");return}
- S.workBusy=true;const epoch=++S.workEpoch;
+ const executionMode=workExecutionMode;
+ const selection=workModelPreference||{provider:"auto",model:""};
+ const steps=S.workTaskId?[{name:"规划",instruction:"理解需求，明确任务与交付内容",...selection},{name:"制作",instruction:"根据规划完成可用成果",...selection},{name:"检查交付",instruction:"核对并修正问题，提供最终成果",...selection}]:S.workStages;
+ S.workBusy=true;syncWorkExecutionMode();const epoch=++S.workEpoch;
  $("sendBtn").disabled=true;$("workState").textContent="正在创建工作任务…";
  try{
-  const data=await api("/api/work/tasks",{prompt,projectId:S.activeProjectId,
-   attachments:S.attachments.map(x=>x.id),steps:S.workStages,routes:[],fallback:false,autoPlan:S.workStages.length===3&&S.workStages.every((step,i)=>step.name===["规划","制作","检查交付"][i]&&step.instruction===["理解需求，明确任务与交付内容","根据规划完成可用成果","核对并修正问题，提供最终成果"][i]&&step.provider===S.workStages[0].provider&&step.model===S.workStages[0].model)});
+  const data=await api("/api/work/tasks",{prompt,executionMode,projectId:S.activeProjectId,
+   attachments:S.attachments.map(x=>x.id),steps,routes:[],fallback:false,autoPlan:steps.length===3&&steps.every((step,i)=>step.name===["规划","制作","检查交付"][i]&&step.instruction===["理解需求，明确任务与交付内容","根据规划完成可用成果","核对并修正问题，提供最终成果"][i]&&step.provider===steps[0].provider&&step.model===steps[0].model)});
   if(epoch!==S.workEpoch)return;
   $("prompt").value="";settlePromptSize();S.attachments=[];renderAttachments();
   S.workTaskId=data.id;S.workDetail=null;
   await selectWorkTask(data.id);await fetchWorkTasks();
  }catch(e){flashError(humanError(e));$("workState").textContent=humanError(e)}
- finally{S.workBusy=false;$("sendBtn").disabled=false}
+ finally{S.workBusy=false;syncWorkExecutionMode();$("sendBtn").disabled=false}
  if(epoch===S.workEpoch&&S.workTaskId===S.workDetail?.task?.id)void executeWorkTask(S.workTaskId);
 }
 async function executeWorkTask(id){
@@ -3873,7 +3884,7 @@ async function executeWorkTask(id){
   if(!saved){$("workState").textContent="新模型尚未保存，任务未继续";return}
  }
  if(S.workBusy||!S.user)return;
- S.workBusy=true;const epoch=++S.workEpoch;
+ S.workBusy=true;syncWorkExecutionMode();const epoch=++S.workEpoch;
  $("sendBtn").disabled=true;$("workContinue").disabled=true;
  try{
   for(let i=0;i<12;i++){
@@ -3972,8 +3983,10 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(S.workMode){await startWorkTask();return}
  if(S.busy)return;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
- const autoImage=S.composerMode==="text"&&!S.code&&!continueFrom&&S.attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type))&&isDirectImageRequest(prompt);
- const submittedMode=autoImage?"image":S.composerMode;
+ const autoVideo=S.composerMode==="text"&&S.provider==="free"&&!S.code&&!continueFrom&&S.attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type))&&isDirectVideoRequest(prompt);
+ if(autoVideo){if(S.attachments.length>2){flashError("自动视频最多使用两张首尾帧图片");return}const provider=S.attachments.length===2?"freeloop":S.attachments.length===1?"freewan":"freetext";selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);}
+ const autoImage=!autoVideo&&S.composerMode==="text"&&!S.code&&!continueFrom&&S.attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type))&&isDirectImageRequest(prompt);
+ const submittedMode=autoVideo?"video":autoImage?"image":S.composerMode;
  const submittedVideoProvider=S.videoProvider,submittedVideoModel=S.videoModel,submittedVideoRatio=S.videoRatio;
  if(!S.user){show("authDialog");return}
  const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(S.videoProvider);
@@ -4382,10 +4395,10 @@ function renderModels(){
  }
  // The current selection always leads matching results, followed by successful routes and capability.
  const ranks=new Map(visible.map(m=>[m,modelOrdering(m)]));
- visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return (S.source==="recent"?y.health.last-x.health.last:0)||Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
+ visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||(S.source==="recent"?y.health.last-x.health.last:0)||Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  const sharedCount=visible.filter(m=>m.free===true&&(m.provider==="free"||m.builtinVideo)).length,personalFree=visible.filter(m=>m.freeTier===true||(m.free===true&&m.provider!=="free"&&!m.builtinVideo)).length;
- $("modelCount").textContent=count+" 个条目"+(S.source==="recent"?" · 最近成功使用":S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 常用成功优先 · 能力分层参考");
+ $("modelCount").textContent=count+" 个条目"+(S.source==="recent"?" · 最近成功使用":S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 免费优先 · 成功优先");
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
  const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
@@ -4950,6 +4963,8 @@ function wire(){
  $("domesticProviderList");initDomesticProviderLinks();
  $("workClose").addEventListener("click",returnWorkspace);
  $("workNewTask").addEventListener("click",newWorkDraft);
+ $("workExecutionMode").addEventListener("change",e=>{const v=e.target.value;if(v==="deploy"){syncWorkExecutionMode();if(!S.workTaskId){show("workHistoryDialog");void fetchWorkTasks();flashError("请先选择已有提交的工作任务");return}openWorkService("deploy");return}workExecutionMode=v;syncWorkExecutionMode();$("prompt").focus({preventScroll:true})});
+ $("workReviewPatch").addEventListener("click",()=>{openWorkService("files");void wkLoadProposal()});
  $("workSettingsOpen").addEventListener("click",()=>{renderWorkEditor();show("workSettingsDialog");renderWorkConnectionStates();void wkConnections()});
  $("workSettingsDialog").querySelectorAll("[data-work-settings-view]").forEach(b=>b.addEventListener("click",()=>openWorkService(b.dataset.workSettingsView)));
  $("workGithubForm").querySelectorAll("[data-github-mode]").forEach(b=>b.addEventListener("click",()=>setWorkGithubMode(b.dataset.githubMode)));
