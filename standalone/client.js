@@ -3775,6 +3775,7 @@ function setWorkMode(on){
  }
  closeMenu();syncHomeAmbient();syncTopMode();updateComposerModel();
 }
+let workActiveRequest=null;
 function workStatus(t){return t?.status==="completed"?"已完成":t?.status==="paused"?"已暂停 · 可继续":t?.status==="cancelled"?"已停止":t?.status==="running"?"正在执行":"待执行"}
 function renderWorkTasks(){
  const box=$("workTaskList");box.replaceChildren();
@@ -3793,21 +3794,24 @@ function renderWorkDetail(){
  $("workTitle").textContent=task.title;
  $("workGoal").textContent=task.prompt||"";
  const failed=task.status==="paused",stageName=task.steps?.[task.nextStep]?.name||"当前阶段";
+ const running=!["completed","cancelled"].includes(task.status)&&(workActiveRequest===task.id||(task.status==="running"&&Date.now()-Number(task.leaseAt||0)<90000));
+ $("workState").classList.toggle("is-running",running);
  const partial=(d.steps||[]).some(x=>x.step===task.nextStep);
- $("workState").textContent=failed?"执行暂停 · "+stageName+(partial?"已保存断点，可继续执行":"未完成，可重试或调整模型"):workStatus(task);
+ $("workState").textContent=running?"正在工作 · "+stageName:failed?"执行暂停 · "+stageName+(partial?"已保存断点，可继续执行":"未完成，可重试或调整模型"):task.status==="running"?"执行状态待确认，可继续":workStatus(task);
  const errorSlot=$("workErrorSlot");errorSlot.replaceChildren();
  if(task.error){
   const details=node("details","work-error-detail"),summary=node("summary","",failed?"查看暂停原因":"查看执行详情");
   details.append(summary,node("p","",task.error));if(failed)details.open=true;errorSlot.append(details);
  }
- const progress=$("workProgress");progress.replaceChildren();
+ const progress=$("workProgress");progress.replaceChildren();progress.classList.toggle("is-running",running);
  const progressHead=node("div","work-progress-head");progressHead.append(node("strong","","任务进度"),node("small","",Math.min(task.nextStep,task.totalSteps)+" / "+task.totalSteps));
- const meter=node("progress","work-progress-meter");meter.max=Math.max(1,task.totalSteps);meter.value=Math.min(task.nextStep,task.totalSteps);meter.setAttribute("aria-label","已完成步骤");progress.append(progressHead,meter);
+ const meter=node("div","work-progress-meter"),fill=node("span","work-progress-fill");const total=Math.max(1,task.totalSteps),doneCount=Math.max(0,Math.min(task.nextStep,total));
+ meter.setAttribute("role","progressbar");meter.setAttribute("aria-label","已完成步骤");meter.setAttribute("aria-valuemin","0");meter.setAttribute("aria-valuemax",String(total));meter.setAttribute("aria-valuenow",String(doneCount));fill.style.width=(doneCount/total*100)+"%";meter.append(fill);progress.append(progressHead,meter);
  for(let i=0;i<task.totalSteps;i++){
   const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1),done=i<task.nextStep,active=i===task.nextStep&&!["completed","cancelled"].includes(task.status);
   const item=node("div","work-progress-step"+(done?" done":active?" current":""));
   const mark=node("span","work-step-mark",done?"✓":String(i+1));mark.setAttribute("aria-hidden","true");
-  const label=done?"已完成":active?(task.status==="paused"?"已暂停":task.status==="running"||S.workBusy?"执行中":"待执行"):"待执行";
+  const label=done?"已完成":active?(running?"执行中":task.status==="paused"?"已暂停":task.status==="running"?"待确认":"待执行"):"待执行";
   item.append(mark,node("span","work-step-name",name),node("small","",label));progress.append(item);
  }
  const list=$("workStepList"),keep=new Map(Array.from(list.children).map(el=>[el.dataset.step,el]));
@@ -3876,23 +3880,25 @@ async function executeWorkTask(id){
    if(epoch!==S.workEpoch)break;
    const current=S.workDetail?.task;
    if(!current||current.id!==id||["completed","cancelled","paused"].includes(current.status)&&i>0)break;
-   $("workState").textContent=(i===0?"正在读取相关项目资料并执行 ":"正在执行 ")+(current.steps?.[current.nextStep]?.name||"步骤 "+(current.nextStep+1));
+   workActiveRequest=id;renderWorkDetail();
    const d=await api("/api/work/tasks/"+id+"/advance",{});
+   if(workActiveRequest===id)workActiveRequest=null;
    if(epoch!==S.workEpoch)break;
-   if(d.busy){$("workState").textContent="此任务正在其他页面执行";break}
+   if(d.busy){S.workDetail={...S.workDetail,task:d.task};renderWorkDetail();break}
    S.workDetail=d;renderWorkDetail();
    await fetchWorkTasks();
    const t=d.task;
    if(!t||t.status==="completed"||t.status==="paused"||t.status==="cancelled")break;
   }
- }catch(e){$("workState").textContent="暂时无法继续："+humanError(e)}
- finally{
-  if(epoch===S.workEpoch){S.workBusy=false;$("sendBtn").disabled=false;$("workContinue").disabled=false;renderWorkDetail();void fetchWorkTasks()}
+ }catch(e){
+  if(epoch===S.workEpoch){workActiveRequest=null;const message="暂时无法继续："+humanError(e);try{const latest=await api("/api/work/tasks/"+id);if(epoch===S.workEpoch)S.workDetail=latest}catch{}if(epoch===S.workEpoch){renderWorkDetail();flashError(message)}}
+ }finally{
+  if(epoch===S.workEpoch){workActiveRequest=null;S.workBusy=false;$("sendBtn").disabled=false;$("workContinue").disabled=false;renderWorkDetail();void fetchWorkTasks()}
  }
 }
 async function stopWorkTask(){
  const id=S.workTaskId;if(!id)return;
- ++S.workEpoch;S.workBusy=false;$("sendBtn").disabled=false;
+ ++S.workEpoch;workActiveRequest=null;S.workBusy=false;$("sendBtn").disabled=false;
  try{S.workDetail=await api("/api/work/tasks/"+id+"/cancel",{});renderWorkDetail();await fetchWorkTasks()}
  catch(e){$("workState").textContent=humanError(e)}
 }
@@ -3907,7 +3913,7 @@ async function deleteWorkTask(){
 function exportWorkTask(){
  const d=S.workDetail;if(!d?.steps?.length)return;
  const content="# "+d.task.title+"\n\n"+
-  "任务："+d.task.prompt+"\n\n"+
+  "任务："+d.task.prompt+"\n\n"+"状态："+workStatus(d.task)+"；已完成 "+d.task.nextStep+"/"+d.task.totalSteps+" 阶段\n\n"+(d.task.error?"暂停原因："+d.task.error+"\n\n":"")+((d.actions||[]).length?"## 真实工具操作记录\n\n"+d.actions.map(x=>"- "+x.action+"："+x.detail).join("\n")+"\n\n":"")+
   d.steps.map(s=>"## "+s.phase+"\n\n"+s.body+"\n").join("\n");
  const file=new Blob([content],{type:"text/markdown;charset=utf-8"});
  const url=URL.createObjectURL(file),a=document.createElement("a");
@@ -4944,7 +4950,7 @@ function wire(){
  $("workSettingsDialog").querySelectorAll("[data-work-settings-view]").forEach(b=>b.addEventListener("click",()=>openWorkService(b.dataset.workSettingsView)));
  $("workGithubForm").querySelectorAll("[data-github-mode]").forEach(b=>b.addEventListener("click",()=>setWorkGithubMode(b.dataset.githubMode)));
  $("workHistoryOpen").addEventListener("click",()=>{renderWorkTasks();show("workHistoryDialog");void fetchWorkTasks()});
- $("workEmpty").querySelectorAll("[data-work-draft]").forEach(button=>button.addEventListener("click",()=>{if(S.workBusy)return;const input=$("prompt");if(input.value.trim())return input.focus();input.value=button.dataset.workDraft+"\n";settlePromptSize();input.focus()}));
+ $("workEmpty").querySelectorAll("[data-work-draft]").forEach(button=>button.addEventListener("click",()=>{if(S.workBusy)return;const input=$("prompt");if(input.value.trim())return input.focus();input.value=button.dataset.workDraft?button.dataset.workDraft+"\n":"";settlePromptSize();input.focus()}));
  $("workModelChoose").addEventListener("click",()=>{
   $("workModelMessage").textContent="";
   $("workSpecificChooser").hidden=true;

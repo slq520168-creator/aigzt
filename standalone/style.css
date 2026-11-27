@@ -764,7 +764,14 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
 .work-continue-primary:disabled{opacity:.6}
 .work-progress{display:flex;flex-direction:column;gap:9px;margin:15px 0;padding:16px;border:1px solid #e3e8ec;border-radius:15px;background:var(--surface,#fff)}
 .work-evidence-info{font-size:12px;line-height:1.65;color:#387668;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 12px;border:1px solid #e1e9e6;border-radius:10px;margin:8px 0 14px}.work-evidence-info[hidden]{display:none}.work-progress-head{display:flex;align-items:center;justify-content:space-between;font-size:14px}.work-progress-head small,.work-progress-step small{font-size:11px;color:#77858e}
-.work-progress-meter{width:100%;height:5px;accent-color:#32967b;margin:0 0 7px}
+.work-progress-meter{position:relative;width:100%;height:5px;border-radius:999px;background:#e5eeeb;overflow:hidden;margin:0 0 7px}
+.work-progress-fill{display:block;height:100%;background:#32967b;border-radius:999px;transition:width .24s ease}
+.work-progress.is-running .work-progress-meter::after{content:"";position:absolute;top:0;bottom:0;left:0;width:32%;border-radius:999px;background:linear-gradient(90deg,transparent,#4aaa91,transparent);animation:work-progress-sweep 1.5s ease-in-out infinite;pointer-events:none}
+.work-state.is-running{display:flex;align-items:center;gap:8px;color:#287f62;font-weight:600}
+.work-state.is-running::before{content:"";width:13px;height:13px;flex:none;border:2px solid #c7e5db;border-top-color:#287f62;border-radius:50%;animation:work-progress-spin .85s linear infinite}
+@keyframes work-progress-sweep{from{transform:translateX(-100%)}to{transform:translateX(320%)}}
+@keyframes work-progress-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.work-progress.is-running .work-progress-meter::after,.work-state.is-running::before{animation:none}.work-progress-fill{transition:none}}
 .work-step-mark{display:grid;place-items:center;width:22px;height:22px;flex:none;border-radius:50%;border:1px solid #d7e0e4;font-size:11px}
 .work-step-name{flex:1;min-width:0}
 .work-goal{background:#f2f5f7;border-radius:13px;padding:12px 14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;margin:12px 0;line-height:1.6;color:#293e4a}
