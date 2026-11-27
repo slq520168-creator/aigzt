@@ -1255,6 +1255,53 @@ async function deviceMediaBlob(src){
  if(!res.ok)return null;
  const blob=await res.blob();return /^(image\/|video\/)/.test(blob.type)?blob:null;
 }
+// Native GIF89a, 256-color palette; reset LZW dictionary before 9-bit overflow.
+function makeGif(width,height,frames,delay=25){
+ if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>320||height>320||!frames.length||frames.length>24)throw Error("GIF尺寸或帧数超限");
+ const out=[],word=n=>out.push(n&255,(n>>8)&255),ascii=t=>{for(const ch of t)out.push(ch.charCodeAt(0))};
+ ascii("GIF89a");word(width);word(height);out.push(0xf7,0,0);
+ for(let i=0;i<256;i++)out.push(Math.round((i>>5)*255/7),Math.round(((i>>2)&7)*255/7),Math.round((i&3)*255/3));
+ out.push(0x21,0xff,11);ascii("NETSCAPE2.0");out.push(3,1,0,0,0);
+ for(const rgba of frames){
+  if(rgba.length!==width*height*4)throw Error("GIF帧尺寸不一致");
+  out.push(0x21,0xf9,4,4);word(delay);out.push(0,0,0x2c);word(0);word(0);word(width);word(height);out.push(0,8);
+  let bits=0,buffer=0,block=[];const byte=b=>{block.push(b);if(block.length===255){out.push(255,...block);block=[]}};
+  const code=n=>{buffer|=n<<bits;bits+=9;while(bits>=8){byte(buffer&255);buffer>>>=8;bits-=8}};
+  code(256);let count=0;
+  for(let i=0;i<rgba.length;i+=4){if(count===250){code(256);count=0}code((rgba[i]&224)|((rgba[i+1]&224)>>3)|(rgba[i+2]>>6));count++}
+  code(257);if(bits)byte(buffer&255);if(block.length)out.push(block.length,...block);out.push(0);
+ }
+ out.push(0x3b);return new Blob([new Uint8Array(out)],{type:"image/gif"});
+}
+function mediaEvent(el,event,action,timeout=8000){
+ return new Promise((resolve,reject)=>{let timer;const done=err=>{clearTimeout(timer);el.removeEventListener(event,ok);el.removeEventListener("error",bad);err?reject(err):resolve()};const ok=()=>done(),bad=()=>done(Error("媒体解码失败"));timer=setTimeout(()=>done(Error("媒体处理超时")),timeout);el.addEventListener(event,ok,{once:true});el.addEventListener("error",bad,{once:true});try{action()}catch(e){done(e)}});
+}
+async function videoToGif(blob){
+ if(!blob?.type?.startsWith("video/")||blob.size>25000000)throw Error("视频格式或大小不支持GIF转换");
+ const video=document.createElement("video"),url=URL.createObjectURL(blob);
+ video.muted=true;video.playsInline=true;video.preload="auto";
+ try{
+  await mediaEvent(video,"loadeddata",()=>{video.src=url},12000);
+  if(!Number.isFinite(video.duration)||video.duration<=0||!video.videoWidth)throw Error("无法读取视频帧");
+  const canvas=document.createElement("canvas"),ratio=Math.min(1,256/Math.max(video.videoWidth,video.videoHeight));canvas.width=Math.max(1,Math.round(video.videoWidth*ratio));canvas.height=Math.max(1,Math.round(video.videoHeight*ratio));
+  const ctx=canvas.getContext("2d",{willReadFrequently:true});if(!ctx)throw Error("浏览器无法读取视频帧");
+  const duration=Math.min(4,video.duration),n=Math.max(2,Math.min(16,Math.ceil(duration*4))),frames=[];
+  for(let i=0;i<n;i++){const at=i*duration/n;if(Math.abs(video.currentTime-at)>.015)await mediaEvent(video,"seeked",()=>{video.currentTime=at},4500);ctx.drawImage(video,0,0,canvas.width,canvas.height);frames.push(ctx.getImageData(0,0,canvas.width,canvas.height).data)}
+  return makeGif(canvas.width,canvas.height,frames,Math.max(5,Math.round(duration*100/n)));
+ }finally{video.removeAttribute("src");video.load();URL.revokeObjectURL(url)}
+}
+async function stickerPng(blob){
+ const img=new Image(),url=URL.createObjectURL(blob);
+ try{await mediaEvent(img,"load",()=>{img.src=url},10000);
+  const canvas=document.createElement("canvas"),scale=Math.min(1,512/Math.max(img.naturalWidth,img.naturalHeight));canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext("2d",{willReadFrequently:true});if(!ctx)throw Error("贴纸处理不可用");
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data,w=canvas.width,h=canvas.height,seen=new Uint8Array(w*h),queue=new Int32Array(w*h);let head=0,tail=0;
+  const add=p=>{if(p<0||p>=seen.length||seen[p])return;seen[p]=1;const k=p*4;if(d[k+3]<10||(d[k+1]>90&&d[k+1]>d[k]+35&&d[k+1]>d[k+2]+35)){queue[tail++]=p;d[k+3]=0}};
+  for(let x=0;x<w;x++){add(x);add((h-1)*w+x)}for(let y=0;y<h;y++){add(y*w);add(y*w+w-1)}
+  while(head<tail){const p=queue[head++];if(p%w)add(p-1);if(p%w<w-1)add(p+1);add(p-w);add(p+w)}
+  if(tail<w*h*.01)throw Error("未识别到可去除的背景");
+  ctx.putImageData(im,0,0);const result=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));if(!result)throw Error("贴纸PNG编码失败");return result;
+ }finally{URL.revokeObjectURL(url)}
+}
 function localMediaNotice(bubble,kind){bubble.replaceChildren(node("span","video-job-hint",kind==="video"?"视频仅保留在原设备；不会自动重新生成":"图片仅保留在原设备；不会自动重新生成"))}
 function renderDeviceMedia(bubble,blob,kind){
  if(kind==="video"){
@@ -1273,20 +1320,21 @@ async function restoreDeviceMedia(bubble,id,kind,legacyUrl="",legacyJobId=""){
   const legacyKey=deviceMediaKey(legacyJobId);blob=await deviceMediaGet(legacyKey);
   if(blob instanceof Blob&&blob.size&&key)await deviceMediaPut(key,blob);
  }
- if(!(blob instanceof Blob)&&kind==="image"&&await restoreReplyImages(bubble,id,true))return;
+ if(!(blob instanceof Blob)&&kind==="image"&&await restoreReplyImages(bubble,id,true))return true;
  if(!(blob instanceof Blob)&&legacyUrl){try{blob=await deviceMediaBlob(legacyUrl);if(blob)await deviceMediaPut(key,blob)}catch{}}
- if(blob instanceof Blob&&bubble.isConnected&&deviceMediaKey(id)===key)renderDeviceMedia(bubble,blob,kind);
+ if(blob instanceof Blob&&bubble.isConnected&&deviceMediaKey(id)===key){renderDeviceMedia(bubble,blob,kind);return true}return false;
 }
 
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
- const label=node("span","image-job-label","作图中 1秒");
+ const mediaLabel=bubble.closest(".message")?.dataset.mediaFormat==="sticker"?"贴纸生成中":"作图中";
+ const label=node("span","image-job-label",mediaLabel+" 1秒");
  bubble.dataset.imageStart=String(Date.now());
  showChatImageWaiting(bubble,label);
  const interval=window.setInterval(()=>{
   if(!bubble.isConnected||bubble.dataset.imageTask!==id){window.clearInterval(interval);return}
   const elapsed=Math.max(1,Math.floor((Date.now()-Number(bubble.dataset.imageStart||Date.now()))/1000)+1);
-  label.textContent="作图中 "+elapsed+"秒";
+  label.textContent=mediaLabel+" "+elapsed+"秒";
  },1000);
  window.setTimeout(()=>void pollImageJob(bubble,id,false),0);
 }
@@ -1307,16 +1355,16 @@ async function pollImageJob(bubble,id,manual){
   const key=deviceMediaKey(messageId),owner=S.user?.id;
   requestDeviceMediaPersistence();
   const r=await api("/api/image/task/"+id);
-  let cached=false,blob=null;
+  let cached=false,blob=null,stickerFallback=false;
   if(r.done&&!r.failed&&r.image){
-   try{blob=await deviceMediaBlob(r.image);cached=blob instanceof Blob&&blob.size>0&&blob.type.startsWith("image/")&&await deviceMediaPut(key,blob)}catch{cached=false}
+   try{blob=await deviceMediaBlob(r.image);if(bubble.closest(".message")?.dataset.mediaFormat==="sticker"){try{if(!blob)throw Error("没有图片数据");blob=await stickerPng(blob)}catch{stickerFallback=true}}cached=blob instanceof Blob&&blob.size>0&&blob.type.startsWith("image/")&&await deviceMediaPut(key,blob)}catch{cached=false}
   }
   if(!bubble.isConnected||bubble.dataset.imageTask!==id||S.user?.id!==owner)return;
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
    if(r.failed){showImageRetry(bubble);return}
-   const img=cached?localImageElement(blob):node("img","chat-generated-image");
+   const img=blob instanceof Blob?localImageElement(blob):node("img","chat-generated-image");
    img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
    img.onload=()=>{
     if(!bubble.isConnected||bubble.dataset.imageFinalizing!==id)return;
@@ -1325,12 +1373,14 @@ async function pollImageJob(bubble,id,manual){
     bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);
     const row=bubble.closest(".message");
     if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}
+    if(stickerFallback)bubble.append(node("span","video-job-hint","贴纸已生成；背景未能自动去除，保留原图。"));
     if(!cached)mediaCacheWarning(bubble);
+    setPortraitState(row,"finished");
     // The final image can have a different height from the loading frame.
     if(follow)followLatestImage(bubble);
    };
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;showImageRetry(bubble)};
-   if(cached){if(img.complete&&img.naturalWidth)img.onload()}else img.src=r.image;return;
+   if(blob instanceof Blob){if(img.complete&&img.naturalWidth)img.onload()}else img.src=r.image;return;
   }
   delay=Math.max(1000,Math.min(18000,Number(r.waitSeconds||12)*1000));
  }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
@@ -1455,6 +1505,13 @@ function imagePromptPayload(value){
   if(started){if(promptSectionBoundary(line))break;positive.push(line)}
  }
  return (started?positive.join("\n"):String(value||"")).trim();
+}
+function requestedMediaFormat(value){
+ const p=String(value||"").trim();
+ if(!p||/(?:不要|不用|禁止|无需|不需要).{0,12}(?:制作|生成|做|画|转换|GIF|动图|贴纸|表情包)|^(?:如何|怎么|为什么|是否|什么是)|(?:识别|分析|解释|下载|查找|搜索|查看|提示词|教程|脚本|代码).{0,18}(?:GIF|动图|贴纸|表情包)/i.test(p))return "";
+ const explicit=/(?:生成|制作|创建|设计|画|做|转成|转换|变成|generate|create|make|convert|animate)/i.test(p)||/^(?:GIF|动图|贴纸|表情包)(?:[:：]|$)/i.test(p);
+ if(!explicit||/(?:提示词|教程|脚本|代码|格式说明)/.test(p))return "";
+ return /(?:GIF|动图|动态表情包|动态贴纸|animated sticker)/i.test(p)?"gif":/(?:贴纸|表情包|sticker)/i.test(p)?"sticker":"";
 }
 function isDirectVideoRequest(value){
  const p=String(value||"").trim();if(!p||/(?:不要|不用|禁止|无需|如何|怎么|为什么|能不能|是否|分析|识别|检查|解释|提示词|脚本|代码|教程|方案|文案|视频链接|下载|播放|搜索|查找)/.test(p))return false;
@@ -2250,6 +2307,7 @@ function retryMessage(row){
  const text=messageQuestion(row);
  if(!text){flashError("找不到当前回复对应的问题");return}
  const image=row.dataset.messageKind==="image"||!!row.querySelector("img.chat-generated-image");
+ if(row.dataset.mediaFormat){if(/\[文件：/.test(text)){flashError("原消息包含参考图，请重新选择图片后发送");return}if(messageDraft(text,false,row.dataset.mediaFormat==="gif"?"video":"image")){S.miniToolChoice=row.dataset.mediaFormat;void sendMessage()}return}
  messageDraft(text,true,image?"image":"text");
 }
 /* File content is created on this device; image bytes are not stored online. */
@@ -2500,9 +2558,10 @@ function inlineVideo(bubble,id){
 /* Local elapsed clock with bounded automatic server status checks.
  * Only the existing free job is queried; this never resubmits generation. */
 function inlineVideoJob(bubble,id,retry=false){
+ const gif=bubble.closest(".message")?.dataset.mediaFormat==="gif";
  bubble.dataset.videoTask=id;
  bubble.dataset.videoStarted=String(Date.now());
- const label=node("span","video-job-label","视频生成中 · 0:00");
+ const label=node("span","video-job-label",(gif?"GIF生成中":"视频生成中")+" · 0:00");
  const frame=createImageWaitingFrame();
  frame.classList.add("video-loading-card");
  frame.setAttribute("aria-label","视频生成中");
@@ -2518,7 +2577,7 @@ function inlineVideoJob(bubble,id,retry=false){
   if(!active()){cleanup();return}
   if(!document.hidden){
    const elapsed=Math.max(0,Math.floor((Date.now()-Number(bubble.dataset.videoStarted||Date.now()))/1000));
-   label.textContent="视频生成中 · "+Math.floor(elapsed/60)+":"+String(elapsed%60).padStart(2,"0");
+   label.textContent=(gif?"GIF生成中 · ":"视频生成中 · ")+Math.floor(elapsed/60)+":"+String(elapsed%60).padStart(2,"0");
   }
  },1000);
  function cleanup(){
@@ -2551,6 +2610,7 @@ function inlineVideoJob(bubble,id,retry=false){
    errors=0;
    if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.videoStarted=String(r.startedAt);
    if(r.status==="completed"){
+    if(gif){const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);hint.textContent="正在编码 GIF 动图…";try{const source=await deviceMediaBlob(r.url);if(!source)throw Error("视频源不可读取");const blob=await videoToGif(source);const saved=await deviceMediaPut(key,blob);if(!active())return;cleanup();const row=bubble.closest(".message");if(row)row.dataset.messageKind="image";renderDeviceMedia(bubble,blob,"image");if(!saved)mediaCacheWarning(bubble);setPortraitState(row,"finished");}catch(e){if(!active())return;cleanup();bubble.replaceChildren(node("span","video-job-hint","GIF转换失败："+humanError(e)));const retry=node("button","chat-video-save","重试转换");retry.type="button";retry.onclick=()=>inlineVideoJob(bubble,id);bubble.append(retry)}return;}
     const local=/^\/api\/video\/media\/[0-9a-f-]{36}$/i.test(r.url||"");
     const external=r.temporaryUrl===true&&/^https:\/\/[a-z0-9-]+\.hf\.space\/gradio_api\/file=/i.test(r.url||"");
     if(local){
@@ -2654,15 +2714,16 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  if(role==="assistant"){
   if(!existingRow)row.append(makeAssistantPortrait(),bubble);
   else if(!row.querySelector(":scope > .avatar-ai"))row.prepend(makeAssistantPortrait());
+  if(model==="GIF动图")row.dataset.mediaFormat="gif";else if(model==="贴纸")row.dataset.mediaFormat="sticker";
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
-  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image","",pending[1])}
+  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image","",pending[1]).then(found=>{if(!found&&bubble.isConnected)renderImageJob(bubble,pending[1])})}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){row.dataset.messageKind="image";void restoreDeviceMedia(bubble,messageId,"image",picture[1])}
   const videoPending=String(content||"").match(/^\[\[aigzt:video-job:([0-9a-f-]{36})\]\]$/i);
   const paidVideo=String(content||"").match(/^\[\[aigzt:paid-video:(grok|runway|luma|vidu):([A-Za-z0-9_-]{4,160})\]\]$/);
   if(paidVideo){row.dataset.messageKind="video";renderPaidVideo(bubble,paidVideo[1],paidVideo[2])}
   const videoDone=String(content||"").match(/^\[\[aigzt:video:([0-9a-f-]{36})\]\]$/i);
-  if(videoPending){row.dataset.messageKind="video";if(existingRow)inlineVideoJob(bubble,videoPending[1]);else void restoreDeviceMedia(bubble,messageId||videoPending[1],"video");}
+  if(videoPending){const gif=row.dataset.mediaFormat==="gif";row.dataset.messageKind=gif?"image":"video";if(existingRow)inlineVideoJob(bubble,videoPending[1]);else void restoreDeviceMedia(bubble,messageId||videoPending[1],gif?"image":"video").then(found=>{if(!found&&bubble.isConnected)inlineVideoJob(bubble,videoPending[1])});}
   if(videoDone){row.dataset.messageKind="video";void restoreDeviceMedia(bubble,messageId||videoDone[1],"video","/api/video/media/"+videoDone[1]);}
   const localDone=/^(图片已生成[（(]|图生图已生成[（(]|视频已生成[（(])/.test(String(content||""));
   if(localDone){const kind=String(content).startsWith("视频")?"video":"image";row.dataset.messageKind=kind;void restoreDeviceMedia(bubble,messageId,kind)}
@@ -2761,7 +2822,7 @@ function updateComposerModel(){
  $("toolsAction").hidden=work;if(work)$("toolTray").hidden=true;
  $("replyLevelTrigger").hidden=work;if(work)closeReplyLevel();
  name.classList.toggle("is-auto-model",work?["auto","free"].includes(currentWorkStage().step.provider):S.provider==="free"&&S.model==="free:auto");
- name.textContent=imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(S.videoProvider==="freeloop"?"首尾帧视频":S.videoProvider==="freewan"?"图生视频":VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频"):S.code?"代码 · "+active:active;
+ name.textContent=S.miniToolChoice==="gif"?"GIF 动图":S.miniToolChoice==="sticker"?"贴纸":imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(S.videoProvider==="freeloop"?"首尾帧视频":S.videoProvider==="freewan"?"图生视频":VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频"):S.code?"代码 · "+active:active;
  name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击模型图标返回聊天":S.code?"代码模式 · "+active:(work?"当前工作选择：":"当前聊天选择：")+active;
  $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":work?"工作模型":"聊天模型";
  switcher.setAttribute("aria-label",(videoMode||imageMode||S.code)?"切回普通聊天":work?"切换工作模型":"切换聊天模型");
@@ -2874,8 +2935,9 @@ function syncMobileHeight(){
 function syncMiniTools(){
  const active={
   miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",
-  miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan",
-  miniFrameVideo:S.composerMode==="video"&&S.videoProvider==="freeloop"
+  miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan"&&S.miniToolChoice!=="gif",
+  miniFrameVideo:S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.miniToolChoice!=="gif",
+  miniSticker:S.miniToolChoice==="sticker",miniGif:S.miniToolChoice==="gif"
  };
  for(const [id,yes] of Object.entries(active)){
   const btn=$(id);if(!btn)continue;
@@ -2909,7 +2971,7 @@ function restoreChatInputMode(){
  setComposerMode("text");hideAttachMenu();$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false");
 }
 function setComposerMode(mode){
- if(mode!=="image")S.miniToolChoice=null;
+ S.miniToolChoice=null;
  S.composerMode=mode;
  if(S.workMode&&mode!=="text")setWorkMode(false);
  if(mode!=="text"&&S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false")}
@@ -3760,7 +3822,7 @@ function restoreComposer(draft){
  if(!draft)return;
  S.code=!!draft.code;$("codeToggle").classList.toggle("active",S.code);$("codeToggle").setAttribute("aria-pressed",String(S.code));
  S.miniToolChoice=draft.miniToolChoice;S.attachments=draft.attachments.slice();$("prompt").value=draft.text;
- setComposerMode(draft.mode||"text");renderAttachments();settlePromptSize();
+ setComposerMode(draft.mode||"text");S.miniToolChoice=draft.miniToolChoice;syncMiniTools();updateComposerModel();renderAttachments();settlePromptSize();
 }
 function setWorkMode(on){
  const wasWork=S.workMode;
@@ -3983,8 +4045,10 @@ async function continueTextReply(row,original,button){
  }finally{S.busy=false;button.disabled=false;$("sendBtn").disabled=false}
 }
 // Resolve each turn independently; the chosen chat model is never overwritten by media tools.
-function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel}){
+function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel,tool}){
  const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+ const format=tool==="sticker"||tool==="gif"?tool:mode==="text"&&provider==="free"&&!code&&!continueFrom?requestedMediaFormat(prompt):"";
+ if(format){if(!compatible||attachments.length>(format==="gif"?2:1))return {error:"贴纸最多1张参考图，GIF最多2张"};if(format==="sticker")return {mode:"image",format,videoProvider,videoModel};const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";return {mode:"video",format,videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};}
  if(mode==="text"&&!code&&!continueFrom&&compatible){
   if(provider==="free"&&isDirectVideoRequest(prompt)){
    if(attachments.length>2)return {error:"自动视频最多使用两张首尾帧图片"};
@@ -4001,9 +4065,9 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(S.busy)return;
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  const submittedCode=S.code,submittedTool=S.miniToolChoice;
- const turn=resolveChatTurn({mode:S.composerMode,provider:S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel});
+ const turn=resolveChatTurn({mode:S.composerMode,provider:S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel,tool:submittedTool});
  if(turn.error){flashError(turn.error);return}
- const submittedMode=turn.mode;
+ const submittedMode=turn.mode,mediaFormat=turn.format||"";
  const submittedVideoProvider=turn.videoProvider,submittedVideoModel=turn.videoModel,submittedVideoRatio=S.videoRatio;
  if(!S.user){show("authDialog");return}
  const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(submittedVideoProvider);
@@ -4059,7 +4123,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
- const waitLabel=node("span","",isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
+ const waitLabel=node("span","",mediaFormat==="gif"?"正在创建GIF…":mediaFormat==="sticker"?"正在创建贴纸…":isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
  const dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));
  dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);
@@ -4098,11 +4162,11 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    }
   else if(isImageMessage){
    const reference=attached.find(x=>["image/jpeg","image/png","image/webp"].includes(x.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt,imageId:reference?.id});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",format:mediaFormat,prompt,imageId:reference?.id});
   }
   else if(freeVideo){
    const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,imageId:img?.id,endImageId:submittedVideoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:submittedVideoRatio,prompt});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",format:mediaFormat,provider:submittedVideoProvider,model:submittedVideoModel,imageId:img?.id,endImageId:submittedVideoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:submittedVideoRatio,prompt});
   }
   else{
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
@@ -4150,6 +4214,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    if(isImageMessage){setComposerMode("image");S.miniToolChoice=submittedTool;syncMiniTools()}
    else if(submittedMode==="video"){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;setComposerMode("video")}
    else{restoreChatInputMode();if(submittedCode){S.code=true;$("codeToggle").classList.add("active");$("codeToggle").setAttribute("aria-pressed","true");setComposerMode("text")}}
+   if(mediaFormat){S.miniToolChoice=mediaFormat;syncMiniTools();updateComposerModel()}
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom,forceFreeOnce);
   });
@@ -5117,6 +5182,7 @@ function wire(){
  for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
+ for(const [id,format] of [["miniSticker","sticker"],["miniGif","gif"]])$(id).addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode(format==="gif"?"video":"image");S.miniToolChoice=format;syncMiniTools();updateComposerModel();$("prompt").placeholder=format==="gif"?"描述动图内容和动作…":"描述贴纸内容…";$("prompt").focus({preventScroll:true})});
  $("chatAutoChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;setModel({provider:"free",id:"free:auto",name:"自动模式",type:"text",free:true})});
  $("chatBoundChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;S.query="";$("modelSearch").value="";activateSource("connected");$("modelScroll").scrollTop=0});
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
