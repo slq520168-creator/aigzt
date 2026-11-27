@@ -1445,80 +1445,75 @@ function normalizeAssistantMarkdown(answer){
 }
 // Recover model-generated prompt sections without treating real program code as prompts.
 function imagePromptLabel(line){
- const s=String(line||"").trim().replace(/^(?:(?:>\s*)|(?:#{1,6}\s+)|(?:[-*]\s+)|(?:\d+[.)、]\s+))+/,"").replace(/^\*\*/,"");
- const m=s.match(/^((?:(?:(?:中文|英文|English|Chinese)\s*)?(?:正向|负面|反向|positive|negative)?\s*(?:作图|绘图|图像|图片|摄影|image|drawing)?\s*(?:提示词|prompts?)|(?:正向|负面|反向|positive|negative)\s*(?:提示词|prompts?))(?:(?:\s*[（(][^）)]{1,40}[）)])|\s*(?:中文版|英文版|中文|英文|Chinese|English))?)\s*(?:\*\*)?(?:[:：]\s*(?:\*\*)?\s*(.*)|$)/i);
- if(!m)return null;return {label:m[1],body:(m[2]||"").trim(),negative:/负面|反向|negative/i.test(m[1]),generic:/^(?:提示词|prompts?)$/i.test(m[1].trim())};
+ const s=String(line||"").trim().replace(/^(?:(?:>\s*)|(?:#{1,6}\s+)|(?:[-*]\s+)|(?:\d+[.)、]\s+))+/,"").replace(/^\*\*/,"").replace(/\*\*\s*$/,"");
+ const m=s.match(/^((?:建议|推荐|完整|最终|优化后|可复制|通用)?\s*(?:(?:中文|英文|English|Chinese|中英双语)\s*)?(?:正向|负面|反向|否定|positive|negative)?\s*(?:AI\s*)?(?:作图|画图|绘图|生图|图像|图片|摄影|image|drawing|text.to.image|midjourney|flux|SDXL)?\s*(?:提示词|prompt(?:s)?)(?:\s*(?:正向|负面|反向|positive|negative))?(?:\s*[（(][^）)]{1,60}[）)]|\s*(?:中文版|英文版|中文|英文|Chinese|English))?)\s*(?:\*\*)?(?:[:：]\s*(?:\*\*)?\s*(.*)|$)/i);
+ if(!m)return null;
+ const label=m[1].trim();return {label,body:(m[2]||"").replace(/^\*\*|\*\*$/g,"").trim(),negative:/负面|反向|否定|negative/i.test(label),generic:/^(?:提示词|prompts?)$/i.test(label)};
 }
 function promptSectionBoundary(line){
  const s=String(line||"").trim().replace(/^(?:>\s*|#{1,6}\s+|\*\*)+/,"");
- return !!imagePromptLabel(line)||/^(?:主题|人物(?:档案|姓名|设定|一致性)|固定(?:身份|档案)|推荐(?:画面|图片)?比例|比例|摄影(?:风格|参数)|镜头|光圈|继续完成|第\s*\d+\s*[套组]|[-]{3,})(?:\s*[:：、.]|\s|$)/.test(s)||/^\s*#{1,6}\s+\S/.test(line)||/^\s*\d{1,2}[.)、]\s+\S/.test(line);
+ return !!imagePromptLabel(line)||/^(?:主题|人物(?:档案|姓名|设定|一致性)|固定(?:身份|档案)|推荐(?:画面|图片)?比例|比例|参数|摄影(?:风格|参数)|镜头参数|光圈|继续完成|变体\s*[A-Z0-9一二三四五六七八九十]|第\s*\d+\s*[套组]|[-]{3,}|(?:parameters?|settings|aspect ratio|negative prompt)\b)(?:\s*[:：、.（(]|\s|$)/i.test(s)||/^\s*#{1,6}\s+\S/.test(line)||/^\s*\d{1,2}[.)、]\s+\S/.test(line);
 }
 function isImagePromptContext(value){
  const s=String(value||"");
- return /(?:提示词|prompts?)/i.test(s)&&/(?:作图|画图|绘图|图像|图片|照片|摄影|人物|插画|海报|写实|角色|image|photo|portrait|illustration|midjourney|stable diffusion|flux)/i.test(s)&&!/(?:视频|音乐|编程|代码|系统提示词|system prompt)/i.test(s);
+ return /(?:提示词|prompts?)/i.test(s)&&/(?:作图|画图|绘图|生图|图像|图片|照片|摄影|人物|插画|海报|写实|角色|image|photo|portrait|illustration|midjourney|stable diffusion|flux|sdxl)/i.test(s)&&!/(?:系统提示词|system prompt|视频提示词|音乐提示词|编程提示词)/i.test(s);
 }
 function looksLikeImagePrompt(value){
  const s=String(value||"").trim();
- if(s.length<25||/^\s*(?:def |class |function |const |let |var |import |export |SELECT\s|CREATE\s|<\/?\w|#!|package\s|return\s|\{|\[)/m.test(s))return false;
- return /(?:photorealistic|portrait|photography|cinematic|lighting|camera|lens|background|full.body|close.up|high.quality|ultra.detailed|illustration|anime|render|bokeh|composition|写实|摄影|画面|镜头|光线|光影|背景|高清|服装|发型|构图|特写|全身|景深|插画)/i.test(s);
+ if(s.length<18||/^\s*(?:def |class |function |const |let |var |import |export |SELECT\s|CREATE\s|<\/?\w|#!|package\s|return\s|\{|\[)/m.test(s))return false;
+ const matches=s.match(/photorealistic|portrait|photography|cinematic|lighting|camera|lens|background|full.body|close.up|high.quality|ultra.detailed|illustration|anime|render|bokeh|composition|selfie|masterpiece|detailed|8k|4k|--ar\b|写实|摄影|画面|镜头|光线|光影|背景|高清|服装|发型|构图|特写|全身|景深|插画|画质|细节|色调/gi)||[];
+ return new Set(matches.map(x=>x.toLowerCase())).size>=2;
 }
 function normalizePromptSections(lines,imageContext=false){
- if(!lines.some(imagePromptLabel)&&!imageContext)return lines;
- const out=[];let outside=null;
- const mark=line=>String(line||"").trim().match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
+ const out=[],mark=line=>String(line||"").trim().match(/^(\x60{3,}|~{3,})\s*([\w+-]*)\s*$/);
+ const isText=lang=>/^(?:text|plaintext|txt|prompt|imageprompt|positive-prompt)?$/i.test(lang);
+ const negativeLine=s=>/^(?:\*\*)?(?:建议|推荐|通用)?\s*(?:负面|反向|否定|negative)/i.test(String(s||"").trim().replace(/^#{1,6}\s+/,""));
+ const wrap=(payload,negative,eligible)=>{if(payload.trim())out.push("\x60\x60\x60"+(!negative&&eligible?"image-prompt":"text"),payload.trim(),"\x60\x60\x60")};
+ const closeAt=(from,open)=>{let j=from;for(;j<lines.length;j++){const f=mark(lines[j]);if(f&&!f[2]&&f[1][0]===open[1][0]&&f[1].length>=open[1].length)break}return j};
  for(let i=0;i<lines.length;i++){
-  const f=mark(lines[i]),label=imagePromptLabel(lines[i]);
-  if(label&&(!outside||/^(?:text|plaintext|txt)?$/i.test(outside.lang))){
-   if(outside){
-    if(out.length===outside.index+1)out.pop();else out.push(outside.mark);
-    outside=null;
-   }
-   let body=label.body?[label.body]:[],inside=false,j=i+1;
-   for(;j<lines.length;j++){
-    const line=lines[j],s=line.trim(),fm=mark(line);
-    if(promptSectionBoundary(line))break;
-    if(fm){
-     if(inside){inside=false;j++;break}
-     if(body.length)break;
-     // Model may have closed the label-only block before the actual text.
-     // A subsequent fence with content is handled as the payload.
-     if(fm[2])inside=true;
-     else if(!mark(lines[j+1])&&lines[j+1]?.trim()&&!promptSectionBoundary(lines[j+1]))inside=true;
-     continue;
+  const label=imagePromptLabel(lines[i]),f=mark(lines[i]);
+  if(label){
+   const body=label.body?[label.body]:[];let j=i+1;
+   while(j<lines.length&&!lines[j].trim())j++;
+   const next=mark(lines[j]);
+   if(next&&isText(next[2])){
+    const end=closeAt(j+1,next);body.push(...lines.slice(j+1,end));j=end<lines.length?end+1:end;
+   }else if(!next){
+    for(;j<lines.length&&!promptSectionBoundary(lines[j])&&!mark(lines[j]);j++){
+     if(!lines[j].trim()&&body.length)break;
+     if(lines[j].trim())body.push(lines[j]);
     }
-    if(!s){
-     if(body.length&&!inside)break;
-     if(body.length)body.push("");continue;
-    }
-    body.push(line);
    }
    const payload=body.join("\n").trim();
    out.push("**"+label.label+"**");
-   if(payload){out.push("\x60\x60\x60"+(label.negative||label.generic&&!imageContext&&!looksLikeImagePrompt(payload)?"text":"image-prompt"),payload,"\x60\x60\x60")}
+   wrap(payload,label.negative,!label.generic||imageContext||looksLikeImagePrompt(payload));
    i=j-1;continue;
   }
-  if(f&&!outside&&/^(?:text|plaintext|txt)?$/i.test(f[2])){
-   let end=i+1;while(end<lines.length){const close=mark(lines[end]);if(close&&!close[2]&&close[1][0]===f[1][0]&&close[1].length>=f[1].length)break;end++}
-   const body=lines.slice(i+1,end).join("\n"),prev=lines.slice(Math.max(0,i-3),i).join(" ");
-   if((imageContext||looksLikeImagePrompt(body))&&looksLikeImagePrompt(body)&&!/负面|反向|negative/i.test(prev)&&!/^\s*(?:negative|负面|反向)\s*[:：]/i.test(body)){out.push(f[1]+"image-prompt",...lines.slice(i+1,end));if(end<lines.length)out.push(lines[end]);i=end;continue}
-  }
   if(f){
-   if(outside&&f[1][0]===outside.mark[0]&&!f[2])outside=null;
-   else if(!outside)outside={mark:f[1],lang:f[2],index:out.length};
+   const end=closeAt(i+1,f),body=lines.slice(i+1,end).join("\n");
+   const prev=lines.slice(0,i).reverse().find(x=>x.trim())||"";
+   const neg=negativeLine(prev)||negativeLine(body);
+   if(isText(f[2])&&!neg&&(looksLikeImagePrompt(body)||imageContext&&/^(?:prompt|imageprompt|positive-prompt)$/i.test(f[2]))){
+    wrap(body,false,true);
+   }else if(isText(f[2])&&imagePromptLabel(body.split("\n")[0])){
+    out.push(...normalizePromptSections(body.split("\n"),imageContext));
+   }else out.push(...lines.slice(i,end<lines.length?end+1:end));
+   i=end;continue;
   }
+  // Unlabelled natural-language image descriptions with an adjacent generation parameter.
+  if(looksLikeImagePrompt(lines[i])&&(/^\s*(?:参数|parameters?|--ar\b)/i.test(lines[i+1]||"")||/--ar\s+\d+:\d+/i.test(lines[i]))){wrap(lines[i],false,true);continue}
   out.push(lines[i]);
  }
  return out;
 }
 function imagePromptPayload(value){
- const lines=String(value||"").trim().split("\n");
- const positive=[];let started=false;
+ const text=String(value||"").trim(),lines=text.split("\n"),positive=[];let started=false;
  for(const line of lines){
   const label=imagePromptLabel(line);
-  if(label){if(label.negative||started)break;started=true;if(label.body)positive.push(label.body);continue}
+  if(label){if(label.negative){if(!started)return "";break}if(started)break;started=true;if(label.body)positive.push(label.body);continue}
   if(started){if(promptSectionBoundary(line))break;positive.push(line)}
  }
- return (started?positive.join("\n"):String(value||"")).trim();
+ return (started?positive.join("\n"):text).trim();
 }
 function requestedMediaFormat(value){
  const p=String(value||"").trim();
@@ -1767,14 +1762,15 @@ function wireAssistantDoubleCopy(bubble){
 function updateAssistantText(bubble,answer,complete=false){
  wireAssistantDoubleCopy(bubble);
  const text=complete?String(answer||""):streamingMarkdownPrefix(answer);
- if(assistantTextState.get(bubble)===text)return;
- const staged=node("div");
  const row=bubble.closest(".message");
  const imageContext=!!row&&isImagePromptContext(messageQuestion(row));
+ const renderKey=(imageContext?"image:":"text:")+(complete?"final:":"stream:")+text;
+ if(assistantTextState.get(bubble)===renderKey)return;
+ const staged=node("div");
  renderAssistantText(staged,text,imageContext);
  bubble.classList.remove("chat-revealing");
  syncAssistantChildren(bubble,staged);
- assistantTextState.set(bubble,text);
+ assistantTextState.set(bubble,renderKey);
 }
 // Position the new text turn once; do not chase its growing end while reading.
 function positionNewTextReply(row,question,viewport){
