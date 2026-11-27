@@ -43,6 +43,7 @@ const ICONS={
  'chevron-down':'<path d="m6 9 6 6 6-6"/>',
  'chevron-right':'<path d="m9 18 6-6-6-6"/>',
  history:'<path d="M3 12a9 9 0 1 1 9 9 9.75 9.75 0 0 1-6.74-2.74L3 15"/><path d="M3 21v-6h6"/><path d="M12 7v5l4 2"/>',
+ database:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5M3 12a9 3 0 0 0 18 0"/>',
  ellipsis:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
  palette:'<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8" cy="7" r="1"/><circle cx="6.5" cy="12" r="1"/><path d="M12 22a10 10 0 1 1 10-10c0 2-1 3-3 3h-3a2 2 0 0 0-2 2 2 2 0 0 1-2 5"/>',
  camera:'<path d="M14 4h-4l-2 3H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-4z"/><circle cx="12" cy="13" r="3"/>',
@@ -127,7 +128,7 @@ function backDialog(id){
  if(id==="authDialog")pendingHomeBrand=null;
  if(id==="keyDialog")homeBrandBinding=null;
  if(id==="actionsDialog"){closeHistoryActions();return}
- const parent=id==="keyDialog"?keyBackPage:null;
+ const parent=id==="keyDialog"?keyBackPage:id==="workServiceDialog"?"workSettingsDialog":null;
  if(id==="keyDialog")keyBackPage=null;
  hide(id);
  if(parent)show(parent);
@@ -3598,30 +3599,58 @@ function restoreWorkspaceRoute(){
 }
 
 /* Real engineering work actions: no background writes, no simulated results. */
-const WK={connections:[],file:null,rows:null,proposal:null,busy:false};
+const WK={connections:[],file:null,rows:null,proposal:null,busy:false,owner:null,loaded:false,loading:null,githubMode:"public"};
 function wkStatus(v){$("workToolStatus").textContent=String(v||"")}
 function wkTask(){if(!S.workTaskId){wkStatus("请先新建或选择一个工作任务");return null}return S.workTaskId}
+function setWorkGithubMode(mode){
+ WK.githubMode=mode==="key"?"key":"public";
+ const keyed=WK.githubMode==="key";$("workGithubKeyFields").hidden=!keyed;$("workGithubToken").required=keyed;
+ if(!keyed)$("workGithubToken").value="";
+ $("workGithubModeNote").textContent=keyed?"私有仓库或需要修改、提交时使用。":"公开仓库可直接连接，只读。";
+ for(const b of $("workGithubForm").querySelectorAll("[data-github-mode]"))b.setAttribute("aria-pressed",String(b.dataset.githubMode===WK.githubMode));
+}
+function renderWorkConnectionStates(){
+ const owner=String(S.user?.id||""),loaded=WK.loaded&&WK.owner===owner;
+ for(const [kind,status,button,field,summary] of [["github","workGithubInfo","workGithubDisconnect","workGithubRepo","workGithubState"],["supabase","workDbInfo","workDbDisconnect","workDbRef","workDbState"]]){
+  const x=loaded?WK.connections.find(v=>v.kind===kind):null;
+  const label=!owner?"未登录":!loaded?"未核实":x?(kind==="github"?(x.access==="public"?"已连接 · 只读":"已连接"):"已保存"):"未连接";
+  $(summary).textContent=label;$(summary).classList.toggle("connected",!!x);$(status).textContent=x?label+" · "+x.label+(x.branch?" · "+x.branch:""):label;
+  $(button).disabled=!x;if(x&&!$(field).value)$(field).value=x.ref;
+ }
+}
+function openWorkService(view){
+ const titles={steps:"任务步骤",github:"连接 GitHub",database:"连接 Supabase",files:"仓库文件",data:"数据查询",deploy:"部署与运行"};
+ if(!Object.hasOwn(titles,view))return;
+ const kind=view==="files"||view==="deploy"?"github":view==="data"?"supabase":null;
+ const connection=WK.owner===String(S.user?.id||"")&&WK.loaded?WK.connections.find(x=>x.kind===kind):null;
+ if(kind&&(!connection||view==="deploy"&&connection.access==="public"))view=kind==="github"?"github":"database";
+ for(const el of $("workServiceContent").querySelectorAll("[data-work-service]"))el.hidden=el.dataset.workService!==view;
+ $("workServiceTitle").textContent=titles[view];$("workServiceDialog").setAttribute("aria-label",titles[view]);wkStatus("");
+ if(view==="steps"){$("workConfig").open=true;renderWorkEditor()}
+ if(view==="github"){const x=WK.connections.find(x=>x.kind==="github");setWorkGithubMode(x?.access==="key"||kind&&view==="github"&&connection?.access==="public"?"key":"public");}
+ hide("workSettingsDialog");show("workServiceDialog");$("workServiceContent").scrollTop=0;
+ if(kind&&view==="github")wkStatus(connection?.access==="public"?"部署需要密钥连接。":"请先连接仓库，再使用工具。");
+ if(kind&&view==="database")wkStatus("请先连接数据库。");
+}
 async function wkConnections(){
- if(!S.user)return;
- try{
-  const d=await api("/api/work/integrations");WK.connections=d.integrations||[];
-  for(const [type,status,button,field] of [["github","workGithubInfo","workGithubDisconnect","workGithubRepo"],["supabase","workDbInfo","workDbDisconnect","workDbRef"]]){
-   const x=WK.connections.find(c=>c.kind===type);
-   $(status).textContent=x?"已连接 "+x.label+(x.branch?" · "+x.branch:" · 仅只读"):"未连接";
-   $(button).disabled=!x;
-   if(x&&!$(field).value)$(field).value=x.ref;
-  }
- }catch(e){wkStatus(humanError(e))}
+ const owner=String(S.user?.id||"");
+ if(WK.owner!==owner){Object.assign(WK,{owner,connections:[],loaded:false,loading:null,file:null,rows:null,proposal:null});for(const id of ["workGithubRepo","workGithubBranch","workGithubToken","workDbRef","workDbToken","workRepoPath","workDbTable","workPatchAnchor","workPatchInstruction","workWorkflow"])$(id).value="";for(const id of ["workRepoEntries","workRunResults"])$(id).replaceChildren();for(const id of ["workRepoPreview","workDbRows"]){$(id).textContent="";$(id).hidden=true}wkShowProposal();setWorkGithubMode("public")}
+ renderWorkConnectionStates();if(!owner)return;if(WK.loading)return WK.loading;
+ const job=(async()=>{try{
+  const d=await api("/api/work/integrations");if(String(S.user?.id||"")!==owner||WK.owner!==owner)return;
+  WK.connections=d.integrations||[];WK.loaded=true;$("workConnectionsNotice").textContent="";renderWorkConnectionStates();
+ }catch(e){if(WK.owner===owner)$("workConnectionsNotice").textContent="连接状态暂未更新："+humanError(e)}})();
+ WK.loading=job;try{await job}finally{if(WK.loading===job)WK.loading=null}
 }
 async function wkConnect(kind){
  if(WK.busy)return;if(!S.user){show("authDialog");return}
  WK.busy=true;wkStatus("正在验证并保存连接…");
  const form=$(kind==="github"?"workGithubForm":"workDbForm"),b=form.querySelector('[type="submit"]');b.disabled=true;
  try{
-  const payload=kind==="github"?{repo:$("workGithubRepo").value.trim(),branch:$("workGithubBranch").value.trim(),token:$("workGithubToken").value.trim()}:{ref:$("workDbRef").value.trim(),token:$("workDbToken").value.trim()};
+  const payload=kind==="github"?{repo:$("workGithubRepo").value.trim(),branch:$("workGithubBranch").value.trim(),access:WK.githubMode,token:WK.githubMode==="key"?$("workGithubToken").value.trim():""}:{ref:$("workDbRef").value.trim(),token:$("workDbToken").value.trim()};
   const d=await api("/api/work/integrations/"+kind,payload);
   form.querySelector('input[type="password"]').value="";WK.file=null;WK.proposal=null;wkShowProposal();
-  await wkConnections();wkStatus("已连接 "+d.label+"，凭据已加密保存");
+  await wkConnections();wkStatus(kind==="github"?"已连接 "+d.label+(d.access==="public"?"（只读）":""):"数据库连接已保存，可进行只读查询");
  }catch(e){wkStatus("连接失败："+humanError(e))}
  finally{WK.busy=false;b.disabled=false}
 }
@@ -3739,7 +3768,7 @@ function setWorkMode(on){
   $("prompt").placeholder="描述要完成的工作任务…";
   hideAttachMenu();$("toolTray").hidden=true;void fetchWorkTasks();syncWorkspaceRoute("work");
  }else{
-  $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");hide("workSettingsDialog");hide("workHistoryDialog");
+  $("workBoard").hidden=true;$("conversation").hidden=false;hide("workModelDialog");hide("workSettingsDialog");hide("workServiceDialog");hide("workHistoryDialog");
   if(wasWork){restoreComposer(chatComposerBeforeWork);chatComposerBeforeWork=null}
   else $("prompt").placeholder="向 AI 提问…";
   syncWorkspaceRoute("");
@@ -4910,7 +4939,9 @@ function wire(){
  $("domesticProviderList");initDomesticProviderLinks();
  $("workClose").addEventListener("click",returnWorkspace);
  $("workNewTask").addEventListener("click",newWorkDraft);
- $("workSettingsOpen").addEventListener("click",()=>{renderWorkEditor();show("workSettingsDialog");void wkConnections()});
+ $("workSettingsOpen").addEventListener("click",()=>{renderWorkEditor();show("workSettingsDialog");renderWorkConnectionStates();void wkConnections()});
+ $("workSettingsDialog").querySelectorAll("[data-work-settings-view]").forEach(b=>b.addEventListener("click",()=>openWorkService(b.dataset.workSettingsView)));
+ $("workGithubForm").querySelectorAll("[data-github-mode]").forEach(b=>b.addEventListener("click",()=>setWorkGithubMode(b.dataset.githubMode)));
  $("workHistoryOpen").addEventListener("click",()=>{renderWorkTasks();show("workHistoryDialog");void fetchWorkTasks()});
  $("workEmpty").querySelectorAll("[data-work-draft]").forEach(button=>button.addEventListener("click",()=>{if(S.workBusy)return;const input=$("prompt");if(input.value.trim())return input.focus();input.value=button.dataset.workDraft+"\n";settlePromptSize();input.focus()}));
  $("workModelChoose").addEventListener("click",()=>{
