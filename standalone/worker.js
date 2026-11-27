@@ -288,7 +288,7 @@ async function verifiedSharedFreeModel(env,id){
  if(!catalog.sharedFreeModels?.some(m=>m.id===id))throw Object.assign(Error("该免费模型当前未列入零价目录，请选择其他免费模型"),{status:503,code:"FREE_TEMPORARY"});
  return upstream;
 }
-async function listModels(env){
+async function listModels(env,cacheOnly=false){
  const availableFree=FREE_MODELS;
  try{
  const url="https://openrouter.ai/api/v1/models";
@@ -298,6 +298,7 @@ async function listModels(env){
  let data;
  if(hit){data=await hit.json().catch(()=>null)}
  if(!data){
+  if(cacheOnly)throw Error("模型目录缓存尚未建立");
   const upstream=await fetch(url,{headers:{Accept:"application/json"},signal:AbortSignal.timeout(12000)});
   if(!upstream.ok)throw Error("OpenRouter 模型目录暂时不可用："+upstream.status);
   data=await upstream.json();
@@ -558,7 +559,7 @@ async function readChatCompletionStream(res,model,onDelta){
     const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
     if(token&&content.length<40000){
      const piece=token.slice(0,40000-content.length);
-     content+=piece;onDelta(piece);
+     content+=piece;if(content.trim())onDelta(piece);
     }
    }
   }
@@ -669,7 +670,7 @@ function freeSources(env){
 async function automaticFreeSources(env,mode,level){
  const base=freeSources(env);
  if(typeof env.OPENROUTER_FREE_KEY!=="string"||env.OPENROUTER_FREE_KEY.length<12)return base;
- const catalog=await listModels(env);
+ const catalog=await listModels(env,true);
  const shared=(catalog.sharedFreeModels||[]).filter(m=>m.shared===true&&m.free===true&&m.type==="text"&&m.sharedModel?.endsWith(":free"));
  const score=m=>{const id=m.sharedModel.toLowerCase();return (mode==="code"&&/coder|code|deepseek|qwen|devstral/.test(id)?100:0)+(level==="long"&&/gpt-oss|deepseek|qwen|gemma|llama/.test(id)?30:0)+Math.min(20,Math.log2(Math.max(1,m.context||1)));};
  const named=shared.sort((a,b)=>score(b)-score(a)||a.id.localeCompare(b.id)).map(m=>({id:"openrouter",routeKey:m.id,name:m.name,endpoint:"https://openrouter.ai/api/v1/chat/completions",model:m.sharedModel,key:env.OPENROUTER_FREE_KEY,ms:level==="long"?32000:18000,zeroOnly:true}));
@@ -748,33 +749,29 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   }
   const streaming=typeof onDelta==="function"&&!source.query&&["groq","openrouter"].includes(source.id);
   if(streaming){payload.stream=true;if(source.id==="groq")payload.stream_options={include_usage:true}}
-  let res;
+  let res,visible=false;
+  const controller=new AbortController();
+  const totalMs=Math.min(streaming?Math.max(source.ms,35000):source.ms,remaining);
+  const totalTimer=setTimeout(()=>controller.abort(),totalMs);
+  const firstMs=Math.min(totalMs,replyLevel==="long"||mode==="code"?9000:6000);
+  const firstTimer=isAuto&&streaming?setTimeout(()=>controller.abort(),firstMs):null;
+  const clearFirst=()=>{if(firstTimer!==null)clearTimeout(firstTimer)};
   try{
    res=await fetch(source.endpoint,{
     method:"POST",
     headers:{"content-type":"application/json",accept:streaming?"text/event-stream":"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},
-    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(Math.min(streaming?Math.max(source.ms,35000):sharedAuto&&source.id==="groq"&&replyLevel==="long"?32000:source.ms,Math.max(1500,remaining)))
+    body:JSON.stringify(payload),redirect:"manual",signal:controller.signal
    });
-  }catch(error){
-   // For chat only, advance to a distinct configured route, never retry the same request on the same source.
-   await freeRouteFailure(env,routeKey,503,sourceState,null);
-   if(chatFailover&&!sharedAuto){errors.push(source.id+" 连接超时");continue}
-   throw Object.assign(new Error("免费来源连接中断，已暂停该来源；为避免重复调用，本次未自动重发"),{status:503});
-  }
-  if(!res.ok){
-   const status=res.status;
-   // A request-specific 413 must not disable a healthy free provider.
-   if(status!==413)await freeRouteFailure(env,routeKey,status,sourceState,res.headers);
-   errors.push(source.id+" HTTP "+status);
-   if(status===429||[400,401,402,403,404].includes(status)||status>=500)continue;
-   continue;
-  }
-  if(streaming){
-   let result;
-   try{result=await readChatCompletionStream(res,source.model,onDelta)}catch(e){await freeRouteFailure(env,routeKey,502,sourceState,res.headers);throw e}
-   await freeRouteRecover(env,routeKey,sourceState);
-   return {...result,actualModel:source.id+"/"+String(result.actualModel||source.model).slice(0,90),source:source.id};
-  }
+   if(!res.ok){
+    clearFirst();const status=res.status;
+    if(status!==413)await freeRouteFailure(env,routeKey,status,sourceState,res.headers);
+    errors.push(source.id+" HTTP "+status);void res.body?.cancel().catch(()=>{});continue;
+   }
+   if(streaming){
+    const result=await readChatCompletionStream(res,source.model,token=>{if(!visible&&token.trim()){visible=true;clearFirst()}if(visible)onDelta(token)});
+    await freeRouteRecover(env,routeKey,sourceState);
+    return {...result,actualModel:source.id+"/"+String(result.actualModel||source.model).slice(0,90),source:source.id};
+   }
   let out;
   try{out=await res.json()}catch{
    await freeRouteFailure(env,routeKey,502,sourceState,res.headers);
@@ -792,6 +789,12 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   if(source.id==="vireonix"&&Number.isFinite(percent)&&percent<=1)
    await freeRouteFailure(env,routeKey,429,{failures:0},null);
   return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:replyWasLimited(out?.choices?.[0]?.finish_reason||out?.stop_reason)||out?.status==="incomplete"||answer.length>40000};
+  }catch(error){
+   await freeRouteFailure(env,routeKey,controller.signal.aborted?503:502,sourceState,res?.headers);
+   // Only automatic free routes may advance, sequentially, before any visible text.
+   if(!visible&&chatFailover){errors.push(source.id+" 首字超时或空回复");continue}
+   throw error;
+  }finally{clearFirst();clearTimeout(totalTimer);if(!visible&&controller.signal.aborted)try{void res?.body?.cancel().catch(()=>{})}catch{}}
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
  throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
