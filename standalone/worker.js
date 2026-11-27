@@ -235,6 +235,120 @@ function legacyQueryPrompt(history){
 }
 const CHAT_REPLY_CHARS=240000,CHAT_CONTINUATION_CHARS=480000;
 const groqQuotaProfiles=new Map();
+// Site request counts are separate from provider quota measurements.
+function quotaNumber(raw){
+ if((typeof raw!=="number"&&typeof raw!=="string")||String(raw).trim()==="")return null;
+ const n=Number(raw);return Number.isSafeInteger(n)&&n>=0?n:null;
+}
+function quotaResetAt(raw,at,absolute=false){
+ if(typeof raw!=="string"||!raw)return null;
+ if(absolute){const n=Date.parse(raw);return Number.isFinite(n)?n:null}
+ let ms=0,end=0;
+ for(const m of raw.matchAll(/(\d+(?:\.\d+)?)(ms|h|m|s)/g)){
+  if(m.index!==end)return null;end=m.index+m[0].length;ms+=Number(m[1])*({ms:1,s:1000,m:60000,h:3600000}[m[2]]);
+ }
+ return end===raw.length&&Number.isFinite(ms)&&ms<=7*86400000?at+Math.ceil(ms):null;
+}
+function quotaHeaderSnapshot(provider,headers,at=Date.now()){
+ const fields=[];
+ function add(label,limitHeader,remainingHeader,resetHeader,absolute=false){
+  const limit=quotaNumber(headers?.get?.(limitHeader)),remaining=quotaNumber(headers?.get?.(remainingHeader));
+  if(limit===null||limit===0||remaining===null||remaining>limit)return;
+  fields.push({label,limit,remaining,resetAt:quotaResetAt(headers.get(resetHeader),at,absolute)});
+ }
+ if(provider==="groq"||provider==="openai"){
+  for(const [unit,label] of [["requests",provider==="groq"?"每日请求":"请求速率窗口"],["tokens",provider==="groq"?"每分钟 Tokens":"Token 速率窗口"]])
+   add(label,"x-ratelimit-limit-"+unit,"x-ratelimit-remaining-"+unit,"x-ratelimit-reset-"+unit);
+  if(provider==="openai")add("项目 Token 速率窗口","x-ratelimit-limit-project-tokens","x-ratelimit-remaining-project-tokens","x-ratelimit-reset-project-tokens");
+ }else if(provider==="claude"){
+  for(const [unit,label] of [["requests","每分钟请求"],["input-tokens","每分钟输入 Tokens"],["output-tokens","每分钟输出 Tokens"]])
+   add(label,"anthropic-ratelimit-"+unit+"-limit","anthropic-ratelimit-"+unit+"-remaining","anthropic-ratelimit-"+unit+"-reset",true);
+ }
+ return fields.length?{at,fields,source:"headers"}:null;
+}
+function quotaKeyScope(userId,keyHash){return userId?"personal:"+userId+":"+keyHash:"shared:"+keyHash}
+async function saveQuotaSnapshot(env,scope,provider,model,snap){
+ if(!snap)return;
+ await dbRun(env.DB,"INSERT INTO provider_quota_snapshots(scope,provider,model,snapshot_json,observed_at) VALUES(?,?,?,?,?) ON CONFLICT(scope,provider,model) DO UPDATE SET snapshot_json=excluded.snapshot_json,observed_at=excluded.observed_at WHERE excluded.observed_at>=provider_quota_snapshots.observed_at",scope,provider,model,JSON.stringify(snap),snap.at);
+}
+async function readQuotaSnapshots(env,scope,provider){
+ const rows=(await env.DB.prepare("SELECT model,snapshot_json FROM provider_quota_snapshots WHERE scope=? AND provider=? ORDER BY observed_at DESC LIMIT 30").bind(scope,provider).all()).results||[];
+ return rows.flatMap(r=>{try{return [{model:r.model,...JSON.parse(r.snapshot_json)}]}catch{return []}});
+}
+function openRouterQuotaData(data,at=Date.now()){
+ const q=data?.free_model_daily_requests,fields=[];
+ const limit=quotaNumber(q?.limit),remaining=quotaNumber(q?.remaining),used=quotaNumber(q?.used);
+ if(limit!==null&&limit>0&&remaining!==null&&remaining<=limit&&(used===null||used===limit-remaining))fields.push({label:"免费模型每日请求",limit,remaining,resetAt:Date.parse(utcUsageDay(at)+"T00:00:00Z")+86400000});
+ const creditLimit=typeof data?.limit==="number"&&Number.isFinite(data.limit)&&data.limit>=0?data.limit:null;
+ const creditRemaining=typeof data?.limit_remaining==="number"&&Number.isFinite(data.limit_remaining)?data.limit_remaining:null;
+ const dailyCredit=typeof data?.usage_daily==="number"&&Number.isFinite(data.usage_daily)&&data.usage_daily>=0?data.usage_daily:null;
+ return {at,source:"key",fields,creditLimit,creditRemaining,dailyCredit,isFreeTier:typeof data?.is_free_tier==="boolean"?data.is_free_tier:null};
+}
+const quotaReads=new Map();
+async function openRouterQuota(env,scope,key,old){
+ const now=Date.now();
+ if(old&&now-old.at<300000&&utcUsageDay(old.at)===utcUsageDay(now))return old;
+ if(quotaReads.has(scope))return quotaReads.get(scope);
+ const job=(async()=>{
+  try{
+   const res=await fetch("https://openrouter.ai/api/v1/key",{headers:{authorization:"Bearer "+key,accept:"application/json"},redirect:"manual",signal:AbortSignal.timeout(5000)});
+   if(!res.ok)throw Error("quota unavailable");
+   const json=await res.json();if(!json?.data||typeof json.data!=="object")throw Error("quota unavailable");
+   const snap=openRouterQuotaData(json.data);
+   await saveQuotaSnapshot(env,scope,"openrouter","account",snap).catch(()=>{});
+   return {model:"account",...snap};
+  }catch{return old?{...old,stale:true}:null}
+ })();
+ quotaReads.set(scope,job);try{return await job}finally{quotaReads.delete(scope)}
+}
+function modelUsageMode(provider,model){return provider==="free"?(model==="free:auto"?"auto":"shared"):"personal"}
+function utcUsageDay(at){return new Date(at).toISOString().slice(0,10)}
+async function recordModelUsage(env,user,provider,model,level,started,result,actualProvider){
+ const usage=result?.usage,has=Number.isSafeInteger(usage?.total)&&usage.total>=0;
+ const n=x=>Number.isSafeInteger(x)&&x>=0?x:0;
+ try{
+  await dbRun(env.DB,"INSERT INTO daily_model_usage(user_id,day,mode,provider,model,actual_provider,actual_model,level,requests,succeeded,failed,reported,input_tokens,output_tokens,total_tokens) VALUES(?,?,?,?,?,?,?,?,1,?,?,?,?,?,?) ON CONFLICT(user_id,day,mode,provider,model,actual_provider,actual_model,level) DO UPDATE SET requests=requests+1,succeeded=succeeded+excluded.succeeded,failed=failed+excluded.failed,reported=reported+excluded.reported,input_tokens=input_tokens+excluded.input_tokens,output_tokens=output_tokens+excluded.output_tokens,total_tokens=total_tokens+excluded.total_tokens",user.id,utcUsageDay(started),modelUsageMode(provider,model),provider,model,actualProvider||"",result?String(result.actualModel||model).slice(0,200):"",level,result?1:0,result?0:1,has?1:0,has?n(usage.input):0,has?n(usage.output):0,has?n(usage.total):0);
+  return true;
+ }catch{return false}
+}
+async function modelUsageOverview(env,user){
+ requireUser(user);
+ const now=Date.now(),day=utcUsageDay(now),dayStart=Date.parse(day+"T00:00:00Z");
+ const [daily,meta,keys,historical]=await Promise.all([
+  env.DB.prepare("SELECT mode,provider,model,actual_provider,actual_model,level,requests,succeeded,failed,reported,input_tokens,output_tokens,total_tokens FROM daily_model_usage WHERE user_id=? AND day=? ORDER BY requests DESC,provider,model").bind(user.id,day).all(),
+  dbGet(env.DB,"SELECT started_at FROM usage_tracking_meta WHERE id=1"),
+  env.DB.prepare("SELECT provider,iv,ciphertext,model_id FROM user_api_keys WHERE user_id=? ORDER BY provider").bind(user.id).all(),
+  dbGet(env.DB,"SELECT COUNT(*) AS reported,COALESCE(SUM(json_extract(usage_json,'$.input')),0) AS input_tokens,COALESCE(SUM(json_extract(usage_json,'$.output')),0) AS output_tokens,COALESCE(SUM(json_extract(usage_json,'$.total')),0) AS total_tokens FROM messages WHERE user_id=? AND role='assistant' AND created_at>=? AND created_at<? AND CASE WHEN json_valid(usage_json) THEN typeof(json_extract(usage_json,'$.total'))='integer' AND COALESCE(json_extract(usage_json,'$.dailyTracked'),0)<>1 ELSE 0 END",user.id,dayStart,dayStart+86400000)
+ ]);
+ const quotas=[];
+ async function entry(provider,key,kind,selectedModel){
+  const base={provider,kind,selectedModel:selectedModel||"",snapshots:[]};
+  if(!key)return {...base,unavailable:true};
+  try{
+   const scope=quotaKeyScope(kind==="personal"?user.id:null,await sha(key));
+   const snapshots=await readQuotaSnapshots(env,scope,provider);
+   if(provider==="openrouter"){
+    const q=await openRouterQuota(env,scope,key,snapshots.find(x=>x.model==="account"));
+    return {...base,snapshots:q?[q]:[]};
+   }
+   return {...base,snapshots};
+  }catch{return {...base,unavailable:true}}
+ }
+ const routes=freeSources(env);
+ for(const r of routes)if(!quotas.some(x=>x.provider===r.id&&x.kind==="shared"))quotas.push({provider:r.id,kind:"shared",selectedModel:r.model,snapshots:[]});
+ const quotaJobs=[];
+ for(const r of routes.filter(r=>["groq","openrouter"].includes(r.id)&&r.key)){
+  const i=quotas.findIndex(x=>x.provider===r.id&&x.kind==="shared");
+  quotaJobs.push(entry(r.id,r.key,"shared",r.model).then(v=>{quotas[i]=v}));
+ }
+ for(const row of keys.results||[]){
+  const i=quotas.push({provider:row.provider,kind:"personal",selectedModel:row.model_id,snapshots:[]})-1;
+  if(["groq","openai","claude","openrouter"].includes(row.provider))quotaJobs.push((async()=>{try{const key=await revealKey(env,user.id,row.provider,row.iv,row.ciphertext);quotas[i]=await entry(row.provider,key,"personal",row.model_id)}catch{quotas[i].unavailable=true}})());
+ }
+ await Promise.all(quotaJobs);
+ return {ok:true,day,at:Date.now(),startedAt:Number(meta?.started_at)||now,rows:daily.results||[],historical,quotas,siteDailyLimit:null};
+}
+
 function groqModelCapacity(model){
  if(/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return {context:131072,output:65536};
  if(model==="llama-3.3-70b-versatile")return {context:131072,output:32768};
@@ -667,6 +781,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  try{
   res=await request();
   if(groqScope)captureGroqQuota(groqQuotaProfiles,groqScope,res.headers);
+  policy?.recordQuota?.(model,res.headers);
   // Definitive 413: retry once, same provider/model and current user turn.
   if(provider==="groq"&&res.status===413&&Date.now()+1000<deadline){
    const retryBudget=Math.min(groqBudget,Math.max(4800,Math.floor(groqBudget*0.65)));
@@ -674,7 +789,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
    if(smaller.maxTokens<body.max_completion_tokens||JSON.stringify(smaller.messages).length<JSON.stringify(body.messages).length){
     await res.body?.cancel().catch(()=>{});
     body.messages=inputParts.length?attachNativeChatParts(smaller.messages,inputParts):smaller.messages;body.max_completion_tokens=smaller.maxTokens;
-    res=await request();if(groqScope)captureGroqQuota(groqQuotaProfiles,groqScope,res.headers);
+    res=await request();if(groqScope)captureGroqQuota(groqQuotaProfiles,groqScope,res.headers);policy?.recordQuota?.(model,res.headers);
    }
   }
  }catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503,code:"UPSTREAM_NETWORK"})}
@@ -752,7 +867,7 @@ async function freeRouteCatalog(env){
  // Do not expose provider names, failures or cooldowns to the public UI.
  return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false,onDelta=null){
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false,onDelta=null,recordQuota=null){
  const started=Date.now();
  const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
  const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
@@ -801,6 +916,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
     headers:{"content-type":"application/json",accept:streaming?"text/event-stream":"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},
     body:JSON.stringify(payload),redirect:"manual",signal:controller.signal
    });
+   if(recordQuota)recordQuota(source.id,source.model,source.key,res.headers);
    if(!res.ok){
     clearFirst();const status=res.status;
     if(status!==413)await freeRouteFailure(env,routeKey,status,sourceState,res.headers);
@@ -1024,24 +1140,33 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  let result,freeFallback=false,primaryFailure=null,primarySucceeded=false;
  const requestStarted=Date.now(),generationBudget=replyLevel==="long"?(provider==="free"?90000:165000):50000,remaining=()=>generationBudget-(Date.now()-requestStarted);
  let emitted=false;
+ const quotaWrites=[];
+ const recordQuota=(channel,usedModel,key,headers,personal=false)=>{
+  const snap=quotaHeaderSnapshot(channel,headers);if(!snap||!key)return;
+  quotaWrites.push(sha(key).then(hash=>saveQuotaSnapshot(env,quotaKeyScope(personal?user.id:null,hash),channel,usedModel,snap)).catch(()=>{}));
+ };
  const forward=typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null;
  try{
   if(provider==="free"){
-   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel,await cachedChatCapacity(env,"openrouter",sharedModel)),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward);
+   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel,await cachedChatCapacity(env,"openrouter",sharedModel)),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward,recordQuota);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const capacity=await cachedChatCapacity(env,provider,model);
    const outputLimit=chatOutputBudget(provider,model,replyLevel,capacity);
    const scope=provider==="groq"?await sha(connected.key):null;
-   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),false,{scope,level:replyLevel,capacity});
+   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),false,{scope,level:replyLevel,capacity,recordQuota:(usedModel,headers)=>recordQuota(provider,usedModel,connected.key,headers,true)});
    primarySucceeded=true;
   }
   // Continuation is explicit: never automatically generate a second answer.
  }catch(e){
+  await Promise.all(quotaWrites);await recordModelUsage(env,user,provider,model,replyLevel,requestStarted,null,"");
   if(messageId)await dbRun(env.DB,"DELETE FROM messages WHERE id=? AND user_id=?",messageId,user.id).catch(()=>{});
   if(!body.chatId)await dbRun(env.DB,"DELETE FROM chats WHERE id=? AND user_id=?",chatId,user.id).catch(()=>{});
   throw e;
  }
+ await Promise.all(quotaWrites);
+ const actualProvider=provider==="free"?(result.source||(nativePlan||sharedModel?"openrouter":"")):provider;
+ const dailyTracked=await recordModelUsage(env,user,provider,model,replyLevel,requestStarted,result,actualProvider);
  if(lookupResult){const foot=lookupSources.length?"\n\n**本次百科检索来源**\n"+lookupSources.map(x=>"- ["+x.title+"]("+x.url+")").join("\n"):"\n\n百科检索未取得结果。";result.content=String(result.content||"")+foot+"\n\n[进一步网页搜索](https://duckduckgo.com/?q="+encodeURIComponent(lookupQuery)+")";}
  const stamp=continuation?continuation.created_at:Date.now(),assistantMessageId=continuation?body.continueFrom:crypto.randomUUID();
  const images=Array.isArray(result.images)?result.images:[],remote=images.filter(x=>x.startsWith("https:")),temporary=images.filter(x=>x.startsWith("data:"));
@@ -1056,7 +1181,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   result.usage=null;
   const changed=await dbRun(env.DB,"UPDATE messages SET body=?,model=?,usage_json=? WHERE id=? AND chat_id=? AND user_id=? AND body=?",storedReply,result.actualModel,JSON.stringify({incomplete:!!result.incomplete}),assistantMessageId,chatId,user.id,continuation.body);
   if(changed.meta?.changes!==1)throw Object.assign(Error("回复已在其他设备更新，请重新进入聊天"),{status:409});
- }else await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,JSON.stringify({...result.usage,incomplete:!!result.incomplete}));
+ }else await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,JSON.stringify({...result.usage,incomplete:!!result.incomplete,dailyTracked}));
  await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,Date.now(),chatId,user.id);
  if(!result.incomplete&&(provider==="free"||primarySucceeded))await rememberSuccessfulModel(env,user.id,provider,provider==="free"&&nativePlan?"free:auto":model).catch(()=>{});
  return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:continuation||remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,primarySucceeded:provider==="free"||primarySucceeded,primaryFailure,incomplete:Boolean(result.incomplete)};
@@ -2401,6 +2526,7 @@ async function main(req,env){
   return response({ok:true},200,{"set-cookie":"aigzt_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0"});
  }
  if(!user)return fail("请先登录独立 AIGZT 账号",401);
+ if(path==="/api/usage/overview"&&req.method==="GET")return response(await modelUsageOverview(env,user));
  
  if(path==="/api/model-preferences"&&req.method==="GET"){
   const rows=(await env.DB.prepare("SELECT mode,provider,model,title,updated_at FROM user_model_preferences WHERE user_id=? AND mode='chat'").bind(user.id).all()).results||[];

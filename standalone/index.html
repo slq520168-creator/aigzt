@@ -41,7 +41,7 @@
      <button class="nav-row" id="navKeys"><span class="ui-icon" data-icon="link" aria-hidden="true"></span><span>连接 AI</span></button>
      <button class="nav-row" id="navFiles"><span class="ui-icon" data-icon="paperclip" aria-hidden="true"></span><span>已上传文件</span></button>
      <button class="nav-row" id="navModels"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span>聊天模型设置</span><small id="modelTitle" class="side-model-label">免费自动</small></button>
-     <button class="nav-row" id="groqConnect"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span>Groq 免费额度</span></button>
+     <button class="nav-row" id="groqConnect"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span>用量与限额</span></button>
     </div>
    </div>
    <div class="side-bottom">
@@ -233,10 +233,10 @@
      </details>
      <details class="settings-entry" id="settingsUsage">
       <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span></span><span class="settings-row-text"><strong>用量与限额</strong></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
-      <div class="settings-entry-body"><p id="settingsQuotaSummary" class="small-note"></p><p id="settingsTokenSummary" class="small-note">仅统计服务商实际返回的用量。</p><p class="settings-hint">Token 只统计当前已加载对话的真实报告；不估算费用，也不额外查询上游余额。</p></div>
+      <div class="settings-entry-body usage-body"><div class="usage-toolbar"><p id="settingsQuotaSummary" class="small-note" role="status">展开查看今日用量</p><button type="button" id="settingsUsageRefresh" class="outline">刷新</button></div><div id="settingsUsageResults"></div><p id="settingsTokenSummary" class="small-note"></p><p class="settings-hint">本站聊天使用量与上游账号限额分别统计；上游未返回的额度不估算。所有共享线路的额度可能同时被其他用户消耗，不能相加作为个人余额。</p></div>
      </details>
      <details class="settings-entry" id="settingsVoice">
-      <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="mic" aria-hidden="true"></span></span><span class="settings-row-text"><strong>语音输入</strong><small>麦克风听写；语音对话与朗读仍暂停</small></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
+      <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="mic" aria-hidden="true"></span></span><span class="settings-row-text"><strong>语音输入</strong><small>麦克风听写、语音对话与朗读</small></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
       <div class="settings-entry-body"><label class="settings-select-label" for="settingsDictationLang">语音识别语言</label><select id="settingsDictationLang" aria-label="语音识别语言"><option value="auto">自动检测设备语言</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁体中文</option><option value="en-US">英语</option><option value="ja-JP">日语</option></select><p class="settings-hint">仅在你点击聊天输入框旁的麦克风时启用设备语音识别。浏览器不支持时可使用系统键盘听写。</p></div>
      </details>
      <details class="settings-entry" id="settingsConnections">

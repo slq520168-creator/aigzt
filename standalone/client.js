@@ -980,7 +980,7 @@ async function persistPrefs(){
  if(!S.user)return;
  await api("/api/preferences",{memoryEnabled:S.memoryEnabled,theme:S.currentTheme});
 }
-async function openSettings(){
+async function openSettings(expandUsage=false){
  if(!S.user){show("authDialog");return}
  show("settingsDialog");closeMenu();$("settingsEmail").textContent=S.user.email;
  syncChatTextSizeSettings();
@@ -989,10 +989,7 @@ async function openSettings(){
  $("settingsDialog").querySelector(".settings-scroll").scrollTop=0;
  $("savedMessagesList").hidden=true;
  $("settingsExportChat").disabled=!S.chatId;
- const quota=S.quota;
- $("settingsQuotaSummary").textContent=quota&&Number.isFinite(quota.remaining)&&Number.isFinite(quota.limit)?
-  "免费请求保护配额：剩余 "+quota.remaining+" / "+quota.limit+(Number.isFinite(quota.siteRemaining)?" · 全站剩余 "+quota.siteRemaining:""):
-  "外部免费模型的额度由相应服务商提供，当前没有可确认的配额统计。";
+ if(expandUsage){$("settingsUsage").open=true;void loadUsageOverview()}
  $("settingsDictationLang").value=settingsDictationLanguage();
  updateTokenSettingsSummary();
  try{
@@ -1012,6 +1009,76 @@ function updateTokenSettingsSummary(){
   if(Number.isSafeInteger(u.output)&&u.output>=0)output+=u.output;
  }
  target.textContent=reported?"当前已加载聊天 · "+reported+" 条已报告用量 · 输入 "+input.toLocaleString()+" · 输出 "+output.toLocaleString()+" · 合计 "+total.toLocaleString()+" tokens":"当前聊天暂无服务商返回的 Token 统计";
+}
+let usageOverviewCache=null,usageOverviewFlight=null;
+function usageNum(n){return typeof n==="number"&&Number.isFinite(n)?n.toLocaleString("zh-CN"):"未提供"}
+function usageSum(rows){
+ return rows.reduce((v,r)=>{for(const k of ["requests","succeeded","failed","reported","input_tokens","output_tokens","total_tokens"])v[k]+=(Number(r[k])||0);return v},{requests:0,succeeded:0,failed:0,reported:0,input_tokens:0,output_tokens:0,total_tokens:0});
+}
+function usageToken(n,reported,requests){return reported||!requests?usageNum(n):"未报告"}
+function usageTable(headers,rows){
+ const wrap=node("div","usage-table-wrap"),table=node("table","usage-table"),thead=node("thead"),tr=node("tr");
+ for(const x of headers)tr.append(node("th","",String(x)));
+ thead.append(tr);table.append(thead);
+ const body=node("tbody");
+ for(const values of rows){const row=node("tr");for(const x of values)row.append(node("td","",String(x)));body.append(row)}
+ table.append(body);wrap.append(table);return wrap;
+}
+function usageProviderName(p){return p?providerLabel(p):"未确定"}
+function renderUsageOverview(d){
+ const root=$("settingsUsageResults");root.replaceChildren();
+ const rows=Array.isArray(d.rows)?d.rows:[],all=usageSum(rows);
+ const modeRows=[["自动模式",rows.filter(r=>r.mode==="auto")],["自由模式（共享）",rows.filter(r=>r.mode==="shared")],["自由模式（个人）",rows.filter(r=>r.mode==="personal")],["合计",rows]];
+ root.append(node("h3","usage-title","今日聊天使用量"),usageTable(["模式","请求","成功/失败","Tokens"],modeRows.map(([label,list])=>{const t=usageSum(list);return [label,usageNum(t.requests),usageNum(t.succeeded)+"/"+usageNum(t.failed),usageToken(t.total_tokens,t.reported,t.requests)]})));
+ root.append(node("p","settings-hint","输入 "+usageToken(all.input_tokens,all.reported,all.requests)+" · 输出 "+usageToken(all.output_tokens,all.reported,all.requests)+" · 已报告 "+usageNum(all.reported)+"/"+usageNum(all.requests)+" 次。本站不设统一每日聊天上限，实际可用量取决于服务商。"));
+ if(d.historical?.reported>0)root.append(node("p","settings-hint","今日未分类历史：已保存 "+usageNum(d.historical.reported)+" 条回复，已报告 "+usageNum(d.historical.total_tokens)+" Tokens（不重复计入新统计；旧记录不能可靠区分自动与自由模式）。"));
+ const groups=new Map();
+ for(const r of rows){const key=JSON.stringify([r.mode,r.actual_provider||r.provider,r.actual_model||r.model]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r)}
+ root.append(node("h3","usage-title","模型与服务商明细"));
+ if(groups.size)root.append(usageTable(["模式 / 服务商 / 模型","请求","Tokens"],[...groups.entries()].map(([key,list])=>{const [mode,provider,model]=JSON.parse(key),t=usageSum(list);return [(mode==="auto"?"自动":mode==="shared"?"共享":"个人")+" · "+usageProviderName(provider)+" · "+model,usageNum(t.requests),usageToken(t.total_tokens,t.reported,t.requests)]})));
+ else root.append(node("p","settings-hint","今日尚无新版统计记录。"));
+ for(const [kind,title] of [["shared","自动模式及共享免费线路额度"],["personal","个人 API 额度"]]){
+  root.append(node("h3","usage-title",title));
+  const items=(d.quotas||[]).filter(x=>x.kind===kind);
+  if(!items.length){root.append(node("p","settings-hint",kind==="personal"?"暂无已连接个人服务商":"暂无共享线路"));continue}
+  for(const q of items){
+   const box=node("section","usage-provider");
+   box.append(node("strong","usage-provider-title",usageProviderName(q.provider)));
+   if(!q.snapshots?.length){
+    box.append(node("p","settings-hint",(q.selectedModel?q.selectedModel+" · ":"")+(q.unavailable?"额度暂时无法读取":"总额度及剩余额度未提供；已使用量见上方")));
+   }else for(const snap of q.snapshots){
+    const current=Date.now(),age=Number(snap.at)||0;
+    box.append(node("p","usage-observed",(snap.model==="account"?"账号额度":snap.model)+" · "+(age?new Date(age).toLocaleString():"未知时间")+(snap.stale?" · 上次读取":"")));
+    if(snap.fields?.length)box.append(usageTable(["额度项目","总量","已用","剩余"],snap.fields.map(f=>[f.label+(f.resetAt&&f.resetAt<=current?"（已过恢复时间）":""),usageNum(f.limit),usageNum(f.limit-f.remaining),usageNum(f.remaining)])));
+    else box.append(node("p","settings-hint","服务商未返回可核实的请求总量与剩余。"));
+    const resets=(snap.fields||[]).filter(f=>f.resetAt).map(f=>f.label+"："+new Date(f.resetAt).toLocaleString()+(f.resetAt<=current?"（等待新数据）":""));
+    if(resets.length)box.append(node("p","settings-hint","恢复时间："+resets.join("；")));
+    if(snap.source==="key"){
+     const credits=[];if(snap.dailyCredit!==null&&snap.dailyCredit!==undefined)credits.push("今日 Key 消耗 $"+usageNum(snap.dailyCredit));
+     if(snap.creditLimit!==null&&snap.creditLimit!==undefined)credits.push("Key 支出上限 $"+usageNum(snap.creditLimit));
+     if(snap.creditRemaining!==null&&snap.creditRemaining!==undefined)credits.push("Key 剩余支出限额 $"+usageNum(snap.creditRemaining));
+     if(credits.length)box.append(node("p","settings-hint",credits.join(" · ")+"（不是充值余额）"));
+    }
+   }
+   root.append(box);
+  }
+ }
+ $("settingsQuotaSummary").textContent=d.day+" · UTC 日统计";
+}
+async function loadUsageOverview(force=false){
+ const owner=S.user?.id;if(!owner||!$("settingsUsage").open)return;
+ const target=$("settingsQuotaSummary"),button=$("settingsUsageRefresh");
+ if(usageOverviewCache?.owner!==owner){usageOverviewCache=null;$("settingsUsageResults").replaceChildren()}
+ if(!force&&usageOverviewCache&&Date.now()-usageOverviewCache.at<30000&&usageOverviewCache.data.day===new Date().toISOString().slice(0,10)){renderUsageOverview(usageOverviewCache.data);return}
+ if(usageOverviewFlight?.owner===owner)return usageOverviewFlight.job;
+ const flight={owner,job:null};usageOverviewFlight=flight;button.disabled=true;target.textContent="正在读取真实用量…";
+ flight.job=(async()=>{try{
+  const d=await api("/api/usage/overview",undefined,15000);
+  if(S.user?.id!==owner||usageOverviewFlight!==flight)return;
+  usageOverviewCache={owner,at:Date.now(),data:d};renderUsageOverview(d);
+ }catch(e){if(S.user?.id===owner&&usageOverviewFlight===flight){if(usageOverviewCache)renderUsageOverview(usageOverviewCache.data);target.textContent="读取失败"+(usageOverviewCache?"，保留上次数据":"")+"，可刷新重试"}}
+ finally{if(usageOverviewFlight===flight){usageOverviewFlight=null;button.disabled=false}}})();
+ return flight.job;
 }
 async function loadModelInstruction(){
  const model=S.model,provider=S.provider,key=provider+"|"+model;
@@ -3705,6 +3772,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
    else if(!voiceSpeak(result.reply,$("voiceReplay"),true)){voiceReady();sayStatus("本设备无法自动播报，可点击播放回答重试")}
   }
   void fetchChats();
+  usageOverviewCache=null;
  }catch(e){
    if(submittedMode==="text"&&["MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","AUTH","ACCESS","UPSTREAM_NETWORK","UPSTREAM_EMPTY","FREE_FALLBACK_FAILED"].includes(e?.code))recordModelOutcome(requestProvider,requestModel,false,e.code);
    if(submittedMode==="text"&&requestProvider!=="free"&&["MODEL_RETIRED","MODEL_UNAVAILABLE"].includes(e?.code)){
@@ -4577,7 +4645,7 @@ function wire(){
  $("imageQuick").addEventListener("click",()=>{hide("modelDialog");setComposerMode("image");$("toolTray").hidden=true;$("prompt").focus()});
  $("navFiles").addEventListener("click",()=>void openFiles());
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
- $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
+ $("groqConnect").addEventListener("click",()=>void openSettings(true));
  $("newChat").addEventListener("click",newChat);
  $("headerChatModels").addEventListener("click",()=>{if(!S.freeToolsMode){if(S.composerMode==="video"){S.source="all";S.filter="video";S.query="";S.modelPage=0}openModels(S.composerMode==="video")}});
  $("headerNew").addEventListener("click",newChat);
@@ -4598,6 +4666,8 @@ function wire(){
   applyChatTextSize(selected);
   $("chatTextSizeStatus").textContent="已保存，聊天文字大小已应用";
  });
+ $("settingsUsage").addEventListener("toggle",()=>{if($("settingsUsage").open)void loadUsageOverview()});
+ $("settingsUsageRefresh").addEventListener("click",()=>void loadUsageOverview(true));
  $("settingsDictationLang").addEventListener("change",event=>{
   const lang=event.target.value;
   if(!["auto","zh-CN","zh-TW","en-US","ja-JP"].includes(lang))return;
