@@ -2,7 +2,7 @@
 const S={
  user:null,quota:null,chats:[],chatId:null,model:"free:auto",
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
- allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],loadedCatalog:false,
+ allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",projectsExpanded:false,workMode:false,workBusy:false,workEpoch:0,workTasks:[],workDetail:null,workTaskId:null,workStages:[],workRoutes:[],workFallback:true,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],freeTierModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",workModelRegion:"推荐",busy:false,code:false,
  authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"freetext",videoModel:"wan2.2-ti2v",videoTaskProvider:"freetext",videoImageId:null,videoEndImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
@@ -4091,6 +4091,7 @@ async function loadCatalog(){
   try{
    const d=await api("/api/models");
    S.freeModels=(d.freeModels||[]).map(m=>({...m,provider:"free"}));
+   if(Array.isArray(d.freeTierModels))S.freeTierModels=d.freeTierModels.filter(m=>m.freeTier===true&&m.requiresPersonalKey===true&&["groq","gemini"].includes(m.provider)&&m.type==="text");
    if(!d.catalogError&&Array.isArray(d.models)&&d.models.length){
     S.remoteModels=d.models.map(m=>({...m,author:m.provider,provider:"openrouter"}));
     S.loadedCatalog=true;
@@ -4171,16 +4172,18 @@ function renderChinaBrands(models){
  target.dataset.renderSignature=signature;target.scrollLeft=previousScroll;
 }
 function allModels(){
- const result=[...BUILTIN_VIDEO_MODELS,...S.freeModels,...S.remoteModels.filter(m=>!BUILTIN_VIDEO_MODELS.some(v=>v.provider===m.provider&&v.id===m.id))],seen=new Set(result.map(m=>m.provider+"\0"+m.id));
+ const index=new Map(),key=m=>m.provider+"\0"+m.id;
+ for(const m of [...BUILTIN_VIDEO_MODELS,...S.freeModels,...S.remoteModels,...S.freeTierModels])if(!index.has(key(m)))index.set(key(m),m);
  for(const [provider,items] of Object.entries(S.connected)){
   for(const x of items){
-   if(!x.id)continue;const key=provider+"\0"+x.id;
-   if(seen.has(key))continue;
-   result.push({...x,id:x.id,name:x.name||x.id,provider,type:x.type||"text",free:!!x.free,ownKey:true,availableWith:undefined});seen.add(key);
+   if(!x.id)continue;const k=provider+"\0"+x.id,old=index.get(k);
+   if(old?.freeTier){index.set(k,{...old,...x,id:x.id,name:x.name||old.name,provider,type:x.type||old.type,free:false,freeTier:true,ownKey:true,requiresPersonalKey:true,availableWith:undefined});continue}
+   if(!old)index.set(k,{...x,id:x.id,name:x.name||x.id,provider,type:x.type||"text",free:!!x.free,ownKey:true,availableWith:undefined});
   }
  }
- return result;
+ return [...index.values()];
 }
+function hasFreeAccess(m){return m.free===true||m.freeTier===true}
 function modelMatches(m){
  const query=S.query.trim().toLowerCase();
  const owner=domesticGroupFor(m),russian=russianGroupFor(m);const t=(m.name+" "+m.id+" "+m.provider+" "+(m.author||"")+" "+(m.description||"")+" "+(owner?.name||"")+" "+(russian?russian.name+" 俄罗斯":"")).toLowerCase();
@@ -4202,9 +4205,9 @@ function modelMatches(m){
  }else if(S.source==="recent"){if(modelOrdering(m).group!==0)return false}
  else if(S.source==="connected"){if(!connected(modelRoute(m)))return false}
  else if(S.source.startsWith("route:")){if(providerRoute(modelRoute(m))!==S.source.slice(6))return false}
- else if(S.source==="free"){if(!m.free)return false}
+ else if(S.source==="free"){if(!hasFreeAccess(m))return false}
  else if(S.source!=="all"&&modelRoute(m)!==S.source)return false;
- if(S.filter==="free"&&!m.free)return false;
+ if(S.filter==="free"&&!hasFreeAccess(m))return false;
  if(S.filter==="text"&&m.type!=="text")return false;
  if(S.filter==="image"&&m.type!=="image"&&!m.outputImages)return false;
  if(S.filter==="video"&&m.type!=="video")return false;
@@ -4225,12 +4228,13 @@ function renderModels(){
  }
  // The current selection always leads matching results, followed by successful routes and capability.
  const ranks=new Map(visible.map(m=>[m,modelOrdering(m)]));
- visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(b.free===true)-Number(a.free===true)||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
+ visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
- $("modelCount").textContent=count+" 个模型 · 常用成功优先 · 能力分层参考";
+ const freeCount=visible.filter(m=>m.free===true).length,tierCount=visible.filter(m=>m.freeTier===true).length;
+ $("modelCount").textContent=count+" 个条目"+(S.source==="free"||S.filter==="free"?" · 免费目录/共享 "+freeCount+" · 个人免费额度 "+tierCount:" · 常用成功优先 · 能力分层参考");
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
- const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
+ const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
  if(list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
@@ -4241,13 +4245,13 @@ function renderModels(){
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
   const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id),rank=ranks.get(item);
   const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?"免费线路":verified?"密钥已验证":saved?"待验证":item.free?"免费 · 需连接":"需连接");
-  const priceLabel=item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号额度 / 可能收费";
+  const priceLabel=item.freeTier?"个人免费额度 · 付费账号可能收费":item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号额度 / 可能收费";
   title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),node("span","price-tag"+(item.free?" free":""),priceLabel));
   if(rank.health.recentFailure)title.append(node("span","price-tag","近期异常"));
   else if(rank.group===0)title.append(node("span","price-tag free",rank.health.legacy?"历史成功匹配":"已成功使用"));
   if(rank.tier.label)title.append(node("span","price-tag",rank.tier.label));title.append(tag);
   const owner=domesticGroupFor(item);
-  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
+  info.append(title,node("small","",via==="free"?"免费自动路由 · 实际上游模型可能变化":(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.freeTier?" · 需要本人免费计划/API Key，额度及计费由服务商决定":"")+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image"].includes(item.type)||(item.type==="video"&&VIDEO_OPTIONS[item.provider]?.includes(item.id));
   const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!!blocked||!actionable||selected;
