@@ -1,13 +1,13 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
 const js=fs.readFileSync('standalone/client.js','utf8'),w=fs.readFileSync('standalone/worker.js','utf8');
-test('published free-tier catalog has eight distinct personal-key routes and never marks these unconditional free',()=>{
+test('published free-tier catalog has twelve distinct personal-key routes and never marks these unconditional free',()=>{
  const source=w.slice(w.indexOf('const PERSONAL_FREE_TIER_MODELS='),w.indexOf('const HOSTS='));
  const rows=new Function(source+';return PERSONAL_FREE_TIER_MODELS')();
- assert.equal(rows.length,8);
- assert.equal(new Set(rows.map(m=>m.provider+'|'+m.id)).size,8);
+ assert.equal(rows.length,12);
+ assert.equal(new Set(rows.map(m=>m.provider+'|'+m.id)).size,12);
  assert.ok(rows.every(m=>m.free===false&&m.freeTier&&m.requiresPersonalKey&&m.type==='text'));
  assert.equal(rows.filter(m=>m.provider==='groq').length,3);
- assert.equal(rows.filter(m=>m.provider==='gemini').length,5);
+ assert.equal(rows.filter(m=>m.provider==='gemini').length,9);
 });
 test('free filter includes conditional models; existing personal billing consent is not relaxed',()=>{
  const code=js.slice(js.indexOf('function hasFreeAccess('),js.indexOf('function modelMatches('));
