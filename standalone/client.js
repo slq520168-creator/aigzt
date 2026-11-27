@@ -4,7 +4,7 @@ const S={
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",projectsExpanded:false,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],freeTierModels:[],sharedFreeModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
- authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"grok",videoModel:"grok-imagine-video-1.5",videoTaskProvider:"grok",videoImageId:null,videoEndImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
+ authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"freetext",videoModel:"wan2.2-ti2v",videoTaskProvider:"freetext",videoImageId:null,videoEndImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
 const $=id=>document.getElementById(id);
 const els=id=>document.querySelectorAll(id);
@@ -96,7 +96,7 @@ function renderIcons(scope=document){
  if(scope.matches?.("[data-icon]"))icons.unshift(scope);
  for(const el of icons){
   const name=el.dataset.icon,path=ICONS[name]||ICONS.info;
-  if(el.closest(".work-intro-actions,.work-model-choose,.model-mode-button,.composer-model-switch")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
+  if(el.closest(".model-mode-button,.composer-model-switch")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
   const [from,to]=(el.closest(".message-copy-btn")&&MESSAGE_ICON_COLORS[name])||ICON_GRADIENTS[ICON_TONES[name]||"blue"];
   const id="aigzt-icon-"+(++iconGradientSerial);
   el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#'+id+')" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+from+'"/><stop offset="100%" stop-color="'+to+'"/></linearGradient></defs>'+path+'</svg>';
@@ -365,16 +365,19 @@ const KEY_SITES={
 };
 const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu"]);
 const VIDEO_OPTIONS=Object.freeze({
+ freetext:["wan2.2-ti2v"],
+ freewan:["wan2.2-i2v-fast"],
+ freeloop:["wan2.2-firstlast"],
  grok:["grok-imagine-video-1.5"],
  runway:["gen4.5","veo3.1_fast","seedance2_fast"],
  luma:["ray-2","ray-flash-2"],
  vidu:["viduq3-turbo","viduq3-pro","viduq2"]
 });
-const VIDEO_PROVIDER_NAMES={grok:"xAI Grok",runway:"Runway",luma:"Luma",vidu:"Vidu"};
-const BUILTIN_VIDEO_MODELS=[{"provider":"grok","id":"grok-imagine-video-1.5","name":"Grok Imagine 1.5","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"gen4.5","name":"Runway Gen-4.5","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"veo3.1_fast","name":"Google Veo 3.1 Fast","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"seedance2_fast","name":"Seedance 2 Fast","type":"video","free":false,"builtinVideo":true},{"provider":"luma","id":"ray-2","name":"Luma Ray 2","type":"video","free":false,"builtinVideo":true},{"provider":"luma","id":"ray-flash-2","name":"Luma Ray Flash 2","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq3-turbo","name":"Vidu Q3 Turbo","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq3-pro","name":"Vidu Q3 Pro","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq2","name":"Vidu Q2","type":"video","free":false,"builtinVideo":true}];
+const VIDEO_PROVIDER_NAMES={freetext:"免费 LTX 文生视频",freewan:"免费 Wan 2.2 图生视频",freeloop:"免费 Wan 2.2 首尾帧",grok:"xAI Grok",runway:"Runway",luma:"Luma",vidu:"Vidu"};
+const BUILTIN_VIDEO_MODELS=[{"provider":"freetext","id":"wan2.2-ti2v","name":"LTX 文字生成视频","type":"video","free":true,"builtinVideo":true},{"provider":"freewan","id":"wan2.2-i2v-fast","name":"Wan 2.2 图生视频","type":"video","free":true,"builtinVideo":true},{"provider":"freeloop","id":"wan2.2-firstlast","name":"Wan 2.2 首尾帧","type":"video","free":true,"builtinVideo":true},{"provider":"grok","id":"grok-imagine-video-1.5","name":"Grok Imagine 1.5","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"gen4.5","name":"Runway Gen-4.5","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"veo3.1_fast","name":"Google Veo 3.1 Fast","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"seedance2_fast","name":"Seedance 2 Fast","type":"video","free":false,"builtinVideo":true},{"provider":"luma","id":"ray-2","name":"Luma Ray 2","type":"video","free":false,"builtinVideo":true},{"provider":"luma","id":"ray-flash-2","name":"Luma Ray Flash 2","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq3-turbo","name":"Vidu Q3 Turbo","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq3-pro","name":"Vidu Q3 Pro","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq2","name":"Vidu Q2","type":"video","free":false,"builtinVideo":true}];
 const THIRD_PARTY_PROVIDERS=new Set(["openrouter","groq","cerebras","novai","novai_pro","siliconflow"]);
 const PROVIDER_BRAND_DOMAINS={openai:"openai.com",claude:"anthropic.com",gemini:"google.com",grok:"x.ai",deepseek:"deepseek.com",qwen:"qwen.ai",zhipu:"bigmodel.cn",kimi:"kimi.com",minimax:"minimax.io",doubao:"doubao.com",qianfan:"baidu.com",hunyuan:"tencent.com",stepfun:"stepfun.com",xiaomi:"mi.com",longcat:"longcat.chat",baichuan:"baichuan-ai.com",iflytek:"xfyun.cn",sensetime:"sensetime.com",yandex:"yandex.com",gigachat:"giga.chat",runway:"runwayml.com",luma:"lumalabs.ai",vidu:"vidu.com",openrouter:"openrouter.ai",groq:"groq.com",cerebras:"cerebras.ai",novai:"novai.su",novai_pro:"aiapi-pro.com",siliconflow:"siliconflow.cn"};
-const providerRoute=p=>p==="free"?"free":THIRD_PARTY_PROVIDERS.has(p)?"third":Object.hasOwn(KEY_SITES,p)?"official":"unknown";
+const providerRoute=p=>p==="free"||["freetext","freewan","freeloop"].includes(p)?"free":THIRD_PARTY_PROVIDERS.has(p)?"third":Object.hasOwn(KEY_SITES,p)?"official":"unknown";
 const providerRouteLabel=p=>({official:"官方直连",third:"第三方",free:"免费线路",unknown:"其他线路"})[providerRoute(p)];
 const modelRoute=m=>m.availableWith==="openrouter-key"?"openrouter":m.provider;
 function providerLabel(p){return $("keyProvider")?.querySelector('option[value="'+p+'"]')?.textContent||WORK_PROVIDER_SHORT[p]||p}
@@ -2586,12 +2589,108 @@ function inlineVideo(bubble,id){
 }
 /* Local elapsed clock with bounded automatic server status checks.
  * Only the existing free job is queried; this never resubmits generation. */
-function inlineVideoJob(bubble,id){
- const row=bubble.closest(".message"),kind=row?.dataset.mediaFormat==="gif"?"image":"video",key=deviceMediaKey(row?.dataset.messageId||id);
- void (async()=>{try{const r=await api("/api/video/status",{provider:"free",requestId:id});if(!bubble.isConnected)return;
- if(r.status==="completed"&&r.url&&kind==="video"){const blob=await deviceMediaBlob(r.url);if(blob){await deviceMediaPut(key,blob);if(bubble.isConnected)renderDeviceMedia(bubble,blob,"video");return}}
- }catch{}if(bubble.isConnected)bubble.replaceChildren(node("span","video-job-hint","免费视频功能已移除，历史任务不再生成。"));})();
+function inlineVideoJob(bubble,id,retry=false){
+ const gif=bubble.closest(".message")?.dataset.mediaFormat==="gif";
+ bubble.dataset.videoTask=id;
+ bubble.dataset.videoStarted=String(Date.now());
+ const label=node("span","video-job-label",(gif?"GIF生成中":"视频生成中")+" · 0:00");
+ const frame=createImageWaitingFrame();
+ frame.classList.add("video-loading-card");
+ frame.setAttribute("aria-label","视频生成中");
+ const mark=node("div","video-loading-mark");
+ mark.append(iconSlot("video"));renderIcons(mark);frame.append(mark);
+ const hint=node("span","video-job-hint","正在等待免费来源生成视频");
+ bubble.classList.add("chat-video-task");
+ bubble.replaceChildren(label,frame,hint);
+ if(S.busy)followLatestImage(bubble);
+ const active=()=>bubble.isConnected&&bubble.dataset.videoTask===id;
+ let taskTimer=0,errors=0,polling=false;
+ const clock=window.setInterval(()=>{
+  if(!active()){cleanup();return}
+  if(!document.hidden){
+   const elapsed=Math.max(0,Math.floor((Date.now()-Number(bubble.dataset.videoStarted||Date.now()))/1000));
+   label.textContent=(gif?"GIF生成中 · ":"视频生成中 · ")+Math.floor(elapsed/60)+":"+String(elapsed%60).padStart(2,"0");
+  }
+ },1000);
+ function cleanup(){
+  window.clearInterval(clock);window.clearTimeout(taskTimer);taskTimer=0;
+  document.removeEventListener("visibilitychange",onReturn);
+  window.removeEventListener("online",onReturn);
+  delete bubble.dataset.videoTask;delete bubble.dataset.videoStarted;
+  bubble.classList.remove("chat-video-task");
+ }
+ function schedule(delay){
+  if(!active()||document.hidden)return;
+  if(taskTimer)window.clearTimeout(taskTimer);
+  taskTimer=window.setTimeout(()=>{taskTimer=0;void poll()},delay);
+ }
+ function onReturn(){
+  if(!active()){cleanup();return}
+  if(document.hidden){hint.textContent="已暂停查询，返回页面后继续";window.clearTimeout(taskTimer);taskTimer=0;return}
+  if(!polling)schedule(800);
+ }
+ async function poll(){
+  if(!active()||polling)return;
+  if(document.hidden){hint.textContent="已暂停查询，返回页面后继续";return}
+  polling=true;hint.textContent="正在确认视频状态…";
+  let delay=17000;
+  try{
+   const path=retry?"/api/video/retry":"/api/video/status";
+   retry=false;
+   const r=await api(path,{provider:"free",requestId:id});
+   if(!active())return;
+   errors=0;
+   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.videoStarted=String(r.startedAt);
+   if(r.status==="completed"){
+    if(gif){const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);hint.textContent="正在编码 GIF 动图…";try{const source=await deviceMediaBlob(r.url);if(!source)throw Error("视频源不可读取");const blob=await videoToGif(source);const saved=await deviceMediaPut(key,blob);if(!active())return;cleanup();const row=bubble.closest(".message");if(row)row.dataset.messageKind="image";renderDeviceMedia(bubble,blob,"image");if(!saved)mediaCacheWarning(bubble);setPortraitState(row,"finished");}catch(e){if(!active())return;cleanup();bubble.replaceChildren(node("span","video-job-hint","GIF转换失败："+humanError(e)));const retry=node("button","chat-video-save","重试转换");retry.type="button";retry.onclick=()=>inlineVideoJob(bubble,id);bubble.append(retry)}return;}
+    const local=/^\/api\/video\/media\/[0-9a-f-]{36}$/i.test(r.url||"");
+    const external=r.temporaryUrl===true&&/^https:\/\/[a-z0-9-]+\.hf\.space\/gradio_api\/file=/i.test(r.url||"");
+    if(local){
+     const row=bubble.closest(".message"),mediaId=r.url.split("/").pop();
+     cleanup();
+     if(row){appendMessage("assistant","[[aigzt:video:"+mediaId+"]]","免费视频",row,false,row.dataset.messageId);setPortraitState(row,"finished")}
+     else inlineVideo(bubble,mediaId);
+     if(r.recovered){const target=row?.querySelector(".bubble")||bubble;target.append(node("span","video-job-hint","已恢复同一请求生成的视频"));}
+     return;
+    }
+    if(r.status==="completed"&&r.temporaryUrl===true&&String(r.url||"").startsWith("/api/video/result/")){
+     const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);cleanup();
+     try{const blob=await deviceMediaBlob(r.url);if(!blob)throw Error("视频下载失败");const saved=await deviceMediaPut(key,blob);if(bubble.isConnected){renderDeviceMedia(bubble,blob,"video");if(!saved)mediaCacheWarning(bubble);setPortraitState(bubble.closest(".message"),"finished")}}
+     catch{if(bubble.isConnected){localMediaNotice(bubble,"video");const link=node("a","chat-video-save","下载原视频");link.href=r.url;link.download="aigzt-video.mp4";bubble.append(link)}}return;
+    }
+    if(external){
+     const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=r.url;
+     const link=node("a","chat-video-save","下载临时视频");link.href=r.url;link.target="_blank";link.rel="noopener noreferrer";
+     cleanup();bubble.replaceChildren(video,link);setPortraitState(bubble.closest(".message"),"finished");return;
+    }
+   }
+   if(r.status==="failed"){
+    cleanup();frame.remove();
+    label.textContent="视频生成失败";hint.textContent=r.error||"免费来源暂不可用";
+    if(r.retryable){
+     const button=node("button","chat-video-save","重新生成");button.type="button";
+     button.addEventListener("click",()=>{button.disabled=true;inlineVideoJob(bubble,id,true)});
+     bubble.append(button);
+    }
+    setPortraitState(bubble.closest(".message"),"error");
+    return;
+   }
+   hint.textContent=r.stage===1?"正在等待备用视频来源…":"等待免费来源返回视频…";
+   delay=Math.max(1000,Math.min(15000,Number(r.waitSeconds||8)*1000));
+  }catch(error){
+   if(!active())return;
+   errors++;delay=Math.min(60000,17000*2**Math.min(errors,2));
+   hint.textContent=navigator.onLine===false?"网络离线，连接恢复后继续":"查询遇到网络问题，将自动重试";
+  }finally{
+   polling=false;
+   if(active())schedule(delay);
+  }
+ }
+ document.addEventListener("visibilitychange",onReturn);
+ window.addEventListener("online",onReturn);
+ schedule(0);
 }
+
 // Fold presentation only; sourceText and message actions keep the full message.
 const USER_MESSAGE_PREVIEW_LINES=5;
 function setUserMessageExpanded(row,expanded){
@@ -2865,7 +2964,10 @@ function syncMobileHeight(){
 /* Tool selections live exclusively in the + menu. */
 function syncMiniTools(){
  const active={
-  miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",miniSticker:S.miniToolChoice==="sticker"
+  miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",
+  miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan"&&S.miniToolChoice!=="gif",
+  miniFrameVideo:S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.miniToolChoice!=="gif",
+  miniSticker:S.miniToolChoice==="sticker",miniGif:S.miniToolChoice==="gif"
  };
  for(const [id,yes] of Object.entries(active)){
   const btn=$(id);if(!btn)continue;
@@ -2874,10 +2976,24 @@ function syncMiniTools(){
 }
 /* The selected mode is shown in the model line. Native file pickers remain in the + menu. */
 function chooseMiniTool(action){
- if(S.busy||action!=="image-edit")return;
- hideAttachMenu();setComposerMode("image");S.miniToolChoice="image-edit";
- $("prompt").placeholder="上传参考图，然后描述需要修改的内容…";
- syncMiniTools();updateComposerModel();$("prompt").focus({preventScroll:true});
+ if(S.busy)return;
+ hideAttachMenu();
+ const isEdit=action==="image-edit";
+ const isImageVideo=action==="image-video";
+ const isFrameVideo=action==="frame-video";
+ if(!isEdit&&!isImageVideo&&!isFrameVideo)return;
+ if(isEdit){
+  setComposerMode("image");
+  S.miniToolChoice="image-edit";
+  $("prompt").placeholder="上传参考图，然后描述需要修改的内容…";
+ }else{
+  const provider=isImageVideo?"freewan":"freeloop";
+  selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
+  setComposerMode("video");
+  $("prompt").placeholder=isFrameVideo?"添加首帧和尾帧两张图，描述过渡动作…":"添加参考图，描述画面需要的动作…";
+ }
+ syncMiniTools();updateComposerModel();
+ $("prompt").focus({preventScroll:true});
 }
 
 function restoreChatInputMode(){
@@ -2890,7 +3006,9 @@ function setComposerMode(mode){
  
  if(mode!=="text"&&S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false")}
  $("imageMode").classList.toggle("active",mode==="image");
+ $("videoMode").classList.toggle("active",mode==="video");
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
+ $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
  $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":S.code?"描述编程任务…":"向 AI 提问…";
  resizePrompt();updateComposerModel();syncMiniTools();
 }
@@ -2922,7 +3040,7 @@ function renderAttachments(){
  * actual MIME and filename, never label PNG bytes as WebP or block uploading.
  * This runs only for image mode; text/chat/video attachments remain untouched. */
 async function optimizeImageReference(file){
- if(S.composerMode!=="image"&&arguments[1]!==true)return file;
+ if(S.composerMode!=="image"&&!(S.composerMode==="video"&&S.videoProvider!=="freetext")&&arguments[1]!==true)return file;
  const type=String(file.type||"").toLowerCase();
  const supported=["image/jpeg","image/png","image/webp"].includes(type);
  const heic=["image/heic","image/heif"].includes(type)||/\.(heic|heif)$/i.test(file.name||"");
@@ -2975,6 +3093,7 @@ async function uploadSelected(files){
  if(S.uploading)return;
  if(!files.length)return;
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
+ if(S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.attachments.length+files.length>2){flashError("首尾帧需要两张图片，请先移除多余附件");return}
  if(S.composerMode==="image"&&S.miniToolChoice==="image-edit"&&(files.length!==1||S.attachments.length)){
   flashError("图生图一次仅允许一张参考图片，请先移除原图再选择");return
  }
@@ -3335,9 +3454,16 @@ async function continueTextReply(row,original,button){
 // Resolve each turn independently; the chosen chat model is never overwritten by media tools.
 function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel,tool}){
  const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
- const format=tool==="sticker"||mode==="text"&&provider==="free"&&!code&&!continueFrom&&requestedMediaFormat(prompt)==="sticker"?"sticker":"";
- if(format){if(!compatible||attachments.length>1)return {error:"贴纸最多1张参考图"};return {mode:"image",format,videoProvider,videoModel};}
- if(mode==="text"&&!continueFrom&&compatible&&!code&&!isDirectVideoRequest(prompt)&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image",videoProvider,videoModel};
+ const format=tool==="sticker"||tool==="gif"?tool:mode==="text"&&provider==="free"&&!code&&!continueFrom?requestedMediaFormat(prompt):"";
+ if(format){if(!compatible||attachments.length>(format==="gif"?2:1))return {error:"贴纸最多1张参考图，GIF最多2张"};if(format==="sticker")return {mode:"image",format,videoProvider,videoModel};const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";return {mode:"video",format,videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};}
+ if(mode==="text"&&!continueFrom&&compatible){
+  if(provider==="free"&&isDirectVideoRequest(prompt)){
+   if(attachments.length>2)return {error:"自动视频最多使用两张首尾帧图片"};
+   const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
+   return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
+  }
+  if(!code&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image",videoProvider,videoModel};
+ }
  return {mode,videoProvider,videoModel};
 }
 async function sendMessage(continueFrom=null,forceFreeOnce=false){
@@ -3351,15 +3477,26 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
  const submittedMode=turn.mode,mediaFormat=turn.format||"";
  const submittedVideoProvider=turn.videoProvider,submittedVideoModel=turn.videoModel,submittedVideoRatio=S.videoRatio;
  if(!S.user){show("authDialog");return}
- if(submittedMode==="video"){
+ const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(submittedVideoProvider);
+ const videoImages=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+ if(submittedMode==="video"&&!freeVideo){
   if(!prompt){flashError("请输入视频描述");return}
   if(S.attachments.length){flashError("当前个人 API 视频接口仅支持文字描述，请选择图生视频处理附件");return}
   if(!videoKeyPermitted(submittedVideoProvider)){S.videoPendingKeyReturn=true;openKeyPanel(submittedVideoProvider);return}
   if(!confirm("确认使用 "+VIDEO_PROVIDER_NAMES[submittedVideoProvider]+" 个人 API 额度生成视频？可能产生费用。"))return;
  }
+ if(freeVideo&&!prompt){flashError("请输入视频描述");return}
+ if(freeVideo&&submittedVideoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
  if(submittedMode==="image"&&submittedTool==="image-edit"&&!S.attachments.length){
   flashError("请点击＋中的照片上传参考图片");showAttachMenu();return
+ }
+ if(freeVideo&&submittedVideoProvider!=="freetext"&&videoImages.length<(submittedVideoProvider==="freeloop"?2:1)){
+  flashError(submittedVideoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
+  showAttachMenu();return
+ }
+ if(freeVideo&&submittedVideoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
+  flashError("首尾帧需要两张不同的图片附件");return
  }
  if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
   flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
@@ -3434,6 +3571,10 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   else if(isImageMessage){
    const reference=attached.find(x=>["image/jpeg","image/png","image/webp"].includes(x.type));
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",format:mediaFormat,prompt,imageId:reference?.id});
+  }
+  else if(freeVideo){
+   const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",format:mediaFormat,provider:submittedVideoProvider,model:submittedVideoModel,imageId:img?.id,endImageId:submittedVideoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:submittedVideoRatio,prompt});
   }
   else{
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
@@ -3896,7 +4037,7 @@ function isPreviewableImage(img){
 }
 function ivOpen(img){
  if(!isPreviewableImage(img))return;
- const scope=img.closest(".draw-gallery,.messages,.media-preview,.result-list,#savedFiles,.work-board")||img.closest("dialog,.main")||document.body;
+ const scope=img.closest(".draw-gallery,.messages,.media-preview,.result-list,#savedFiles")||img.closest("dialog,.main")||document.body;
  const found=Array.from(scope.querySelectorAll("img")).filter(isPreviewableImage);
  if(!found.includes(img))found.push(img);
  iv.items=found.map(x=>({src:x.currentSrc||x.src,alt:x.alt||""}));iv.origin=img;iv.lastTap=null;
@@ -4130,6 +4271,7 @@ function openCreate(){
  if(!$("drawResults").children.length&&!S.drawBatch){const owner=S.user.id;void (async()=>{let record;try{record=JSON.parse(localStorage.getItem(deviceMediaKey("draw-latest"))||"null")}catch{};if(!record||![1,2,4].includes(record.count))return;for(let i=0;i<record.count;i++){const blob=await deviceMediaGet(owner+":draw:"+record.id+":"+i);if(!blob||S.user?.id!==owner||S.drawBatch||S.createMode!=="image")continue;const tile=drawTile(i+1,"本机图片",record.shape);await drawResult(tile,URL.createObjectURL(blob))}})().catch(()=>{})}
 }
 function videoKeyPermitted(provider){
+ if(provider==="freetext"||provider==="freewan"||provider==="freeloop")return true;
  const record=S.savedProviders[provider];return Boolean(record&&record.consent);
 }
 function selectVideoModel(provider,model){
@@ -4384,6 +4526,12 @@ function wire(){
   hideAttachMenu();setComposerMode(S.composerMode==="image"?"text":"image");
   $("prompt").focus({preventScroll:true});
  });
+ $("videoMode").addEventListener("click",()=>{
+  hideAttachMenu();
+  if(S.composerMode==="video")setComposerMode("text");
+  else{selectVideoModel("freetext",VIDEO_OPTIONS.freetext[0]);setComposerMode("video")}
+  $("prompt").focus({preventScroll:true});
+ });
  $("codeToggle").addEventListener("click",()=>{
   hideAttachMenu();
   if(S.composerMode!=="text")setComposerMode("text");
@@ -4394,8 +4542,10 @@ function wire(){
   updateComposerModel();
   $("prompt").focus({preventScroll:true});
  });
- $("miniImageEdit").addEventListener("click",()=>chooseMiniTool("image-edit"));
- $("miniSticker").addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode("image");S.miniToolChoice="sticker";syncMiniTools();updateComposerModel();$("prompt").placeholder="描述贴纸内容…";$("prompt").focus({preventScroll:true})});
+ for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
+  $(id).addEventListener("click",()=>chooseMiniTool(action));
+ }
+ for(const [id,format] of [["miniSticker","sticker"],["miniGif","gif"]])$(id).addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode(format==="gif"?"video":"image");S.miniToolChoice=format;syncMiniTools();updateComposerModel();$("prompt").placeholder=format==="gif"?"描述动图内容和动作…":"描述贴纸内容…";$("prompt").focus({preventScroll:true})});
  $("chatAutoChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;setModel({provider:"free",id:"free:auto",name:"自动模式",type:"text",free:true})});
  $("chatBoundChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;S.query="";$("modelSearch").value="";activateSource("connected");$("modelScroll").scrollTop=0});
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});

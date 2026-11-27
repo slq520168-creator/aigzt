@@ -10,7 +10,7 @@
  <meta name="description" content="IMAI 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
  <title>IMAI · AI 聚合工作台</title>
  <script>(function(){var r=document.documentElement;if(!/iPhone|iPad|iPod/i.test(navigator.userAgent)||!(navigator.standalone===true||matchMedia("(display-mode: standalone)").matches))return;r.classList.add("aigzt-ios-pwa");var rainbow=true;try{rainbow=localStorage.getItem("aigzt:rainbow")!=="0"}catch(e){}if(rainbow)r.classList.add("pwa-boot-rainbow");var h=Math.round(Math.max(innerHeight,visualViewport?visualViewport.height:0)),sh=screen.height;if(sh>=h&&sh-h<=96)h=sh;if(h>0)r.style.setProperty("--aigzt-pwa-height",h+"px")})();</script>
- <link rel="stylesheet" href="/style.css"><script src="/app.js?v=537-chat-only" defer></script>
+ <link rel="stylesheet" href="/style.css"><script src="/app.js?v=538-chat-creative" defer></script>
 </head>
 <body>
  <div class="shell" id="shell">
@@ -92,9 +92,13 @@
      <button type="button" id="toolsAction" aria-expanded="false" aria-controls="toolTray"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>工具</span></button>
      <div class="tool-tray" id="toolTray" hidden>
       <button type="button" class="subtle" id="publicSearchMode"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><span>百科查询</span></button>
+      <button type="button" class="subtle" id="videoMode" aria-pressed="false"><span class="ui-icon" data-icon="video" aria-hidden="true"></span><span>视频</span></button>
       <button type="button" class="subtle" id="codeToggle" aria-pressed="false"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>代码</span></button>
       <button type="button" class="mini-tool" id="miniImageEdit" aria-label="图生图" title="图生图" aria-pressed="false"><span class="ui-icon" data-icon="scan" aria-hidden="true"></span><span>图生图</span></button>
+      <button type="button" class="mini-tool" id="miniImageVideo" aria-label="图生视频" title="图生视频" aria-pressed="false"><span class="ui-icon" data-icon="film" aria-hidden="true"></span><span>图生视频</span></button>
       <button type="button" class="mini-tool" id="miniSticker" aria-pressed="false"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>贴纸</span></button>
+      <button type="button" class="mini-tool" id="miniGif" aria-pressed="false"><span class="ui-icon" data-icon="film" aria-hidden="true"></span><span>GIF</span></button>
+      <button type="button" class="mini-tool" id="miniFrameVideo" aria-label="首尾帧" title="首尾帧" aria-pressed="false"><span class="ui-icon" data-icon="clapperboard" aria-hidden="true"></span><span>首尾帧</span></button>
      </div>
     </div>
     <div class="reply-level-menu" id="replyLevelMenu" role="group" aria-label="回复长度" hidden>
