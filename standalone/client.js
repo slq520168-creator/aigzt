@@ -1611,7 +1611,7 @@ async function revealCompletedReply(row,reply){
  const bubble=row?.querySelector(".bubble");if(!bubble||!row.isConnected)return;
  const viewport=$("conversation"),letters=Array.from(String(reply||""));
  if(!letters.length)return;
- if(document.hidden||window.matchMedia("(prefers-reduced-motion:reduce)").matches){updateAssistantText(bubble,letters.join(""),true);return}
+ if(letters.length>6000||document.hidden||window.matchMedia("(prefers-reduced-motion:reduce)").matches){updateAssistantText(bubble,letters.join(""),true);return}
  const batch=Math.max(7,Math.ceil(letters.length/65));let index=0;
  await new Promise(resolve=>{
   const frame=()=>{
@@ -2294,7 +2294,7 @@ async function messageSetAction(row,type,value,button){
 function messageTokenText(row){
  let usage=null;
  try{usage=JSON.parse(row.dataset.usage||"null")}catch{}
- if(!usage||typeof usage!=="object")return "未提供 Token 用量";
+ if(!usage||typeof usage!=="object"||![usage.input,usage.output,usage.total].some(Number.isSafeInteger))return "未提供 Token 用量";
  const fmt=x=>Number.isSafeInteger(x)&&x>=0?x.toLocaleString():"—";
  let text="输入 "+fmt(usage.input)+" · 输出 "+fmt(usage.output)+" · 合计 "+fmt(usage.total);
  if(Number.isSafeInteger(usage.reasoning)&&usage.reasoning>=0)text+=" · 推理 "+fmt(usage.reasoning);
@@ -2385,10 +2385,9 @@ function appendMessageCopy(row,content){
      setMessageMoreOpen(more,false);if(messageDraft(messageQuestion(row)))openModels();
     }));
    }
-   if(row.dataset.incomplete==="1"){
-    panel.append(messageTool("arrow-up","继续回答",()=>{
-     setMessageMoreOpen(more,false);messageDraft("请从上一条未完成的回答中断处继续写完，不要重复已经写出的内容。",true,"text",row.dataset.messageId||null);
-    }));
+   if(text.trim()&&text.length<40000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
+    const next=messageTool("arrow-up","继续生成",b=>continueTextReply(row,text,b));
+    next.classList.add("message-continue-btn");next.append(node("span","","继续生成"));bar.append(next);
    }
   }
  }
@@ -2663,7 +2662,7 @@ async function loadChat(id){
  try{
   const v=await api("/api/chats/"+id);
   S.chatId=id;$("messageList").replaceChildren();hideWelcome();
-  for(const m of v.messages)appendMessage(m.role,m.body,m.model,null,false,m.id,Boolean(m.saved),m.feedback,m.usage_json,m.created_at);
+  for(const m of v.messages){let incomplete=false;try{incomplete=Boolean(JSON.parse(m.usage_json||"null")?.incomplete)}catch{}appendMessage(m.role,m.body,m.model,null,incomplete,m.id,Boolean(m.saved),m.feedback,m.usage_json,m.created_at)}
   const c=S.chats.find(c=>c.id===id);
   if(c&&c.project_id!==undefined){S.activeProjectId=c.project_id||null;renderProjects()}
   // A chat's saved provider is historical; viewing it must not overwrite the active selection.
@@ -3822,6 +3821,31 @@ async function apiChatStream(payload,onDelta){
  if(!final?.chatId||typeof final.reply!=="string")throw Error("回复中断，未收到完整结果");
  return final;
 }
+// One user click, one continuation request; retain the original row and draft.
+async function continueTextReply(row,original,button){
+ if(S.busy||S.workMode||S.freeToolsMode||!S.chatId||!row.dataset.messageId)return;
+ const chatId=S.chatId,provider=S.provider,model=S.model;
+ if(provider!=="free"&&(!connected(provider)||(!isFreeModel(provider,model)&&!S.allowPaid))){openKeyPanel(provider);return}
+ S.busy=true;button.disabled=true;$("sendBtn").disabled=true;
+ const bubble=row.querySelector(".bubble"),status=node("span","message-send-pending","正在继续生成…");
+ bubble.append(status);let tail="";
+ try{
+  const result=await apiChatStream({chatId,provider,model,message:"请继续原任务，从中断处直接写，不重复已完成内容。",continueFrom:row.dataset.messageId,attachments:[],mode:S.code?"code":"general",freeFallback:false,outputImages:false,imageOnly:false,replyLevel:replyLevel==="short"?"standard":replyLevel,allowPaid:S.allowPaid},token=>{tail+=token});
+  if(!row.isConnected||S.chatId!==chatId)return;
+  if(result.assistantMessageId!==row.dataset.messageId)throw Error("续写消息编号不一致");
+  status.remove();delete row.dataset.usage;
+  appendMessage("assistant",result.reply,result.usedModel||result.model||null,row,Boolean(result.incomplete),result.assistantMessageId,row.dataset.saved==="1",Number(row.dataset.feedback)||0,result.usage||null,result.createdAt);
+  setPortraitState(row,"finished");await fetchChats();
+ }catch(e){
+  status.remove();
+  if(row.isConnected&&S.chatId===chatId){
+   let saved=null;
+   try{const data=await api("/api/chats/"+chatId);saved=data.messages?.find(m=>m.id===row.dataset.messageId&&m.body!==original)}catch{}
+   if(saved){let incomplete=false;try{incomplete=!!JSON.parse(saved.usage_json||"null")?.incomplete}catch{}delete row.dataset.usage;appendMessage("assistant",saved.body,saved.model,row,incomplete,saved.id,!!saved.saved,saved.feedback,saved.usage_json,saved.created_at)}
+   else {flashError("续写未完成，原回复已保留");if(tail.trim()){const notice=node("div","message-send-pending","收到的续写未确认保存");notice.append(messageTool("copy","复制未保存内容",b=>copyMessageText(tail,b)));bubble.append(notice)}}
+  }
+ }finally{S.busy=false;button.disabled=false;$("sendBtn").disabled=false}
+}
 async function sendMessage(continueFrom=null,forceFreeOnce=false){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  if(S.workMode){await startWorkTask();return}
@@ -3905,14 +3929,14 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
       receivedStreamingText=true;
       streamedContent+=token;
      pending+=token;if(scheduled)return;scheduled=true;
-     requestAnimationFrame(()=>{
+     window.setTimeout(()=>{
       scheduled=false;if(!active||!loading.isConnected)return;
       if(!pending)return;
       
       const nearBottom=loading.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
       updateAssistantText(bubble,streamedContent);pending="";
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
-     });
+     },100);
     };
     try{result=await apiChatStream({chatId:S.chatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
       mode:S.code?"code":"general",freeFallback:true,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined},onDelta);}

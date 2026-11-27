@@ -191,9 +191,10 @@ function legacyQueryPrompt(history){
 function chatOutputBudget(provider,model,level){
  if(level==="short")return 600;
  if(provider==="groq"&&/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return level==="long"?4096:2400;
- return level==="long"?2600:1200;
+ return level==="long"?4096:2048;
 }
 // Estimate token usage conservatively; actual account limits remain provider-controlled.
+function replyWasLimited(reason){return ["length","max_tokens","max_output_tokens","MAX_TOKENS","MAX_OUTPUT_TOKENS"].includes(reason)}
 function groqMessageCost(m){
  let bytes=0;
  for(const ch of String(m.content||"")){const n=ch.codePointAt(0);bytes+=n<128?1:n<2048?2:n<65536?3:4;}
@@ -505,7 +506,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  const history=chatProviderHistory(messages);
  if(provider==="gemini"){
   target="https://"+host.host+"/v1beta/models/"+model+":generateContent";
-  body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}))};
+  body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]})),generationConfig:{maxOutputTokens:maxTokens}};
  }else if(provider==="openai"){
   body={model,input:history,max_output_tokens:maxTokens};
  }else if(provider==="claude"){
@@ -588,7 +589,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   }
   }catch(error){if(!content.trim())throw Object.assign(Error("服务商回复中断"),{code:error?.code||"UPSTREAM_NETWORK"});}
   if(!content.trim())throw Object.assign(Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字"),{code:"UPSTREAM_EMPTY"});
-  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||finishReason==="length"||finishReason==="max_tokens"||content.length>=40000};
+  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||replyWasLimited(finishReason)||content.length>=40000};
  }
  let out;try{out=await res.json()}catch{throw Object.assign(Error("服务商返回格式异常"),{code:"UPSTREAM_EMPTY"})}
  const message=out.choices?.[0]?.message;
@@ -598,7 +599,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  const text=parsed.content||out.output_text||"";
  if(!String(text).trim()&&!parsed.images.length)throw Object.assign(Error("服务商没有返回有效内容"),{code:"UPSTREAM_EMPTY"});
  const reason=out?.choices?.[0]?.finish_reason||out?.stop_reason||out?.candidates?.[0]?.finishReason||"";
- return {content:truncate(text,40000),images:parsed.images,actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:["length","max_tokens","MAX_TOKENS"].includes(reason)||out?.status==="incomplete"||text.length>40000};
+ return {content:truncate(text,40000),images:parsed.images,actualModel:out.model||model,usage:verifiedTokenUsage(out),incomplete:replyWasLimited(reason)||out?.status==="incomplete"||text.length>40000};
 }
 // Storage uploads retain bounded protection; ordinary free text and work do not use daily quotas.
 const FREE_ROUTER_SOURCE_IDS=Object.freeze(["vireonix","openrouter","groq","vexa"]);
@@ -669,7 +670,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // Legacy prompt-only endpoints cannot receive a long request intact.
   if(source.query&&recent===null){errors.push(source.id+" 上下文容量不足");continue;}
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
-   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
+   {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:chatFailover?chatOutputBudget(source.id,source.model,replyLevel):replyLevel==="short"?600:replyLevel==="long"?2400:1200,stream:false};
   if(source.id==="groq"){
    const plan=groqRequestPlan(payload.messages,chatOutputBudget("groq",source.model,replyLevel));
    payload.messages=plan.messages;delete payload.max_tokens;payload.max_completion_tokens=plan.maxTokens;
@@ -711,7 +712,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   // When the upstream confirms almost no remaining budget, protect it until a later request.
   if(source.id==="vireonix"&&Number.isFinite(percent)&&percent<=1)
    await freeRouteFailure(env,source.id,429,{failures:0},null);
-  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:out?.choices?.[0]?.finish_reason==="length"||answer.length>40000};
+  return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:replyWasLimited(out?.choices?.[0]?.finish_reason||out?.stop_reason)||out?.status==="incomplete"||answer.length>40000};
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
  throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
@@ -827,14 +828,18 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  let continuation=null;
  if(body.continueFrom!=null){
   if(!body.chatId||typeof body.continueFrom!=="string"||!/^[0-9a-f-]{36}$/i.test(body.continueFrom)||attachments.length)throw Object.assign(new Error("续写目标无效"),{status:400});
-  continuation=await dbGet(env.DB,"SELECT body FROM messages WHERE id=? AND chat_id=? AND user_id=? AND role='assistant'",body.continueFrom,chatId,user.id);
+  continuation=await dbGet(env.DB,"SELECT body,created_at FROM messages WHERE id=? AND chat_id=? AND user_id=? AND role='assistant'",body.continueFrom,chatId,user.id);
   if(!continuation||!String(continuation.body||"").trim())throw Object.assign(new Error("找不到所选回复"),{status:404});
+  if(continuation.body.length>=40000||/^\[\[aigzt:|^!\[|^(?:图片|视频|图生图)已生成/.test(continuation.body)||body.outputImages||body.imageOnly)throw Object.assign(Error("此回复无法继续追加，请开启新消息"),{status:400});
  }
- const messageId=crypto.randomUUID();
- await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
- const previous=await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT 12").bind(chatId,user.id).all();
+ const messageId=continuation?null:crypto.randomUUID();
+ if(messageId)await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
+ const previous=continuation?await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? AND created_at<=? ORDER BY created_at DESC LIMIT 11").bind(chatId,user.id,continuation.created_at).all():await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT 12").bind(chatId,user.id).all();
  const messages=(previous.results||[]).reverse();
- if(continuation&&messages.length){const last=messages[messages.length-1];if(last.role==="user")last.body=message+"\n\n所选回复的原文结尾（引用，供定位续写位置）：\n"+String(continuation.body).slice(-1800);}
+ if(continuation){
+  const original=messages.findLast(m=>m.role==="user");
+  messages.push({role:"user",body:message+"\n原任务："+String(original?.body||"").slice(0,4000)+"\n所选回复结尾：\n"+String(continuation.body).slice(-2400)+"\n直接接续正文，不重复原文，不添加开场或续写标题。"});
+ }
  // Bounded cross-chat context, explicit memory notes and project instructions.
  const preference=await dbGet(env.DB,"SELECT memory_enabled FROM user_preferences WHERE user_id=?",user.id);
  if(preference?.memory_enabled!==0){
@@ -888,32 +893,28 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
     catch(fallback){throw Object.assign(Error("当前备用线路暂时不可用，原消息已保留供重试"),{status:503,code:"FREE_FALLBACK_FAILED"})}
    }
   }
-  // A response cut off by its output limit or stream interruption gets at most one free continuation.
-  // No images, no PDF re-upload, no repeated paid request, no duplicate user-message row.
-  if(!sharedModel&&result.incomplete&&result.content?.trim()&&!nativeFiles.length&&!body.outputImages&&!body.imageOnly&&body.freeFallback!==false&&remaining()>=3500){
-   const prior=result;
-   const follow=[...selectedMessages,{role:"assistant",body:prior.content},{role:"user",body:"请从上条回复中断处直接继续原任务，不写开场、复述、续写标题或引用原文。如果中断在围栏内，直接补齐其正文再关闭围栏；如果已经完成一套，从下一套开始。原文结尾：\n"+prior.content.slice(-1800)}];
-   try{
-    const tail=await freeChatAnswer(env,follow,mode,replyLevel,[],remaining(),null);
-    if(tail.content?.trim()){
-     const combined=prior.content+"\n\n"+tail.content.trim();
-     if(typeof onDelta==="function"&&emitted)onDelta("\n\n"+tail.content.trim());
-     result={...prior,content:truncate(combined,40000),actualModel:prior.actualModel+" + "+tail.actualModel,usage:null,incomplete:!!tail.incomplete||combined.length>40000};
-     freeFallback=true;
-    }
-   }catch{/* Keep the actual partial reply and its continuation action. */}
-  }
+  // Continuation is explicit: never automatically generate a second answer.
  }catch(e){
-  await dbRun(env.DB,"DELETE FROM messages WHERE id=? AND user_id=?",messageId,user.id).catch(()=>{});
+  if(messageId)await dbRun(env.DB,"DELETE FROM messages WHERE id=? AND user_id=?",messageId,user.id).catch(()=>{});
   if(!body.chatId)await dbRun(env.DB,"DELETE FROM chats WHERE id=? AND user_id=?",chatId,user.id).catch(()=>{});
   throw e;
  }
- const stamp=Date.now(),assistantMessageId=crypto.randomUUID();
+ const stamp=continuation?continuation.created_at:Date.now(),assistantMessageId=continuation?body.continueFrom:crypto.randomUUID();
  const images=Array.isArray(result.images)?result.images:[],remote=images.filter(x=>x.startsWith("https:")),temporary=images.filter(x=>x.startsWith("data:"));
- const storedReply=[result.content,...remote.map(x=>"![模型图片]("+x.replace(/[()]/g,ch=>encodeURIComponent(ch))+")"),...(!result.content&&!remote.length&&temporary.length?["图片已生成（仅当前会话展示）"]:[])].filter(Boolean).join("\n\n");
- await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,result.usage?JSON.stringify(result.usage):null);
- await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,stamp,chatId,user.id);
- return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,primarySucceeded:provider==="free"||primarySucceeded,primaryFailure,incomplete:Boolean(result.incomplete)};
+ let storedReply=[result.content,...remote.map(x=>"![模型图片]("+x.replace(/[()]/g,ch=>encodeURIComponent(ch))+")"),...(!result.content&&!remote.length&&temporary.length?["图片已生成（仅当前会话展示）"]:[])].filter(Boolean).join("\n\n");
+ if(continuation){
+  if(!storedReply.trim()||images.length)throw Object.assign(Error("续写未返回有效文字"),{status:502});
+  let tail=storedReply;
+  for(let n=Math.min(400,continuation.body.length,tail.length);n>=24;n--){if(continuation.body.endsWith(tail.slice(0,n))){tail=tail.slice(n);break}}
+  if(!tail.trim())throw Object.assign(Error("模型重复返回原文，请重试续写"),{status:409});
+  storedReply=continuation.body+"\n\n"+tail;
+  if(storedReply.length>60000)throw Object.assign(Error("回复已达安全长度，请开启新消息"),{status:400});
+  result.usage=null;
+  const changed=await dbRun(env.DB,"UPDATE messages SET body=?,model=?,usage_json=? WHERE id=? AND chat_id=? AND user_id=? AND body=?",storedReply,result.actualModel,JSON.stringify({incomplete:!!result.incomplete}),assistantMessageId,chatId,user.id,continuation.body);
+  if(changed.meta?.changes!==1)throw Object.assign(Error("回复已在其他设备更新，请重新进入聊天"),{status:409});
+ }else await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at,usage_json) VALUES(?,?,?,?,?,?,?,?)",assistantMessageId,chatId,user.id,"assistant",storedReply,result.actualModel,stamp,JSON.stringify({...result.usage,incomplete:!!result.incomplete}));
+ await dbRun(env.DB,"UPDATE chats SET provider=?,model=?,updated_at=? WHERE id=? AND user_id=?",provider,model,Date.now(),chatId,user.id);
+ return {ok:true,chatId,userMessageId:messageId,assistantMessageId,usage:result.usage||null,reply:continuation||remote.length?storedReply:result.content,images:temporary,createdAt:stamp,model,usedModel:result.actualModel,provider,freeFallback,primarySucceeded:provider==="free"||primarySucceeded,primaryFailure,incomplete:Boolean(result.incomplete)};
 }
 
 
