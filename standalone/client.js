@@ -1794,26 +1794,6 @@ function positionNewTextReply(row,question,viewport){
  viewport.scrollTop+=anchor.getBoundingClientRect().top-viewport.getBoundingClientRect().top-12;
  return ()=>{row.style.minHeight=oldMinHeight;row.style.alignContent=oldAlignContent};
 }
-async function revealCompletedReply(row,reply){
- const bubble=row?.querySelector(".bubble");if(!bubble||!row.isConnected)return;
- const viewport=$("conversation"),letters=Array.from(String(reply||""));
- if(!letters.length)return;
- if(letters.length>6000||document.hidden||window.matchMedia("(prefers-reduced-motion:reduce)").matches){updateAssistantText(bubble,letters.join(""),true);return}
- const batch=Math.max(7,Math.ceil(letters.length/65));let index=0;
- await new Promise(resolve=>{
-  const frame=()=>{
-   if(!row.isConnected){resolve();return}
-   const next=Math.min(letters.length,index+batch);
-   const nearBottom=row.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<155;
-   updateAssistantText(bubble,letters.slice(0,next).join(""),next===letters.length);
-   index=next;if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
-   if(index>=letters.length)resolve();else requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
- });
-}
-
-
 const VOICE_CHAT_ENABLED=true;
 const MESSAGE_READ_ALOUD_ENABLED=true;
 const REPLY_LEVELS={short:"简短",standard:"标准",long:"详细"};
@@ -3624,9 +3604,11 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
     const bubble=loadingBubble,viewport=$("conversation");
     const onDelta=token=>{
      if(!active||!loading.isConnected)return;
-     if(!receivedStreamingText)setPortraitState(loading,"speaking");
+     const first=!receivedStreamingText;
+     if(first)setPortraitState(loading,"speaking");
       receivedStreamingText=true;
       streamedContent+=token;
+     if(first){updateAssistantText(bubble,streamedContent);return}
      pending+=token;if(scheduled)return;scheduled=true;
      window.setTimeout(()=>{
       scheduled=false;if(!active||!loading.isConnected)return;
@@ -3635,7 +3617,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
       const nearBottom=loading.dataset.readFromStart!=="1"&&viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
       updateAssistantText(bubble,streamedContent);pending="";
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
-     },100);
+     },60);
     };
     try{result=await apiChatStream({chatId:S.chatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
       mode:submittedCode?"code":"general",freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined},onDelta);}
@@ -3653,7 +3635,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
   }
   // A completed response never changes the user's selected model.
-  if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
+  if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");updateAssistantText(loadingBubble,result.reply,true)}
   if(loading.isConnected){
    S.chatId=result.chatId;
    if(submittedMode==="text"){

@@ -533,6 +533,40 @@ async function externalModelFailure(res){
  const failure=classifyModelFailure(res.status,payload);
  return Object.assign(new Error(failure.message),{code:failure.code,status:res.status===429?429:res.status===401||res.status===403?400:503,upstreamStatus:res.status,retrySeconds:failure.code==="RATE_LIMIT"?freeRetrySeconds(res.headers?.get("retry-after")):null});
 }
+async function readChatCompletionStream(res,model,onDelta){
+  if(!res.body)throw Object.assign(Error("上游没有返回流式数据"),{code:"UPSTREAM_EMPTY"});
+  const reader=res.body.getReader(),decoder=new TextDecoder();
+  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null,usage=null;
+  try{
+  while(!complete){
+   const {done,value}=await reader.read();
+   if(done)break;
+   buffer+=decoder.decode(value,{stream:true});
+   if(buffer.length>350000)throw Error("上游回复超过流式安全上限");
+   let end;
+   while((end=buffer.indexOf("\n"))>=0){
+    const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);
+    if(!line.startsWith("data:"))continue;
+    const data=line.slice(5).trim();
+    if(data==="[DONE]"){complete=true;break}
+    let event;try{event=JSON.parse(data)}catch{continue}
+    if(event.error)throw Object.assign(Error("模型流式回复中断"),{code:"UPSTREAM_ERROR"});
+    if(typeof event.model==="string")upstreamModel=event.model;
+    const measured=verifiedTokenUsage(event);if(measured)usage=measured;
+    if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
+    const delta=event.choices?.[0]?.delta?.content;
+    const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
+    if(token&&content.length<40000){
+     const piece=token.slice(0,40000-content.length);
+     content+=piece;onDelta(piece);
+    }
+   }
+  }
+  }catch(error){if(!content.trim())throw Object.assign(Error("服务商回复中断"),{code:error?.code||"UPSTREAM_NETWORK"});}
+  finally{void reader.cancel().catch(()=>{})}
+  if(!content.trim())throw Object.assign(Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字"),{code:"UPSTREAM_EMPTY"});
+  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||replyWasLimited(finishReason)||content.length>=40000};
+}
 async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false,inputParts=[],chatDeadline=null,zeroOnly=false){
  requireModelId(model);
  if(!HOSTS[provider])throw Error("不支持的个人服务商");
@@ -606,39 +640,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  }catch(e){throw Object.assign(new Error(e?.name==="TimeoutError"||e?.name==="AbortError"?"服务商连接超时":"服务商网络无法连接"),{status:503,code:"UPSTREAM_NETWORK"})}
  if(res.status>=300&&res.status<400)throw Object.assign(Error("上游跳转已拦截"),{code:"UPSTREAM_ROUTE"});
  if(!res.ok)throw await externalModelFailure(res);
- if(streaming){
-  if(!res.body)throw Object.assign(Error("上游没有返回流式数据"),{code:"UPSTREAM_EMPTY"});
-  const reader=res.body.getReader(),decoder=new TextDecoder();
-  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null,usage=null;
-  try{
-  while(!complete){
-   const {done,value}=await reader.read();
-   if(done)break;
-   buffer+=decoder.decode(value,{stream:true});
-   if(buffer.length>350000)throw Error("上游回复超过流式安全上限");
-   let end;
-   while((end=buffer.indexOf("\n"))>=0){
-    const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);
-    if(!line.startsWith("data:"))continue;
-    const data=line.slice(5).trim();
-    if(data==="[DONE]"){complete=true;break}
-    let event;try{event=JSON.parse(data)}catch{continue}
-    if(event.error)throw Object.assign(Error("模型流式回复中断"),{code:"UPSTREAM_ERROR"});
-    if(typeof event.model==="string")upstreamModel=event.model;
-    const measured=verifiedTokenUsage(event);if(measured)usage=measured;
-    if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
-    const delta=event.choices?.[0]?.delta?.content;
-    const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
-    if(token&&content.length<40000){
-     const piece=token.slice(0,40000-content.length);
-     content+=piece;onDelta(piece);
-    }
-   }
-  }
-  }catch(error){if(!content.trim())throw Object.assign(Error("服务商回复中断"),{code:error?.code||"UPSTREAM_NETWORK"});}
-  if(!content.trim())throw Object.assign(Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字"),{code:"UPSTREAM_EMPTY"});
-  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||replyWasLimited(finishReason)||content.length>=40000};
- }
+ if(streaming)return readChatCompletionStream(res,model,onDelta);
  let out;try{out=await res.json()}catch{throw Object.assign(Error("服务商返回格式异常"),{code:"UPSTREAM_EMPTY"})}
  const message=out.choices?.[0]?.message;
  const parts=provider==="gemini"?(out.candidates?.[0]?.content?.parts||[]):provider==="openai"?(out.output||[]).flatMap(o=>o.type==="image_generation_call"?[o]:o.content||[]):provider==="claude"?(out.content||[]):message?.content;
@@ -710,19 +712,26 @@ async function freeRouteCatalog(env){
  // Do not expose provider names, failures or cooldowns to the public UI.
  return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false){
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false,onDelta=null){
  const started=Date.now();
  const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
  const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
  const history=chatProviderHistory(messages.slice(-14));
- const sources=(sharedAuto&&preferred==="free:auto"?await automaticFreeSources(env,mode,replyLevel):freeSources(env)).filter(s=>!authenticatedOnly||Boolean(s.key));
- const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
  const states=await freeRouteStates(env),now=Date.now();
- // Free route choice never reaches the UI; failover order belongs exclusively to the server.
- const available=all.filter(s=>(states.get(s.routeKey||s.id)?.cool_until||0)<=now);
- if(!available.length)throw Object.assign(new Error("当前免费来源全部在限额冷却中，请稍后重试"),{status:429});
- const errors=[],attempts=sharedAuto?Math.min(4,available.length):available.length;
- for(const source of available.slice(0,attempts)){
+ const isAuto=sharedAuto&&preferred==="free:auto";
+ // Standard conversation reaches the existing Groq fast route without waiting on the external catalog.
+ const base=freeSources(env),fast=isAuto&&mode!=="code"&&replyLevel!=="long"?base.filter(s=>s.id==="groq"&&s.key):[];
+ const eligible=s=>(!authenticatedOnly||Boolean(s.key))&&(states.get(s.routeKey||s.id)?.cool_until||0)<=now;
+ async function* candidates(){
+  for(const source of fast)if(eligible(source))yield source;
+  const sources=isAuto?await automaticFreeSources(env,mode,replyLevel):base;
+  const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
+  for(const source of all)if(eligible(source)&&!fast.some(s=>(s.routeKey||s.id)===(source.routeKey||source.id)))yield source;
+ }
+ const errors=[];let attempts=0;
+ for await(const source of candidates()){
+  if(sharedAuto&&attempts>=4)break;
+  attempts++;
   const remaining=timeBudget-(Date.now()-started);
   if(remaining<1500)break;
   const routeKey=source.routeKey||source.id,sourceState=states.get(routeKey),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
@@ -737,12 +746,14 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    payload.messages=plan.messages;delete payload.max_tokens;payload.max_completion_tokens=plan.maxTokens;
     if(/^openai\/gpt-oss-(?:20b|120b)$/.test(source.model)&&replyLevel==="long"){payload.reasoning_effort="low";payload.include_reasoning=false;}
   }
+  const streaming=typeof onDelta==="function"&&!source.query&&["groq","openrouter"].includes(source.id);
+  if(streaming){payload.stream=true;if(source.id==="groq")payload.stream_options={include_usage:true}}
   let res;
   try{
    res=await fetch(source.endpoint,{
     method:"POST",
-    headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},
-    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(Math.min(sharedAuto&&source.id==="groq"&&replyLevel==="long"?32000:source.ms,Math.max(1500,remaining)))
+    headers:{"content-type":"application/json",accept:streaming?"text/event-stream":"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},
+    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(Math.min(streaming?Math.max(source.ms,35000):sharedAuto&&source.id==="groq"&&replyLevel==="long"?32000:source.ms,Math.max(1500,remaining)))
    });
   }catch(error){
    // For chat only, advance to a distinct configured route, never retry the same request on the same source.
@@ -757,6 +768,12 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    errors.push(source.id+" HTTP "+status);
    if(status===429||[400,401,402,403,404].includes(status)||status>=500)continue;
    continue;
+  }
+  if(streaming){
+   let result;
+   try{result=await readChatCompletionStream(res,source.model,onDelta)}catch(e){await freeRouteFailure(env,routeKey,502,sourceState,res.headers);throw e}
+   await freeRouteRecover(env,routeKey,sourceState);
+   return {...result,actualModel:source.id+"/"+String(result.actualModel||source.model).slice(0,90),source:source.id};
   }
   let out;
   try{out=await res.json()}catch{
@@ -935,13 +952,10 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  // Bounded cross-chat context, explicit memory notes and project instructions.
  const preference=await dbGet(env.DB,"SELECT memory_enabled FROM user_preferences WHERE user_id=?",user.id);
  if(preference?.memory_enabled!==0){
-  const notes=await env.DB.prepare("SELECT note FROM memory_notes WHERE user_id=? ORDER BY created_at DESC LIMIT 10").bind(user.id).all();
-  const activeProject=await dbGet(env.DB,"SELECT project_id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
-  let project=null;
-  if(activeProject?.project_id)project=await dbGet(env.DB,"SELECT name,instructions FROM projects WHERE id=? AND user_id=?",activeProject.project_id,user.id);
-  const former=activeProject?.project_id?
-    await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.project_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 8").bind(user.id,activeProject.project_id,chatId).all():
-    await env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 6").bind(user.id,chatId).all();
+  const [notes,activeProject]=await Promise.all([env.DB.prepare("SELECT note FROM memory_notes WHERE user_id=? ORDER BY created_at DESC LIMIT 10").bind(user.id).all(),dbGet(env.DB,"SELECT project_id FROM chats WHERE id=? AND user_id=?",chatId,user.id)]);
+  const [project,former]=await Promise.all([activeProject?.project_id?dbGet(env.DB,"SELECT name,instructions FROM projects WHERE id=? AND user_id=?",activeProject.project_id,user.id):null,activeProject?.project_id?
+    env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.project_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 8").bind(user.id,activeProject.project_id,chatId).all():
+    env.DB.prepare("SELECT m.role,m.body,c.title FROM messages m JOIN chats c ON c.id=m.chat_id AND c.user_id=m.user_id WHERE m.user_id=? AND c.id<>? ORDER BY m.created_at DESC LIMIT 6").bind(user.id,chatId).all()]);
   const contextParts=[];
   if(project){contextParts.push("项目："+project.name);if(project.instructions)contextParts.push("项目说明："+truncate(project.instructions,1500))}
   for(const n of notes.results||[])contextParts.push("用户明确保存的记忆："+truncate(n.note,250));
@@ -971,7 +985,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const forward=typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null;
  try{
   if(provider==="free"){
-   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true);
+   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const outputLimit=chatOutputBudget(provider,model,replyLevel);

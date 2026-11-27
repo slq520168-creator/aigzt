@@ -17,7 +17,7 @@ test("table waits for separator and incomplete rows are held",()=>{
 test("all text paths share the Markdown renderer and preserve existing nodes",()=>{
  assert.match(c,/updateAssistantText\(bubble,streamedContent\);/);
  assert.match(c,/updateAssistantText\(bubble,content,true\);/);
- assert.match(c,/updateAssistantText\(bubble,letters\.slice\(0,next\)/);
+ assert.match(c,/updateAssistantText\(loadingBubble,result.reply,true\)/);
  assert.match(c,/syncAssistantChildren\(bubble,staged\)/);
  assert.doesNotMatch(c,/bubble\.textContent\+=pending/);
  assert.doesNotThrow(()=>new Function(c));
