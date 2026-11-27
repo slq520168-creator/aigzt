@@ -930,11 +930,13 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   for(const source of fast)if(eligible(source))yield source;
   const sources=isAuto?await automaticFreeSources(env,mode,replyLevel):base;
   const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
-  for(const source of all)if(eligible(source))yield source;
+  const seen=new Set(fast.filter(s=>attemptedRoutes.has(s.routeKey||s.id)).map(s=>s.id)),first=[],rest=[];
+  for(const source of all){if(!eligible(source))continue;if(seen.has(source.id))rest.push(source);else{seen.add(source.id);first.push(source)}}
+  for(const source of isAuto?[...first,...rest]:all)if(eligible(source))yield source;
  }
  const errors=[];let attempts=0;
  for await(const source of candidates()){
-  if(sharedAuto&&attempts>=4)break;
+  if(sharedAuto&&attempts>=6)break;
   const remaining=timeBudget-(Date.now()-started);
   if(remaining<1500)break;
   const routeKey=source.routeKey||source.id,sourceState=states.get(routeKey),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
@@ -954,7 +956,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   if(streaming){payload.stream=true;if(source.id==="groq")payload.stream_options={include_usage:true}}
   let res,visible=false;
   const controller=new AbortController();
-  const totalMs=Math.min(streaming?Math.max(source.ms,replyLevel==="long"?65000:35000):source.ms,remaining);
+  const totalMs=Math.min(streaming?Math.max(source.ms,replyLevel==="long"?65000:35000):isAuto?Math.min(source.ms,9000):source.ms,remaining);
   const totalTimer=setTimeout(()=>controller.abort(),totalMs);
   const firstMs=Math.min(totalMs,replyLevel==="long"||mode==="code"?9000:6000);
   const firstTimer=isAuto&&streaming?setTimeout(()=>controller.abort(),firstMs):null;
@@ -969,7 +971,9 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    if(!res.ok){
     clearFirst();const status=res.status;
     if(status!==413)await freeRouteFailure(env,routeKey,status,sourceState,res.headers);
-    if(isAuto&&[401,402,403,429].includes(status))blockedProviders.add(source.id);
+    // A model-specific 429 must not disable the whole service. Other services
+    // go first, then a different eligible model may be tried within the budget.
+    if(isAuto&&[401,402,403].includes(status))blockedProviders.add(source.id);
     errors.push(source.id+" HTTP "+status);void res.body?.cancel().catch(()=>{});continue;
    }
    if(streaming){
@@ -1002,7 +1006,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   }finally{clearFirst();clearTimeout(totalTimer);if(!visible&&controller.signal.aborted)try{void res?.body?.cancel().catch(()=>{})}catch{}}
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
- throw Object.assign(new Error("免费线路暂时不可用，原消息已保留"),{status:503,code:"FREE_FALLBACK_FAILED"});
+ throw Object.assign(new Error("消息已保留，可继续"),{status:503,code:"FREE_FALLBACK_FAILED"});
 }
 /* Reuse the site's existing free text providers without chat history writes.
  * Translation is ephemeral and per click, with the ordinary API rate limiter. */

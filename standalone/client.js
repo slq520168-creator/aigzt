@@ -2888,13 +2888,14 @@ function inlineVideoJob(bubble,id,retry=false){
    }
    if(r.status==="failed"){
     cleanup();frame.remove();
-    label.textContent="视频生成失败";hint.textContent=r.error||"免费来源暂不可用";
+    const automatic=bubble.closest(".message")?.dataset.automaticTurn==="1";
+    label.textContent=automatic?"视频任务已保留":"视频生成失败";hint.textContent=automatic?(r.retryable?"可继续生成":"本次未生成视频"):(r.error||"免费来源暂不可用");
     if(r.retryable){
-     const button=node("button","chat-video-save","重新生成");button.type="button";
+     const button=node("button","chat-video-save",automatic?"继续":"重新生成");button.type="button";
      button.addEventListener("click",()=>{button.disabled=true;inlineVideoJob(bubble,id,true)});
      bubble.append(button);
     }
-    setPortraitState(bubble.closest(".message"),"error");
+    setPortraitState(bubble.closest(".message"),automatic?"idle":"error");
     return;
    }
    hint.textContent=r.stage===1?"正在等待备用视频来源…":"等待免费来源返回视频…";
@@ -3062,11 +3063,12 @@ async function loadChat(id){
  }catch(e){flashError("会话读取失败："+humanError(e))}
 }
 function isAutoChatModel(){return S.provider==="free"&&S.model==="free:auto"}
-function chatModeLabel(){return freeModeChoosing||!isAutoChatModel()?"自由模式":"自动模式"}
+function chatModeLabel(){return freeModeChoosing?"自由模式":isAutoChatModel()?"自动模式":S.provider==="free"?"自由模式":"个人模式"}
 function refreshChatModeUI(){
  const current=$("chatModeCurrent"),auto=$("chatAutoChoice"),mark=$("chatAutoMark"),manual=$("chatBoundChoice"),manualMark=$("chatBoundMark");
  if(!current||!auto||!mark||!manual||!manualMark)return;
  const selected=chatModeLabel()==="自动模式";current.textContent=chatModeLabel();current.title=freeModeChoosing?"请选择模型":chatSelectedName();
+ for(const b of $("composerModeMenu")?.querySelectorAll("[data-chat-mode]")||[]){const active=b.dataset.chatMode===(selected?"auto":chatModeLabel()==="个人模式"?"personal":"free");b.setAttribute("aria-pressed",String(active));b.classList.toggle("selected",active);const mark=b.querySelector(".composer-mode-mark");if(mark)mark.textContent=active?"✓":"";}
  auto.classList.toggle("selected",selected);auto.setAttribute("aria-pressed",String(selected));mark.textContent=selected?"✓":"";
  manual.classList.toggle("selected",!selected);manual.setAttribute("aria-pressed",String(!selected));manualMark.textContent=selected?"":"✓";
 }
@@ -3088,9 +3090,8 @@ function updateComposerModel(){
  name.classList.toggle("is-auto-model",S.provider==="free"&&S.model==="free:auto");
  name.textContent=S.miniToolChoice==="sticker"?"贴纸":imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频"):S.code?"代码 · "+active:active;
  name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击模型图标返回聊天":S.code?"代码模式 · "+active:"当前聊天选择："+active;
- $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":"聊天模型";
- switcher.setAttribute("aria-label",(videoMode||imageMode||S.code)?"切回普通聊天":"切换聊天模型");
- switcher.title=(videoMode||imageMode||S.code)?"切回普通聊天":"切换聊天模型";
+ $("composerModelCaption").textContent=imageMode?"作图模式":videoMode?"视频模式":isAutoChatModel()?"":chatModeLabel();
+ switcher.setAttribute("aria-label","切换模式");switcher.title="切换模式";
 }
 function updateModelTitle(){
  $("modelTitle").textContent=freeModeChoosing?"自由模式":isAutoChatModel()?"自动模式":S.modelTitle;
@@ -3762,6 +3763,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  hideWelcome();flashError("");
  const mediaOwner=S.user?.id;
  const isNew=!S.chatId;
+ const automaticTurn=(forceFreeOnce||requestProvider==="free"&&requestModel==="free:auto")&&(submittedMode!=="video"||freeVideo);
  const isFreeMessage=submittedMode==="text"&&requestProvider==="free";
  const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
@@ -3771,6 +3773,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  if(submittedMode!=="text"||(submittedCode&&requestProvider==="free"))restoreChatInputMode();
  settlePromptSize();
  const loading=retryContext?.loading||appendMessage("assistant","");
+ loading.dataset.automaticTurn=automaticTurn?"1":"0";
  if(retryContext){loading.querySelector(":scope > .message-copy-bar")?.remove();assistantTextState.delete(loading.querySelector(".bubble"));}
   setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
@@ -3856,8 +3859,8 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
     unavailableChatModels.set(chatModelKey(requestProvider,requestModel),{code:e.code,at:Date.now()});
     if(e.code==="MODEL_UNAVAILABLE")void refreshConnectedModelCatalog(requestProvider);
    }
-   setPortraitState(loading,submittedMode==="text"?"idle":"error");
-   if(voiceTurn===voiceSession.turn&&voiceSession.active&&voiceSession.pending){voiceStreamReset();voiceCancel();voiceSession.pending=false;$("voiceReplay").disabled=!voiceSession.lastReply;voiceReady();sayStatus("回复未完成，请再次点击开始说话")}
+   setPortraitState(loading,automaticTurn||submittedMode==="text"?"idle":"error");
+   if(voiceTurn===voiceSession.turn&&voiceSession.active&&voiceSession.pending){voiceStreamReset();voiceCancel();voiceSession.pending=false;$("voiceReplay").disabled=!voiceSession.lastReply;voiceReady();sayStatus(automaticTurn?"已保留本轮对话，点击继续说话":"回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
   // Show status in the assistant reply; retain all streamed content.
   const bubble=loadingBubble,status=node("div","message-send-pending chat-retry-status");
@@ -3866,7 +3869,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    updateAssistantText(bubble,streamedContent,true);
    appendMessageCopy(loading,streamedContent);
   }else bubble.replaceChildren();
-  const retry=messageTool("refresh-cw",isImageMessage?"重新作图":"重试",()=>{
+  const retry=messageTool("refresh-cw",automaticTurn?"继续":isImageMessage?"重新作图":"重试",()=>{
    if(S.busy||S.freeToolsMode||!sentRow.isConnected)return;
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
@@ -3877,9 +3880,9 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading});
   });
-  retry.append(node("span","","重试"));
-  const detail=submittedMode==="text"?(nativeAnalysis?(requestProvider==="free"?"识图线路暂不可用，原图已保留":humanError(e)):"当前线路暂不可用，原消息已保留"):humanError(e);
-  if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
+  retry.append(node("span","",automaticTurn?"继续":"重试"));
+  const detail=automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):humanError(e);
+  if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?(automaticTurn?"已保留当前内容":"回复中断，已保留收到的内容"):detail),retry);
   if(submittedMode==="text"&&requestProvider!=="free"){
    const alternate=messageTool("layers","手动使用免费自动重试",()=>{
     if(S.busy||S.freeToolsMode||!sentRow.isConnected)return;
@@ -3890,7 +3893,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    });
    status.append(alternate);
   }
-  bubble.append(status);if(submittedMode!=="text"&&!isImageMessage)status.title=humanError(e);flashError("");
+  bubble.append(status);if(!automaticTurn&&submittedMode!=="text"&&!isImageMessage)status.title=humanError(e);flashError("");
  }
  finally{S.busy=false;$("sendBtn").disabled=false;if(imageTimer!==null)window.clearInterval(imageTimer);releaseReadingSpace?.();if(voiceSession.active&&voiceSession.resumePending&&!voiceSession.pending&&!voiceSession.reading)voiceListen(true)}
 }
@@ -4823,11 +4826,19 @@ function wire(){
  $("chatBoundChoice").addEventListener("click",chooseFreeChatMode);
  $("modelCatalogRetry").addEventListener("click",()=>{void loadCatalog(true)});
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
- $("composerSwitchModel").addEventListener("click",()=>{
-  hideAttachMenu();
-  if(S.composerMode!=="text"||S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");setComposerMode("text");$("prompt").focus({preventScroll:true})}
-  else openModels();
+ const composerModeMenu=$("composerModeMenu"),composerSwitch=$("composerSwitchModel");
+ const closeComposerMode=()=>{composerModeMenu.hidden=true;composerSwitch.setAttribute("aria-expanded","false")};
+ composerSwitch.addEventListener("click",()=>{hideAttachMenu();closeReplyLevel();composerModeMenu.hidden=!composerModeMenu.hidden;composerSwitch.setAttribute("aria-expanded",String(!composerModeMenu.hidden));refreshChatModeUI()});
+ for(const b of composerModeMenu.querySelectorAll("[data-chat-mode]"))b.addEventListener("click",()=>{
+  if(S.busy){closeComposerMode();return}
+  const choice=b.dataset.chatMode;closeComposerMode();restoreChatInputMode();
+  if(choice==="auto"){modelPrefSync.versions.chat++;setFreeDefault(false);rememberChatModelSelection();updateModelTitle();return}
+  // Keep the existing selection until an actual model is chosen. Closing the
+  // catalog without a choice cannot leave the composer in a disabled state.
+  freeModeChoosing=false;S.source=choice==="personal"?"connected":"free";S.filter=choice==="personal"?"all":"free";S.query="";openModels(true);
  });
+ document.addEventListener("click",e=>{if(!composerModeMenu.hidden&&!composerModeMenu.contains(e.target)&&!composerSwitch.contains(e.target))closeComposerMode()});
+ document.addEventListener("keydown",e=>{if(e.key==="Escape")closeComposerMode()});
  $("chatForm").addEventListener("submit",e=>{e.preventDefault();hideAttachMenu();void sendMessage()});
  $("prompt").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();void sendMessage()}});
  $("prompt").addEventListener("input",settlePromptSize);

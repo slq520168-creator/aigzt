@@ -108,9 +108,14 @@
     </div>
      <div id="attachmentPreview" class="attachment-preview"></div>
      <div class="composer-model-line" id="composerModelLine">
-      <button type="button" class="composer-model-switch" id="composerSwitchModel" aria-label="切换聊天模型" title="切换模型"><span class="composer-model-symbol ui-icon" data-icon="layers" aria-hidden="true"></span>
+      <button type="button" class="composer-model-switch" id="composerSwitchModel" aria-label="切换模式" title="切换模式" aria-expanded="false" aria-controls="composerModeMenu"><span class="composer-model-symbol ui-icon" data-icon="layers" aria-hidden="true"></span>
       <span class="composer-model-caption" id="composerModelCaption">聊天模型</span>
       <span class="composer-model-name" id="composerModelName" aria-live="polite" title="当前选择：自动模式">自动模式</span><span class="model-switch-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button>
+      <div id="composerModeMenu" class="composer-mode-menu" role="group" aria-label="聊天模式" hidden>
+       <button type="button" data-chat-mode="auto" aria-pressed="true"><span>自动模式</span><span class="composer-mode-mark">✓</span></button>
+       <button type="button" data-chat-mode="free" aria-pressed="false"><span>自由模式</span><span class="composer-mode-mark"></span></button>
+       <button type="button" data-chat-mode="personal" aria-pressed="false"><span>个人模式</span><span class="composer-mode-mark"></span></button>
+      </div>
      </div>
      <div class="composer-inner">
       <button type="button" class="plus-tool icon-btn" id="attachButton" aria-label="添加附件或工具" aria-expanded="false" aria-controls="attachMenu"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button>
