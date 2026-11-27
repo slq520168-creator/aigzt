@@ -47,6 +47,7 @@ const ICONS={
  image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
  blocks:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 14v7M14 17.5h7"/>',
  'arrow-up':'<path d="m12 19 0-14m-7 7 7-7 7 7"/>',
+ 'continue-write':'<path d="M3 5h18M3 10h18M3 15h7M13 18h8m-4-4 4 4-4 4"/>',
  mic:'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5m-5 0h10"/>',
  'sliders-horizontal':'<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
  'brain-circuit':'<path d="M9 18a4 4 0 0 1-4-4 4 4 0 0 1 .3-1.5A4 4 0 0 1 7 5a4 4 0 0 1 5-1 4 4 0 0 1 5 1 4 4 0 0 1 1.7 7.5A4 4 0 0 1 15 18v2a2 2 0 0 1-4 0v-2"/><path d="M9 9v3m6-3v3"/>',
@@ -84,7 +85,7 @@ const MESSAGE_ICON_COLORS=Object.freeze({
  "refresh-cw":["#be466a","#e7808d"],ellipsis:["#4d50bb","#777cda"],
  "thumbs-up":["#168349","#31b469"],"thumbs-down":["#be466a","#e7808d"],
  "volume-2":["#087f9e","#28b3ce"],"file-text":["#3565db","#537de9"],
- layers:["#8051ce","#a978e5"],"arrow-up":["#168349","#31b469"]
+ layers:["#8051ce","#a978e5"],"arrow-up":["#168349","#31b469"],"continue-write":["#168349","#31b469"]
 });
 let iconGradientSerial=0;
 function renderIcons(scope=document){
@@ -2385,9 +2386,9 @@ function appendMessageCopy(row,content){
      setMessageMoreOpen(more,false);if(messageDraft(messageQuestion(row)))openModels();
     }));
    }
-   if(text.trim()&&text.length<40000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
-    const next=messageTool("arrow-up","继续生成",b=>continueTextReply(row,text,b));
-    next.classList.add("message-continue-btn");next.append(node("span","","继续生成"));bar.append(next);
+   if(text.trim()&&text.length<100000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
+    const next=messageTool("continue-write","继续生成",b=>continueTextReply(row,text,b));
+    next.classList.add("message-continue-btn");bar.append(next);
    }
   }
  }
@@ -3830,7 +3831,7 @@ async function continueTextReply(row,original,button){
  const bubble=row.querySelector(".bubble"),status=node("span","message-send-pending","正在继续生成…");
  bubble.append(status);let tail="";
  try{
-  const result=await apiChatStream({chatId,provider,model,message:"请继续原任务，从中断处直接写，不重复已完成内容。",continueFrom:row.dataset.messageId,attachments:[],mode:S.code?"code":"general",freeFallback:false,outputImages:false,imageOnly:false,replyLevel:replyLevel==="short"?"standard":replyLevel,allowPaid:S.allowPaid},token=>{tail+=token});
+  const result=await apiChatStream({chatId,provider,model,message:"请继续原任务，从中断处直接写，不重复已完成内容。",continueFrom:row.dataset.messageId,attachments:[],mode:S.code?"code":"general",freeFallback:false,outputImages:false,imageOnly:false,replyLevel:"long",allowPaid:S.allowPaid},token=>{tail+=token});
   if(!row.isConnected||S.chatId!==chatId)return;
   if(result.assistantMessageId!==row.dataset.messageId)throw Error("续写消息编号不一致");
   status.remove();delete row.dataset.usage;

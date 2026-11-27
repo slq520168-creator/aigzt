@@ -12,7 +12,8 @@ test('named route validates live catalog, pins requested model and sets hard zer
  assert.match(w,/await verifiedSharedFreeModel\(env,model\)/);
  assert.match(w,/result=sharedModel\?await callExternal\("openrouter",sharedModel,env.OPENROUTER_FREE_KEY/);
  assert.match(w,/max_price:\{prompt:0,completion:0,request:0,image:0\}/);
- assert.match(w,/if\(!sharedModel&&result.incomplete/);
+ assert.match(w,/Continuation is explicit/);
+ assert.doesNotMatch(w,/const tail=await freeChatAnswer\(env,follow/);
  assert.match(js,/S.provider=via;S.model=row.id/);
  assert.match(js,/S.model===m.id/);
  assert.doesNotThrow(()=>new Function(js));
