@@ -2184,7 +2184,7 @@ function voiceSendTranscript(text,turn){
  $("voiceHeard").textContent=transcript;
  if(S.busy||$("prompt").value.trim()||S.attachments.length){voiceReady();sayStatus("聊天已有请求或草稿，已保留原输入");return}
  $("prompt").value=transcript;settlePromptSize();voiceSession.pending=true;$("voiceStart").disabled=true;$("voiceStart").textContent="等待回答…";
- voiceStreamReset();voiceTranscript("user",transcript);sayStatus("正在思考");void sendMessage(null,false,turn).finally(()=>{if(turn===voiceSession.turn&&voiceSession.pending){voiceSession.pending=false;voiceReady();sayStatus("发送未完成，请返回聊天检查原消息")}});
+ voiceStreamReset();$("voiceReplay").disabled=true;voiceTranscript("user",transcript);sayStatus("正在思考");void sendMessage(null,false,turn).finally(()=>{if(turn===voiceSession.turn&&voiceSession.pending){voiceSession.pending=false;$("voiceReplay").disabled=!voiceSession.lastReply;voiceReady();sayStatus("发送未完成，请返回聊天检查原消息")}});
 }
 function voiceRecordSupported(){return typeof window.MediaRecorder==="function"&&!!navigator.mediaDevices?.getUserMedia}
 function voiceRecognitionSupported(){return voiceRecordSupported()||!!(window.SpeechRecognition||window.webkitSpeechRecognition)}
@@ -2246,6 +2246,7 @@ function voiceNativeListen(turn){
  catch{voiceSession.recognition=null;voiceSession.listening=false;voiceReady("重新说话");sayStatus("无法开启语音识别")}
 }
 function voiceListen(auto=false){
+ if(voiceSession.reading){sayStatus("正在播报，结束后继续聆听");return}
  if(voiceSession.listening){
   const recorder=voiceSession.recorder,rec=voiceSession.recognition;
   $("voiceStart").disabled=true;$("voiceStart").textContent="识别中…";
@@ -2275,7 +2276,7 @@ function voiceOpen(){
 function voiceWire(){
  voiceLoad();
  $("voiceChatOpen").addEventListener("click",voiceOpen);
- $("voiceReplay").addEventListener("click",()=>{if(voiceSession.reading){voiceStreamReset();voiceCancel();voiceReady();return}if(voiceSession.lastReply&&!voiceSpeak(voiceSession.lastReply,$("voiceReplay"),true))sayStatus("当前设备不支持播报")});
+ $("voiceReplay").addEventListener("click",()=>{if(voiceSession.listening||voiceSession.pending||voiceSession.request)return;if(voiceSession.reading){if(voiceStream)voiceStream.failed=true;voiceCancel();voiceReady();return}if(voiceSession.lastReply&&!voiceSpeak(voiceSession.lastReply,$("voiceReplay"),true))sayStatus("当前设备不支持播报")});
  $("voiceStart").addEventListener("click",()=>voiceListen());
  $("voiceStop").addEventListener("click",()=>{voiceStop();hide("voiceDialog")});
  $("voiceDialog").addEventListener("close",voiceStop);
@@ -3710,7 +3711,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
     if(e.code==="MODEL_UNAVAILABLE")void refreshConnectedModelCatalog(requestProvider);
    }
    setPortraitState(loading,submittedMode==="text"?"idle":"error");
-   if(voiceTurn===voiceSession.turn&&voiceSession.active&&voiceSession.pending){voiceStreamReset();voiceCancel();voiceSession.pending=false;voiceReady();sayStatus("回复未完成，请再次点击开始说话")}
+   if(voiceTurn===voiceSession.turn&&voiceSession.active&&voiceSession.pending){voiceStreamReset();voiceCancel();voiceSession.pending=false;$("voiceReplay").disabled=!voiceSession.lastReply;voiceReady();sayStatus("回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
   // Show status in the assistant reply; retain all streamed content.
   const bubble=loadingBubble,status=node("span","message-send-pending");
