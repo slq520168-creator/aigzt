@@ -4080,9 +4080,9 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
   if(loading.isConnected){
    S.chatId=result.chatId;
    if(submittedMode==="text"){
-    if(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined)){recordModelOutcome(requestProvider,requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel))}
+    if(!result.incomplete&&(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined))){recordModelOutcome(requestProvider,requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel))}
     else if(result.primaryFailure)recordModelOutcome(requestProvider,requestModel,false,result.primaryFailure);
-    if(result.freeFallback===true)recordModelOutcome("free","free:auto",true);
+    if(result.freeFallback===true&&!result.incomplete)recordModelOutcome("free","free:auto",true);
    }
    // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
@@ -4150,7 +4150,7 @@ function ensureModelHistory(){
 function modelHistoryKey(provider,model){return provider+"\0"+model}
 function saveModelHistory(){
  if(!modelHistoryOwner)return;
- const rows=Object.entries(modelHistoryRecords).sort((a,b)=>Math.max(b[1].success||0,b[1].failure||0)-Math.max(a[1].success||0,a[1].failure||0)).slice(0,160);
+ const entries=Object.entries(modelHistoryRecords);const successes=entries.filter(([,v])=>v.success).sort((a,b)=>b[1].success-a[1].success).slice(0,40);const failures=entries.filter(([,v])=>!v.success).sort((a,b)=>(b[1].failure||0)-(a[1].failure||0)).slice(0,120);const rows=[...successes,...failures];
  modelHistoryRecords=Object.fromEntries(rows);
  try{localStorage.setItem(modelHistoryStorage(modelHistoryOwner),JSON.stringify(modelHistoryRecords))}catch{}
 }
@@ -4172,7 +4172,7 @@ async function loadModelHistory(){
  ensureModelHistory();const owner=modelHistoryOwner;if(!owner||modelHistoryLoaded||modelHistoryPending)return;
  const pending=api("/api/model-history");modelHistoryPending=pending;
  try{const data=await pending;if(modelHistoryOwner!==owner||String(S.user?.id||"")!==owner)return;
-  for(const r of data.models||[])if(typeof r.provider==="string"&&typeof r.model==="string"&&Number.isFinite(r.at))recordModelOutcome(r.provider,r.model,true,"",r.at,true);
+  for(const r of data.models||[])if(typeof r.provider==="string"&&typeof r.model==="string"&&Number.isFinite(r.at))recordModelOutcome(r.provider,r.model,true,"",r.at,r.legacy!==false);
   modelHistoryLoaded=true;if($("modelDialog").open)renderModels();
  }catch{/* The local success history remains available if the bounded legacy read fails. */}
  finally{if(modelHistoryPending===pending)modelHistoryPending=null}
@@ -4350,7 +4350,7 @@ function modelMatches(m){
    ||Boolean(FAMILY_CONNECTIONS[family]?.some(([provider])=>m.provider===provider))
    ||re[family]?.test(id+" "+(m.author||""));
   if(!groupMatch)return false;
- }else if(S.source==="recent"){if(modelOrdering(m).group!==0)return false}
+ }else if(S.source==="recent"){if(!modelHealth(modelRoute(m),m.id).last)return false}
  else if(S.source==="connected"){if(!connected(modelRoute(m)))return false}
  else if(S.source.startsWith("route:")){if(providerRoute(modelRoute(m))!==S.source.slice(6))return false}
  else if(S.source==="free"){if(!hasFreeAccess(m))return false}
@@ -4370,7 +4370,11 @@ function modelIsSelected(m){
 function renderModels(){
  const current=$("chatModeCurrent"),auto=$("chatAutoChoice"),mark=$("chatAutoMark");
  if(current&&auto&&mark){const selected=S.provider==="free"&&S.model==="free:auto";current.textContent=chatSelectedName();auto.classList.toggle("selected",selected);auto.setAttribute("aria-pressed",String(selected));mark.textContent=selected?"✓":"";}
- const models=allModels();renderChinaBrands(models);
+ const models=allModels();ensureModelHistory();
+ const history=Object.entries(modelHistoryRecords).filter(([,v])=>v.success).sort((a,b)=>b[1].success-a[1].success).slice(0,40);
+ const recentChip=$("sourceChips").querySelector('[data-source="recent"]');if(recentChip)recentChip.textContent="常用成功"+(history.length?" "+history.length:"");
+ if(S.source==="recent"){const known=new Set(models.map(m=>modelHistoryKey(modelRoute(m),m.id)));for(const [key] of history){const [provider,id]=key.split("\0");if(!provider||!id||known.has(key))continue;models.push({id,name:id,provider,type:"text",free:provider==="free",unlisted:true});known.add(key)}}
+ renderChinaBrands(models);
  const visible=models.filter(modelMatches);
  if(S.provider!=="free"&&!visible.some(modelIsSelected)){
   const active={id:S.model,name:S.modelTitle||S.model,provider:S.provider,type:"text",free:isFreeModel(S.provider,S.model),unlisted:true};
@@ -4378,10 +4382,10 @@ function renderModels(){
  }
  // The current selection always leads matching results, followed by successful routes and capability.
  const ranks=new Map(visible.map(m=>[m,modelOrdering(m)]));
- visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
+ visible.sort((a,b)=>{const x=ranks.get(a),y=ranks.get(b);return (S.source==="recent"?y.health.last-x.health.last:0)||Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  const sharedCount=visible.filter(m=>m.free===true&&(m.provider==="free"||m.builtinVideo)).length,personalFree=visible.filter(m=>m.freeTier===true||(m.free===true&&m.provider!=="free"&&!m.builtinVideo)).length;
- $("modelCount").textContent=count+" 个条目"+(S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 常用成功优先 · 能力分层参考");
+ $("modelCount").textContent=count+" 个条目"+(S.source==="recent"?" · 最近成功使用":S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 常用成功优先 · 能力分层参考");
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
  const signature=viewKey+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
@@ -4398,7 +4402,7 @@ function renderModels(){
   const priceLabel=item.freeTier?"个人免费额度 · 付费账号可能收费":item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号额度 / 可能收费";
   title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),node("span","price-tag"+(item.free?" free":""),priceLabel));
   if(rank.health.recentFailure)title.append(node("span","price-tag","近期异常"));
-  else if(rank.group===0)title.append(node("span","price-tag free",rank.health.legacy?"历史成功匹配":"已成功使用"));
+  else if(rank.health.last)title.append(node("span","price-tag free",rank.health.legacy?"历史成功匹配":"已成功使用"));
   if(rank.tier.label)title.append(node("span","price-tag",rank.tier.label));title.append(tag);
   const owner=domesticGroupFor(item);
   info.append(title,node("small","",via==="free"?(item.shared?"本站共享零价文字模型 · 无需个人密钥 · ID："+item.sharedModel:"免费自动路由 · 实际上游模型可能变化"):(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.freeTier?" · 需要本人免费计划/API Key，额度及计费由服务商决定":"")+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
@@ -4474,7 +4478,7 @@ function openHomeBrand(brand){
 function openModels(){
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
- S.modelPage=0;show("modelDialog");renderModels();$("modelScroll").scrollTop=0;void loadModelHistory();void loadCatalog();
+ S.modelPage=0;$("chatModeMenu").open=false;show("modelDialog");renderModels();$("modelScroll").scrollTop=0;$("sourceChips").scrollLeft=0;void loadModelHistory();void loadCatalog();
  if(S.source==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
  else if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
@@ -5078,8 +5082,9 @@ function wire(){
  for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
- $("chatAutoChoice").addEventListener("click",()=>setModel({provider:"free",id:"free:auto",name:"自动模式",type:"text",free:true}));
- $("chatBoundChoice").addEventListener("click",()=>{S.query="";$("modelSearch").value="";activateSource("connected");$("modelList").scrollIntoView({block:"start"})});
+ $("chatAutoChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;setModel({provider:"free",id:"free:auto",name:"自动模式",type:"text",free:true})});
+ $("chatBoundChoice").addEventListener("click",()=>{$("chatModeMenu").open=false;S.query="";$("modelSearch").value="";activateSource("connected");$("modelScroll").scrollTop=0});
+ $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
  $("composerSwitchModel").addEventListener("click",()=>{
   hideAttachMenu();
   if(S.composerMode!=="text"||S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");setComposerMode("text");$("prompt").focus({preventScroll:true})}
