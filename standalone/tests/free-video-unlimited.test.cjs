@@ -11,6 +11,6 @@ test('Free video has no daily count query or hard 2-per-day cap',()=>{
 test('Free video retains one active task guard to prevent duplicate generation',()=>{
  assert.match(create,/status IN \('pending','recovering'\)/);
  assert.match(create,/已有免费视频任务正在生成/);
- assert.match(create,/\/gradio_api\/call\/generate_video/);
+ assert.match(create,/\/gradio_api\/call\/"\+fvEndpoint\(cfg\)/);
  assert.match(create,/INSERT INTO image_jobs/);
 });
