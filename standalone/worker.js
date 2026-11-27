@@ -161,7 +161,7 @@ function chatProviderHistory(messages){
  return messages.map((m,i)=>{const body=m.role==="assistant"?historicalMediaText(m.body):String(m.body||"");return {role:m.role==="assistant"?"assistant":m.role==="system"?"system":"user",content:i===newest?body:m.role==="assistant"&&body.length>3000?body.slice(0,900)+"\n[中间内容省略]\n"+body.slice(-2080):truncate(body,m.role==="system"?8000:3000)}});
 }
 function groqVisionModel(model){
- return ["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(model);
+ return model==="qwen/qwen3.8-27b";
 }
 function attachNativeChatParts(history,parts){
  if(!parts.length)return history;
@@ -174,15 +174,16 @@ async function planNativeChatAttachments(env,provider,model,files){
  const images=files.filter(x=>x.type.startsWith("image/")),pdfs=files.filter(x=>x.type==="application/pdf");
  if(images.some(x=>!["image/jpeg","image/png","image/webp"].includes(x.type)))throw Object.assign(Error("图片分析支持 JPG、PNG、WebP，请转换图片格式后发送"),{status:415});
  if(files.reduce((n,f)=>n+f.size,0)>8000000)throw Object.assign(Error("本次图片及PDF内容超过8MB，请分次发送"),{status:413});
- let route=provider,selected=model,candidates=[];
+ let route=provider,selected=model,candidates=[],groqCandidate=false;
  if(provider==="free"||provider==="openrouter"){
   const catalog=await listModels(env);
   if(provider==="free"){
-   if(typeof env.OPENROUTER_FREE_KEY!=="string"||env.OPENROUTER_FREE_KEY.length<12)throw Error("免费图片分析线路尚未配置，请选择支持附件的个人模型");
-   const matches=catalog.models.filter(m=>m.free===true&&m.zeroText===true&&m.zeroImage===true&&m.id.endsWith(":free")&&m.outputText&&(!images.length||m.inputImages)&&(!pdfs.length||m.inputFiles)&&!/(?:fish|pollinations)/i.test(m.id));
+   const hasRouter=typeof env.OPENROUTER_FREE_KEY==="string"&&env.OPENROUTER_FREE_KEY.length>=12;
+   groqCandidate=images.length>0&&images.length<=3&&!pdfs.length&&images.reduce((n,f)=>n+f.size,0)<=2800000&&typeof env.GROQ_FREE_KEY==="string"&&env.GROQ_FREE_KEY.length>=12;
+   const matches=hasRouter?catalog.models.filter(m=>m.free===true&&m.zeroText===true&&m.zeroImage===true&&m.id.endsWith(":free")&&m.outputText&&(!images.length||m.inputImages)&&(!pdfs.length||m.inputFiles)&&!/(?:fish|pollinations)/i.test(m.id)):[];
    candidates=[...new Set(matches.map(m=>m.id))];
-   if(!candidates.length)throw Object.assign(Error("暂无符合零价要求的免费识图或附件模型"),{code:"ATTACHMENT_UNSUPPORTED"});
-   route="openrouter";selected=candidates[0];
+   if(!candidates.length&&!groqCandidate)throw Object.assign(Error("暂无支持此附件的免费识图线路"),{code:"ATTACHMENT_UNSUPPORTED"});
+   route=groqCandidate?"groq":"openrouter";selected=groqCandidate?"qwen/qwen3.8-27b":candidates[0];
   }else{
    const match=catalog.models.find(m=>m.id===model);
    if((images.length&&!match?.inputImages&&model!=="openrouter/free")||(pdfs.length&&!match?.inputFiles))throw Object.assign(Error("当前所选模型不支持此附件"),{code:"ATTACHMENT_UNSUPPORTED"});
@@ -202,29 +203,35 @@ async function planNativeChatAttachments(env,provider,model,files){
   const data="data:"+file.type+";base64,"+toB64(bytes);
   return file.type==="application/pdf"?{type:"file",file:{filename:file.name,file_data:data}}:{type:"image_url",image_url:{url:data}};
  }));
- return {provider:route,model:selected,parts,candidates};
+ return {provider:route,model:selected,parts,candidates,groqCandidate};
 }
 const visionRoutePerformance=new Map();
-async function autoFreeAttachmentReply(env,plan,messages,level,forward,remaining){
+async function autoFreeAttachmentReply(env,plan,messages,level,forward,remaining,recordQuota=null){
  let last=null,emitted=false;
- const stream=forward?token=>{emitted=true;forward(token)}:null;
+ const stream=forward?token=>{if(token.trim())emitted=true;forward(token)}:null;
  const now=Date.now(),state=await freeRouteStates(env);
- const candidates=plan.candidates.filter(model=>(state.get("vision:"+model)?.cool_until||0)<=now).sort((a,b)=>{
-  const rank=m=>{const recent=visionRoutePerformance.get(m);return recent&&now-recent.at<1800000?recent.ms:10000+(/reason|thinking|(?:^|[-/])r1/i.test(m)?2500:0)};
+ const routerCandidates=plan.candidates.map(model=>({provider:"openrouter",model,key:"vision:"+model})).filter(r=>(state.get(r.key)?.cool_until||0)<=now).sort((a,b)=>{
+  const rank=r=>{const recent=visionRoutePerformance.get(r.key);return recent&&now-recent.at<1800000?recent.ms:10000+(/reason|thinking|(?:^|[-/])r1/i.test(r.model)?2500:0)};
   return rank(a)-rank(b);
  });
- for(const model of candidates.slice(0,3)){
+ const groq={provider:"groq",model:"qwen/qwen3.8-27b",key:"vision:groq:qwen/qwen3.8-27b"};
+ const candidates=[...(plan.groqCandidate&&(state.get(groq.key)?.cool_until||0)<=now?[groq]:[]),...routerCandidates];
+ for(const r of candidates.slice(0,3)){
   const budget=remaining();if(budget<1800)break;
-  const started=Date.now(),key="vision:"+model;
-  try{const result=await callExternal("openrouter",model,env.OPENROUTER_FREE_KEY,messages,false,15000,chatOutputBudget("openrouter",model,level),stream,false,false,plan.parts,Math.min(budget,level==="long"?23000:15000),true);
-   if(!result.incomplete){const old=visionRoutePerformance.get(model);visionRoutePerformance.set(model,{at:Date.now(),ms:old?Math.round(old.ms*.4+(Date.now()-started)*.6):Date.now()-started});await freeRouteRecover(env,key,state.get(key))}
-   return result;
-  }catch(e){last=e;if(emitted||!["MODEL_RETIRED","MODEL_UNAVAILABLE","UPSTREAM_ROUTE","RATE_LIMIT","LIMIT_UNKNOWN","QUOTA","ACCESS","CAPACITY","UPSTREAM_ERROR","UPSTREAM_EMPTY","UPSTREAM_NETWORK"].includes(e?.code))throw e;
-   visionRoutePerformance.set(model,{at:Date.now(),ms:30000});
-   if(e.code!=="CAPACITY")await freeRouteFailure(env,key,e.upstreamStatus||503,state.get(key));
+  const started=Date.now(),{provider,model,key}=r,apiKey=provider==="groq"?env.GROQ_FREE_KEY:env.OPENROUTER_FREE_KEY;
+  try{
+   const result=await callExternal(provider,model,apiKey,messages,provider==="groq",15000,chatOutputBudget(provider,model,level),stream,false,false,plan.parts,Math.min(budget,level==="long"?23000:15000),provider==="openrouter",{level,recordQuota:(usedModel,headers)=>recordQuota?.(provider,usedModel,apiKey,headers)});
+   if(!result.incomplete){const old=visionRoutePerformance.get(key);visionRoutePerformance.set(key,{at:Date.now(),ms:old?Math.round(old.ms*.4+(Date.now()-started)*.6):Date.now()-started});await freeRouteRecover(env,key,state.get(key))}
+   return {...result,source:provider};
+  }catch(e){
+   last=e;if(emitted)throw e;
+   if(!["MODEL_RETIRED","MODEL_UNAVAILABLE","UPSTREAM_ROUTE","RATE_LIMIT","LIMIT_UNKNOWN","QUOTA","ACCESS","AUTH","BILLING","BILLING_LIMIT","CAPACITY","UPSTREAM_ERROR","UPSTREAM_EMPTY","UPSTREAM_NETWORK"].includes(e?.code)&&e?.status!==413)throw e;
+   visionRoutePerformance.set(key,{at:Date.now(),ms:30000});
+   if(e.code!=="CAPACITY"&&e.status!==413)await freeRouteFailure(env,key,e.upstreamStatus||e.status||503,state.get(key));
+   if(provider==="openrouter"&&["AUTH","BILLING","BILLING_LIMIT","QUOTA"].includes(e.code))break;
   }
  }
- throw last||Object.assign(Error("免费识图线路暂时不可用或正在冷却"),{code:"FREE_FALLBACK_FAILED"});
+ throw Object.assign(Error("识图线路暂时不可用，原图已保留，可在当前消息重试"),{status:503,code:"FREE_FALLBACK_FAILED",upstreamStatus:last?.upstreamStatus||null});
 }
 function legacyQueryPrompt(history){
  const current=history.findLast(m=>m.role==="user")?.content||"";
@@ -388,6 +395,7 @@ async function modelUsageOverview(env,user){
 
 function groqModelCapacity(model){
  if(/^openai\/gpt-oss-(?:20b|120b)$/.test(model))return {context:131072,output:65536};
+ if(model==="qwen/qwen3.8-27b")return {context:131072,output:16384};
  if(model==="llama-3.3-70b-versatile")return {context:131072,output:32768};
  if(model==="llama-3.1-8b-instant")return {context:131072,output:131072};
  return {context:8192,output:4096};
@@ -411,6 +419,7 @@ function captureGroqQuota(profiles,scope,headers,now=Date.now()){
  profiles.set(scope,{limit,at:now});
 }
 function groqReasoning(model,level){
+ if(model==="qwen/qwen3.8-27b")return {reasoning_effort:level==="long"?"low":"none"};
  return /^openai\/gpt-oss-(?:20b|120b)$/.test(model)?{reasoning_effort:level==="short"?"low":"medium",include_reasoning:false}:{};
 }
 function catalogOutputCapacity(row){
@@ -774,7 +783,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
  let target="https://"+host.host+(host.path||"/"),body;
  const history=chatProviderHistory(messages);
  const groqScope=provider==="groq"&&policy?.scope?policy.scope+"\u0000"+model:null;
- const groqBudget=provider==="groq"?groqTotalBudget(model,groqScope?groqQuotaProfiles.get(groqScope):null):null;
+ const groqBudget=provider==="groq"?Math.max(0,groqTotalBudget(model,groqScope?groqQuotaProfiles.get(groqScope):null)-2048*inputParts.filter(p=>p.type==="image_url").length):null;
  if(provider==="gemini"){
   target="https://"+host.host+"/v1beta/models/"+model+":generateContent";
   body={contents:history.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]})),generationConfig:{maxOutputTokens:maxTokens}};
@@ -867,7 +876,9 @@ async function automaticFreeSources(env,mode,level){
  const named=shared.sort((a,b)=>score(b)-score(a)||a.id.localeCompare(b.id)).map(m=>({id:"openrouter",routeKey:m.id,name:m.name,endpoint:"https://openrouter.ai/api/v1/chat/completions",model:m.sharedModel,key:env.OPENROUTER_FREE_KEY,ms:level==="long"?65000:18000,zeroOnly:true,capacity:catalogOutputCapacity(catalog.models?.find(x=>x.id===m.sharedModel))}));
  const primary=base.filter(x=>x.key&&x.id!=="openrouter"),generic=base.filter(x=>x.id==="openrouter").map(x=>({...x,zeroOnly:true,ms:level==="long"?65000:18000}));
  const publicRoutes=base.filter(x=>!x.key);
- return level==="long"||mode==="code"?[...named,...primary,...generic,...publicRoutes]:[...primary,...named,...generic,...publicRoutes];
+ // Distinct quota pools before additional models on one OpenRouter account.
+ const preferred=named.length?[named[0]]:generic.slice(0,1),rest=named.length?[...named.slice(1),...generic]:generic.slice(1);
+ return level==="long"||mode==="code"?[...preferred,...primary,...publicRoutes,...rest]:[...primary,...preferred,...publicRoutes,...rest];
 }
 async function freeRouteStates(env){
  try{
@@ -913,17 +924,17 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
  const isAuto=sharedAuto&&preferred==="free:auto";
  // Standard conversation reaches the existing Groq fast route without waiting on the external catalog.
  const base=freeSources(env),fast=isAuto&&mode!=="code"&&replyLevel!=="long"?base.filter(s=>s.id==="groq"&&s.key):[];
- const eligible=s=>(!authenticatedOnly||Boolean(s.key))&&(states.get(s.routeKey||s.id)?.cool_until||0)<=now;
+ const blockedProviders=new Set(),attemptedRoutes=new Set();
+ const eligible=s=>(!authenticatedOnly||Boolean(s.key))&&!blockedProviders.has(s.id)&&!attemptedRoutes.has(s.routeKey||s.id)&&(states.get(s.routeKey||s.id)?.cool_until||0)<=now;
  async function* candidates(){
   for(const source of fast)if(eligible(source))yield source;
   const sources=isAuto?await automaticFreeSources(env,mode,replyLevel):base;
   const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
-  for(const source of all)if(eligible(source)&&!fast.some(s=>(s.routeKey||s.id)===(source.routeKey||source.id)))yield source;
+  for(const source of all)if(eligible(source))yield source;
  }
  const errors=[];let attempts=0;
  for await(const source of candidates()){
   if(sharedAuto&&attempts>=4)break;
-  attempts++;
   const remaining=timeBudget-(Date.now()-started);
   if(remaining<1500)break;
   const routeKey=source.routeKey||source.id,sourceState=states.get(routeKey),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
@@ -938,6 +949,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    payload.messages=plan.messages;delete payload.max_tokens;payload.max_completion_tokens=plan.maxTokens;
     Object.assign(payload,groqReasoning(source.model,replyLevel));
   }
+  attempts++;attemptedRoutes.add(routeKey);
   const streaming=typeof onDelta==="function"&&!source.query&&["groq","openrouter"].includes(source.id);
   if(streaming){payload.stream=true;if(source.id==="groq")payload.stream_options={include_usage:true}}
   let res,visible=false;
@@ -957,6 +969,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    if(!res.ok){
     clearFirst();const status=res.status;
     if(status!==413)await freeRouteFailure(env,routeKey,status,sourceState,res.headers);
+    if(isAuto&&[401,402,403,429].includes(status))blockedProviders.add(source.id);
     errors.push(source.id+" HTTP "+status);void res.body?.cancel().catch(()=>{});continue;
    }
    if(streaming){
@@ -989,7 +1002,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   }finally{clearFirst();clearTimeout(totalTimer);if(!visible&&controller.signal.aborted)try{void res?.body?.cancel().catch(()=>{})}catch{}}
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
- throw Object.assign(new Error("免费额度暂时不可用"),{status:503});
+ throw Object.assign(new Error("免费线路暂时不可用，原消息已保留"),{status:503,code:"FREE_FALLBACK_FAILED"});
 }
 /* Reuse the site's existing free text providers without chat history writes.
  * Translation is ephemeral and per click, with the ordinary API rate limiter. */
@@ -1185,7 +1198,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const forward=typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null;
  try{
   if(provider==="free"){
-   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel,await cachedChatCapacity(env,"openrouter",sharedModel)),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward,recordQuota);
+   result=nativePlan?await autoFreeAttachmentReply(env,nativePlan,selectedMessages,replyLevel,forward,remaining,recordQuota):sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel,await cachedChatCapacity(env,"openrouter",sharedModel)),forward,false,false,[],remaining(),true):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true,forward,recordQuota);
   }else{
    const connected=await keyForProvider(env,user,provider,body.apiKey);
    const capacity=await cachedChatCapacity(env,provider,model);

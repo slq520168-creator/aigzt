@@ -13,7 +13,7 @@ test("work routes keep personal API pinned, auto never uses personal keys",()=>{
 test("all direct shared free text catalog entries are eligible for auto routing",async()=>{
  const src=w.slice(w.indexOf("async function automaticFreeSources("),w.indexOf("async function freeRouteStates("));
  const catalog={sharedFreeModels:Array.from({length:15},(_,i)=>({id:"free:or/test/"+i+":free",sharedModel:"test/"+i+":free",shared:true,free:true,type:"text",context:8192})).concat([{id:"paid",sharedModel:"paid",shared:true,free:false,type:"text"},{id:"image",sharedModel:"image:free",shared:true,free:true,type:"image"}])};
- const route=new Function("freeSources","listModels",src+";return automaticFreeSources")(()=>[],async()=>catalog);
+ const route=new Function("freeSources","listModels","catalogOutputCapacity",src+";return automaticFreeSources")(()=>[],async()=>catalog,()=>null);
  const rows=await route({OPENROUTER_FREE_KEY:"test-platform-key"},"code","long");
  assert.equal(rows.length,15);assert.ok(rows.every(x=>x.zeroOnly&&x.key==="test-platform-key"));
 });

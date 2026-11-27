@@ -140,6 +140,10 @@ a{color:inherit}
 .message-retry-model:hover,.message-retry-model:focus-visible{background:#eaf4f9;border-color:#90b8cf}
 .message-used-model{font-size:9px;color:#b4232e;line-height:1.4;max-width:100%;overflow-wrap:anywhere}
 .message-send-pending{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:7px;font-size:11px;color:#7c8790}
+.chat-retry-status{justify-content:space-between;min-width:0;font-size:12px;line-height:1.5}
+.chat-retry-status>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.chat-retry-status>.message-copy-btn{display:inline-flex;align-items:center;gap:4px;width:auto;min-height:32px;padding:0 8px;flex:none;white-space:nowrap}
+.chat-retry-status>.message-copy-btn>span:last-child{font-size:12px}
 .message-resend{font-size:11px;line-height:1.4;border:1px solid #cedce6;border-radius:7px;color:#356e93;background:#fff;padding:4px 8px;cursor:pointer}
 .message-speak{font-size:11px;line-height:1.4;border:1px solid #cedce6;border-radius:7px;color:#356e93;background:#fff;padding:4px 8px;cursor:pointer}
 .message-speak[aria-pressed="true"]{background:#e7f4fc;border-color:#73accb;color:#135f87}

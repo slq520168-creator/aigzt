@@ -3336,7 +3336,8 @@ async function uploadSelected(files){
  for(const file of files){
   try{
    const heic=/^image\/hei[cf]$/i.test(file.type||"")||/\.(heic|heif)$/i.test(file.name||"");
-   const selected=await optimizeImageReference(file,heic);
+   const autoReference=S.provider==="free"&&S.model==="free:auto"&&/^(?:image\/(?:jpeg|png|webp|hei[cf]))$/i.test(file.type||"");
+   const selected=await optimizeImageReference(file,heic||autoReference);
    if(selected.size>8000000){flashError("单文件最大8MB："+file.name);continue}
    const body=new FormData();body.append("file",selected);
    const r=await fetch("/api/files/upload",{method:"POST",credentials:"same-origin",body});
@@ -3687,6 +3688,12 @@ async function continueTextReply(row,original,button){
  }finally{S.busy=false;button.disabled=false;$("sendBtn").disabled=false}
 }
 // Resolve each turn independently; the chosen chat model is never overwritten by media tools.
+function isReferenceImageEditRequest(value){
+ const p=String(value||"").trim();
+ if(!p||imagePromptDiscussion(p)||isDirectVideoRequest(p)||/(?:不要|不用|无需|禁止|先别|不需要).{0,10}(?:修图|改图|编辑|修改|生成|重绘|换背景)/.test(p))return false;
+ if(/(?:提示词|教程|脚本|代码|文案|方案|步骤)(?:[。！!？?]|$)|(?:分析|识别|比较|评价|描述|检查|解读|看看|看一下).{0,18}(?:图片|照片|参考图|这张图|有什么|哪里)/.test(p))return false;
+ return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:修图|改图|图生图|重绘|重新绘制|重新生成|重新画|去水印|去背景|抠图|扩图|补图|上色|美化|调色|换(?:个|一个|成)?(?:背景|发型|衣服|服装|颜色|姿势|动作|场景|表情|风格)|(?:把|将|让).{1,50}(?:改成|换成|变成|去掉|移除|替换|增加|添加|变白|变亮|变暗|变清晰|瘦一点|调整|保留|换个)|(?:修改|编辑|调整|替换|移除|删除|去掉|添加|增加|更换|保持|保留|参考|按照|根据|用|使用).{0,50}(?:图|照|背景|发型|衣服|服装|人物|姿势|动作|颜色|风格|场景|构图|表情|光线|一致|不变|生成|重绘|再画))/.test(p)||/^(?:please\s+)?(?:edit|modify|retouch|remove|replace|change|enhance|redraw|recreate|inpaint|outpaint)\b/i.test(p);
+}
 function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel,tool}){
  const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
  const format=tool==="sticker"||tool==="gif"?tool:mode==="text"&&provider==="free"&&!code&&!continueFrom?requestedMediaFormat(prompt):"";
@@ -3697,18 +3704,18 @@ function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,vid
    const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
    return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
   }
-  if(!code&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image",videoProvider,videoModel};
+  if(!code&&(isDirectImageRequest(prompt)||(provider==="free"&&(pastedImagePrompt(prompt)||(attachments.length>0&&isReferenceImageEditRequest(prompt))))))return {mode:"image",videoProvider,videoModel};
  }
  return {mode,videoProvider,videoModel};
 }
-async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null){
+async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,retryContext=null){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  
  if(S.busy)return;
  if(freeModeChoosing){openModels();flashError("请选择自由模式使用的模型");return}
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  const submittedCode=S.code,submittedTool=S.miniToolChoice;
- const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel,tool:submittedTool});
+ const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel,tool:submittedTool});
  if(turn.error){flashError(turn.error);return}
  const submittedMode=turn.mode,mediaFormat=turn.format||"";
  const submittedVideoProvider=turn.videoProvider,submittedVideoModel=turn.videoModel,submittedVideoRatio=S.videoRatio;
@@ -3747,7 +3754,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
   }
   const imageOutput=S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages);
   const incompatible=S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")&&
-   (S.attachments.some(x=>x.type==="application/pdf")||!["qwen/qwen3.8-27b","qwen/qwen3.6-27b"].includes(S.model));
+   (S.attachments.some(x=>x.type==="application/pdf")||!["qwen/qwen3.8-27b"].includes(S.model));
   if(!connected(S.provider)||(!isFreeModel(S.provider,S.model)&&!S.allowPaid)){openKeyPanel(S.provider);return}
   if(incompatible&&!imageOutput){flashError("当前个人模型不支持此附件，可选择自动模式识图");return}
  }
@@ -3759,22 +3766,24 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
  const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
  const sentBody=prompt+(attached.length?"\n"+attached.map(a=>"[文件："+a.name+"]("+a.url+")").join("\n"):"");
- const sentRow=appendMessage("user",sentBody);$("prompt").value="";S.attachments=[];renderAttachments();
+ const sentRow=retryContext?.sentRow||appendMessage("user",sentBody);$("prompt").value="";S.attachments=[];renderAttachments();
  // Consume explicit tool choice once. Pending media owns its message, not the composer.
  if(submittedMode!=="text"||(submittedCode&&requestProvider==="free"))restoreChatInputMode();
  settlePromptSize();
- const loading=appendMessage("assistant","");
+ const loading=retryContext?.loading||appendMessage("assistant","");
+ if(retryContext){loading.querySelector(":scope > .message-copy-bar")?.remove();assistantTextState.delete(loading.querySelector(".bubble"));}
   setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
- const waitLabel=node("span","",mediaFormat==="gif"?"正在创建GIF…":mediaFormat==="sticker"?"正在创建贴纸…":isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":"正在思考");
+ const nativeAnalysis=submittedMode==="text"&&attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf");
+ const waitLabel=node("span","",mediaFormat==="gif"?"正在创建GIF…":mediaFormat==="sticker"?"正在创建贴纸…":isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":nativeAnalysis?"正在识别附件…":"正在思考");
  const dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));
  dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);
  if(isImageMessage)showChatImageWaiting(loadingBubble,waitLabel);
  else loadingBubble.replaceChildren(status);
  const textReading=submittedMode==="text"&&!(requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages));
- const releaseReadingSpace=textReading?positionNewTextReply(loading,sentRow,$("conversation")):null;
+ const releaseReadingSpace=textReading&&!retryContext?positionNewTextReply(loading,sentRow,$("conversation")):null;
  const startedAt=Date.now();
  const imageTimer=isImageMessage?window.setInterval(()=>{
   if(!loading.isConnected){window.clearInterval(imageTimer);return}
@@ -3851,12 +3860,13 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
    if(voiceTurn===voiceSession.turn&&voiceSession.active&&voiceSession.pending){voiceStreamReset();voiceCancel();voiceSession.pending=false;$("voiceReplay").disabled=!voiceSession.lastReply;voiceReady();sayStatus("回复未完成，请再次点击开始说话")}
   // Never mutate a sent question or silently restart a paid request.
   // Show status in the assistant reply; retain all streamed content.
-  const bubble=loadingBubble,status=node("span","message-send-pending");
+  const bubble=loadingBubble,status=node("div","message-send-pending chat-retry-status");
+  status.setAttribute("role","status");
   if(streamedContent.trim()&&submittedMode==="text"){
    updateAssistantText(bubble,streamedContent,true);
    appendMessageCopy(loading,streamedContent);
   }else bubble.replaceChildren();
-  const retry=messageTool("refresh-cw",isImageMessage?"重新作图":"手动重试",()=>{
+  const retry=messageTool("refresh-cw",isImageMessage?"重新作图":"重试",()=>{
    if(S.busy||S.freeToolsMode||!sentRow.isConnected)return;
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
@@ -3865,9 +3875,10 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
    else{restoreChatInputMode();if(submittedCode){S.code=true;$("codeToggle").classList.add("active");$("codeToggle").setAttribute("aria-pressed","true");setComposerMode("text")}}
    if(mediaFormat){S.miniToolChoice=mediaFormat;syncMiniTools();updateComposerModel()}
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
-   loading.remove();sentRow.remove();settlePromptSize();void sendMessage(continueFrom,forceFreeOnce);
+   settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading});
   });
-  const detail=submittedMode==="text"?(attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")?humanError(e):"当前线路暂时繁忙，原消息已保留，可继续重试。"):humanError(e);
+  retry.append(node("span","","重试"));
+  const detail=submittedMode==="text"?(nativeAnalysis?(requestProvider==="free"?"识图线路暂不可用，原图已保留":humanError(e)):"当前线路暂不可用，原消息已保留"):humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?"回复中断，已保留收到的内容":detail),retry);
   if(submittedMode==="text"&&requestProvider!=="free"){
    const alternate=messageTool("layers","手动使用免费自动重试",()=>{
@@ -3875,7 +3886,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null)
     if(($("prompt").value.trim()||S.attachments.length)&&!confirm("重试会替换未发送的草稿及附件，继续吗？"))return;
     if(S.composerMode!=="text")setComposerMode("text");
     $("prompt").value=prompt;S.attachments=attached.slice();renderAttachments();settlePromptSize();
-    loading.remove();sentRow.remove();void sendMessage(continueFrom,true);
+    void sendMessage(continueFrom,true,null,{sentRow,loading});
    });
    status.append(alternate);
   }

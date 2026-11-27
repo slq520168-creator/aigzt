@@ -27,7 +27,7 @@ test("native attachment parts stay with latest user turn and same model",()=>{
 });
 test("attachment request carries real bytes, free routing stays free and text-only selection fails before transmission",async()=>{
  const source=w.slice(w.indexOf("function groqVisionModel"),w.indexOf("function legacyQueryPrompt"));
- const catalog={models:[{id:"paid/vision",free:false,inputImages:true,outputText:true},{id:"free/vision:free",free:true,inputImages:true,outputText:true}]};
+ const catalog={models:[{id:"paid/vision",free:false,inputImages:true,outputText:true},{id:"free/vision:free",free:true,zeroText:true,zeroImage:true,inputImages:true,outputText:true}]};
  const bytes=new Uint8Array([137,80,78,71,1,2,3,4]);let reads=0;
  const env={OPENROUTER_FREE_KEY:"fake-test-key",MEDIA:{get:async()=>{reads++;return {size:bytes.length,arrayBuffer:async()=>bytes.buffer}}}};
  const f=new Function("listModels","detectImage","toB64",source+";return planNativeChatAttachments")(async()=>catalog,()=>"image/png",()=> "iVBORwECAwQ=");
@@ -38,7 +38,7 @@ test("attachment request carries real bytes, free routing stays free and text-on
 });
 test("upload awaits reference conversion and protects unsent attachments",()=>{
  assert.match(c,/if\(S.uploading\)\{flashError/);assert.match(c,/finally\{S.uploading=false/);
- assert.match(c,/const selected=await optimizeImageReference\(file,heic\);/);
+ assert.match(c,/const selected=await optimizeImageReference\(file,heic\|\|autoReference\);/);
  assert.match(c,/原附件和草稿已保留/);
  assert.doesNotThrow(()=>new Function(c));assert.doesNotThrow(()=>new Function(w.replace(/export default \{/,"return {")));
 });
