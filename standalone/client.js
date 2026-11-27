@@ -383,7 +383,8 @@ const PROVIDER_BRAND_DOMAINS={openai:"openai.com",claude:"anthropic.com",gemini:
 const providerRoute=p=>p==="free"||["freetext","freewan","freeloop"].includes(p)?"free":THIRD_PARTY_PROVIDERS.has(p)?"third":Object.hasOwn(KEY_SITES,p)?"official":"unknown";
 const providerRouteLabel=p=>({official:"官方直连",third:"第三方",free:"免费线路",unknown:"其他线路"})[providerRoute(p)];
 const modelRoute=m=>m.availableWith==="openrouter-key"?"openrouter":m.provider;
-function providerLabel(p){return $("keyProvider")?.querySelector('option[value="'+p+'"]')?.textContent||WORK_PROVIDER_SHORT[p]||p}
+const CHAT_PROVIDER_LABELS=Object.freeze({free:"免费自动",freetext:"LTX",freewan:"Wan",freeloop:"Wan",openrouter:"OpenRouter",groq:"Groq",openai:"OpenAI",claude:"Claude",gemini:"Gemini",grok:"Grok",qwen:"千问",cerebras:"Cerebras",deepseek:"DeepSeek",yandex:"Yandex",gigachat:"GigaChat",runway:"Runway",luma:"Luma",vidu:"Vidu"});
+function providerLabel(p){return Object.hasOwn(CHAT_PROVIDER_LABELS,p)?CHAT_PROVIDER_LABELS[p]:$("keyProvider")?.querySelector('option[value="'+p+'"]')?.textContent||p}
 function providerLogo(p){
  const mark=node("span","provider-brand-mark");mark.setAttribute("aria-hidden","true");
  const domain=PROVIDER_BRAND_DOMAINS[p];
@@ -631,8 +632,8 @@ async function fetchMe(){
   const v=await api("/api/me",undefined,8000);if(epoch!==accountFetchEpoch)return;
   const old=String(S.user?.id||""),owner=String(v.user?.id||"");
   if(old!==owner){S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
-  S.user=v.user;S.quota=v.quota;restoreChatModelSelection();
-  chatModelPreferenceReady=true;updateModelTitle();setAuthUI();
+  S.user=v.user;S.quota=v.quota;setAuthUI();
+  restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();
   if(owner){void hydrateModelPreferences(owner);void fetchConnections()}
  }catch(e){if(epoch!==accountFetchEpoch)return;chatModelPreferenceReady=true;updateModelTitle();flashError("账号状态读取失败："+humanError(e))}
 }
@@ -2913,7 +2914,7 @@ function chatSelectedName(){
  if(freeModeChoosing)return "自由模式 · 选择模型";
  if(S.provider==="free")return S.model==="free:auto"?"自动模式":(S.modelTitle||S.model);
  const raw=String(S.modelTitle||S.model||"").trim(),label=raw.startsWith(S.provider+" · ")?raw.slice(S.provider.length+3):raw;
- return providerRouteLabel(S.provider)+" · "+(WORK_PROVIDER_SHORT[S.provider]||S.provider)+" · "+(label||S.model);
+ return providerRouteLabel(S.provider)+" · "+providerLabel(S.provider)+" · "+(label||S.model);
 }
 function updateComposerModel(){
  const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
@@ -4432,7 +4433,7 @@ function toggleAuth(){
 async function account(){
  if(!S.user){show("authDialog");return}
  if(!confirm("确定退出当前 IMAI 账号？聊天记录会保存在你的云端。"))return;
- try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();++accountFetchEpoch;connectionsFlight=null;S.user=null;S.quota=null;S.chats=[];S.chatId=null;++S.workEpoch;S.workBusy=false;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";chatComposerBeforeWork=null;workComposerDraft=null;restoredChatModelOwner=null;restoredWorkModelOwner=null;activateModelPrefOwner(null);workModelPreference=null;S.workStages=[];setFreeDefault(false);S.workTasks=[];S.workDetail=null;S.workTaskId=null;setWorkMode(false);renderWorkDetail();renderWorkTasks();S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
+ try{await api("/api/logout",{});stopDrawBatch();$("drawResults").replaceChildren();$("drawPrevious").replaceChildren();$("drawPreviousSection").hidden=true;$("drawElapsed").hidden=true;$("drawElapsed").textContent="00:00";$("createStatus").textContent="";uploadedFilesOwner=null;uploadedFilesSignature="";++uploadedFilesRequest;$("savedFiles").replaceChildren();++accountFetchEpoch;connectionsFlight=null;S.user=null;S.quota=null;S.chats=[];S.chatId=null;S.keys={};S.connected={};S.savedProviders={};S.connectionsLoaded=false;S.connectionsLoading=false;S.freeToolsMode=false;S.freeToolsCategory="全部";restoredChatModelOwner=null;activateModelPrefOwner(null);setFreeDefault(false);S.projects=[];S.activeProjectId=null;S.notes=[];newChat();setAuthUI();renderHistory();renderProjects()}
  catch(e){flashError("退出失败："+humanError(e))}
 }
 async function verifyKey(event){
