@@ -13,7 +13,7 @@ const ICON_MASKABLE_BASE64="iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAMAAADDpiTIAAAAM1BM
 const IMAI_ROBOT_IDLE="R0lGODlhJAAwAIIAAOTg+nXI9Y6M2kNluB4TTwACeAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQJFAAHACwAAAAAJAAwAAAI/wAPCBxIsKDBgwgTHgwQAIDChxAZCnAIsaLBAAMGULTI8UDGiR07ChggQEBIiABSAiA5cePJgg1VylT5kmBMlSVz0qx5UwABAgZ+EmCZ8mVKhkCFCmXZMiTDlAKCThwgtGVJACYtMtS40kBJjVRJEvgKIADHrVOHKl2bsexZjF/HUh068ufHlR0lfh1QwK7PpSVP6h2ZMSNdq1lP5mQY86ZLnnAxfhxZc6AAxhKTEjjAOHFHrJcxB6jLeEDDkDqhZhQtuWjIwhrrDt1KF+vLuXKHmh4Nu6bh3FaxhjXqswDnoSmpNpwLkiPOgSSx8k7O9XHCmQJzlmyovaVrhaChCracvPvjgas5H36kK1DyT9qxfbJ82JJke6iHCRQASbjpdaxDCSTTAOON5VpY3x20l3Hn/RTYeXsJpJt9CfWWHWEEEVbUUAUQqJ6HB5TFnWXRMTTeSSKOtpF2pxkl3WiJLcYYcYNBx5JEKL6YXntM7eQcVFAlBpd31im0l3YbwdidZxBpR1VzEP7l3WcyjZTYb9hZNJNq0HUYnUwVXbbbViaOx9JqpVXEWkYFnTlmmRGlGVFldB4QEAA7";
 const IMAI_ROBOT_MOTION="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";
 const IMAI_ROBOT_ATLAS="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";
-const VERSION="aigzt-cf-5.18-workspace";
+const VERSION="aigzt-cf-5.19-unified-model-routing";
 const FREE_MODELS=[
  {id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true,isRoute:true}
 ];
@@ -616,9 +616,21 @@ function freeSources(env){
  sources.push({id:"vexa",name:"Vexa",endpoint:"https://vexa-ai.pages.dev/query",model:"auto",query:true,ms:9000});
  return sources;
 }
+// Chat and work use the same live, zero-price text catalog, never a personal API key.
+async function automaticFreeSources(env,mode,level){
+ const base=freeSources(env);
+ if(typeof env.OPENROUTER_FREE_KEY!=="string"||env.OPENROUTER_FREE_KEY.length<12)return base;
+ const catalog=await listModels(env);
+ const shared=(catalog.sharedFreeModels||[]).filter(m=>m.shared===true&&m.free===true&&m.type==="text"&&m.sharedModel?.endsWith(":free"));
+ const score=m=>{const id=m.sharedModel.toLowerCase();return (mode==="code"&&/coder|code|deepseek|qwen|devstral/.test(id)?100:0)+(level==="long"&&/gpt-oss|deepseek|qwen|gemma|llama/.test(id)?30:0)+Math.min(20,Math.log2(Math.max(1,m.context||1)));};
+ const named=shared.sort((a,b)=>score(b)-score(a)||a.id.localeCompare(b.id)).map(m=>({id:"openrouter",routeKey:m.id,name:m.name,endpoint:"https://openrouter.ai/api/v1/chat/completions",model:m.sharedModel,key:env.OPENROUTER_FREE_KEY,ms:level==="long"?32000:18000,zeroOnly:true}));
+ const primary=base.filter(x=>x.key&&x.id!=="openrouter"),generic=base.filter(x=>x.id==="openrouter").map(x=>({...x,zeroOnly:true,ms:level==="long"?32000:18000}));
+ const publicRoutes=base.filter(x=>!x.key);
+ return level==="long"||mode==="code"?[...named,...primary,...generic,...publicRoutes]:[...primary,...named,...generic,...publicRoutes];
+}
 async function freeRouteStates(env){
  try{
-  const rows=await env.DB.prepare("SELECT provider,cool_until,failures,last_status FROM free_provider_state LIMIT 8").all();
+  const rows=await env.DB.prepare("SELECT provider,cool_until,failures,last_status FROM free_provider_state ORDER BY updated_at DESC LIMIT 128").all();
   return new Map((rows.results||[]).map(r=>[r.provider,r]));
  }catch{return new Map()}
 }
@@ -637,7 +649,7 @@ async function freeRouteFailure(env,source,status,old,headers){
   status===404?3600:
   status>=500?Math.min(900,90*strikes):180;
  const now=Date.now(),until=now+cooldown*1000;
- // Max four rows, one write only when an upstream definitively fails.
+ // One cooldown row per actual route; no write on healthy requests.
  try{await dbRun(env.DB,
   "INSERT INTO free_provider_state(provider,cool_until,failures,last_status,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET cool_until=excluded.cool_until,failures=excluded.failures,last_status=excluded.last_status,updated_at=excluded.updated_at",
   source,until,strikes,status,now)}catch{}
@@ -651,27 +663,28 @@ async function freeRouteCatalog(env){
  // Do not expose provider names, failures or cooldowns to the public UI.
  return FREE_MODELS.map(m=>({...m,available:true,status:"自动接力"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false){
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false){
+ const started=Date.now();
  const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
  const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
  const history=chatProviderHistory(messages.slice(-14));
- const sources=freeSources(env).filter(s=>!authenticatedOnly||Boolean(s.key));
+ const sources=(sharedAuto&&preferred==="free:auto"?await automaticFreeSources(env,mode,replyLevel):freeSources(env)).filter(s=>!authenticatedOnly||Boolean(s.key));
  const all=preferAuthorized?[...sources].sort((a,b)=>Number(!!b.key)-Number(!!a.key)):sources;
- const started=Date.now();
  const states=await freeRouteStates(env),now=Date.now();
  // Free route choice never reaches the UI; failover order belongs exclusively to the server.
- const available=all.filter(s=>(states.get(s.id)?.cool_until||0)<=now);
+ const available=all.filter(s=>(states.get(s.routeKey||s.id)?.cool_until||0)<=now);
  if(!available.length)throw Object.assign(new Error("当前免费来源全部在限额冷却中，请稍后重试"),{status:429});
- const errors=[],attempts=available.length;
+ const errors=[],attempts=sharedAuto?Math.min(4,available.length):available.length;
  for(const source of available.slice(0,attempts)){
   const remaining=timeBudget-(Date.now()-started);
   if(remaining<1500)break;
-  const sourceState=states.get(source.id),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
+  const routeKey=source.routeKey||source.id,sourceState=states.get(routeKey),notes=history.filter(m=>m.role==="system").slice(-2).map(m=>m.content).join("\n").slice(0,1600);
   const recent=source.query?legacyQueryPrompt(history):null;
   // Legacy prompt-only endpoints cannot receive a long request intact.
   if(source.query&&recent===null){errors.push(source.id+" 上下文容量不足");continue;}
   const payload=source.query?{prompt:system+"\n"+notes+"\n"+recent}:
    {model:source.model,messages:[{role:"system",content:system},...history],max_tokens:chatFailover?chatOutputBudget(source.id,source.model,replyLevel):replyLevel==="short"?600:replyLevel==="long"?4096:1200,stream:false};
+  if(source.zeroOnly)payload.provider={max_price:{prompt:0,completion:0,request:0,image:0},allow_fallbacks:true};
   if(source.id==="groq"){
    const plan=groqRequestPlan(payload.messages,chatOutputBudget("groq",source.model,replyLevel));
    payload.messages=plan.messages;delete payload.max_tokens;payload.max_completion_tokens=plan.maxTokens;
@@ -682,38 +695,38 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    res=await fetch(source.endpoint,{
     method:"POST",
     headers:{"content-type":"application/json",accept:"application/json",...(source.key?{authorization:"Bearer "+source.key}:{})},
-    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(Math.min(source.ms,Math.max(1500,remaining)))
+    body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(Math.min(sharedAuto&&source.id==="groq"&&replyLevel==="long"?32000:source.ms,Math.max(1500,remaining)))
    });
   }catch(error){
    // For chat only, advance to a distinct configured route, never retry the same request on the same source.
-   await freeRouteFailure(env,source.id,503,sourceState,null);
-   if(chatFailover){errors.push(source.id+" 连接超时");continue}
+   await freeRouteFailure(env,routeKey,503,sourceState,null);
+   if(chatFailover&&!sharedAuto){errors.push(source.id+" 连接超时");continue}
    throw Object.assign(new Error("免费来源连接中断，已暂停该来源；为避免重复调用，本次未自动重发"),{status:503});
   }
   if(!res.ok){
    const status=res.status;
    // A request-specific 413 must not disable a healthy free provider.
-   if(status!==413)await freeRouteFailure(env,source.id,status,sourceState,res.headers);
+   if(status!==413)await freeRouteFailure(env,routeKey,status,sourceState,res.headers);
    errors.push(source.id+" HTTP "+status);
    if(status===429||[400,401,402,403,404].includes(status)||status>=500)continue;
    continue;
   }
   let out;
   try{out=await res.json()}catch{
-   await freeRouteFailure(env,source.id,502,sourceState,res.headers);
+   await freeRouteFailure(env,routeKey,502,sourceState,res.headers);
    errors.push(source.id+" 响应格式异常");continue;
   }
   const content=source.query?(out?.success===true?out.response:null):out?.choices?.[0]?.message?.content;
   const answer=typeof content==="string"?content:Array.isArray(content)?content.map(x=>x?.text||"").join("\n"):"";
   if(!answer.trim()){
-   await freeRouteFailure(env,source.id,502,sourceState,res.headers);
+   await freeRouteFailure(env,routeKey,502,sourceState,res.headers);
    errors.push(source.id+" 空响应");continue;
   }
-  await freeRouteRecover(env,source.id,sourceState);
+  await freeRouteRecover(env,routeKey,sourceState);
   const percent=Number.parseFloat(res.headers?.get?.("x-ratelimit-remaining")||"");
   // When the upstream confirms almost no remaining budget, protect it until a later request.
   if(source.id==="vireonix"&&Number.isFinite(percent)&&percent<=1)
-   await freeRouteFailure(env,source.id,429,{failures:0},null);
+   await freeRouteFailure(env,routeKey,429,{failures:0},null);
   return {content:truncate(answer,40000),actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:replyWasLimited(out?.choices?.[0]?.finish_reason||out?.stop_reason)||out?.status==="incomplete"||answer.length>40000};
  }
  // Keep individual error details in the server-side cooldown table, not in UI responses.
@@ -768,17 +781,6 @@ async function translateChatMessage(req,env,user){
 }
 
 const FREE_CREATIVE_PROMPTS=Object.freeze({"research":"你是严谨的研究助手。区分事实、推断和未知，提出可验证的方法。不能假装已经联网检索。","imagePrompt":"你是图片提示词设计师。生成可直接使用的中英文画面提示词，包含主体、场景、镜头和风格。","group":"模拟虚构的多角色群聊，逐条标注说话人并维护设定。不得声称参与者是真人或真实群成员。","story":"你是中文小说创作助手，保持人物、时间线和视角一致，按照用户要求创作并支持接续。","character":"你是角色创作者，建立背景、外貌、性格、能力、目标和关系，保持一致。","adventure":"你是互动文字冒险主持人。保持状态，描述场景并等待玩家选择。","mentor":"你是学习导师。由浅入深解释原理，给出实例与练习，根据反馈调整。","debate":"你是辩论助手。公平展示正反两方论点、证据与弱点，不编造证据。","live":"你是直播策划助手，提供节目流程、直播脚本和互动问题，不声称已经真正开启直播。"});
-function canUseFreeChatFallback(body,error,emitted,remaining){
- return body.freeFallback!==false&&!emitted&&remaining>=1500&&!body.outputImages&&!body.imageOnly&&
-  ["BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","LIMIT_UNKNOWN","AUTH","ACCESS","CONSENT_REQUIRED","MODEL_UNAVAILABLE","MODEL_RETIRED","UPSTREAM_ROUTE","UPSTREAM_ERROR","UPSTREAM_NETWORK","UPSTREAM_EMPTY","CAPACITY","ATTACHMENT_UNSUPPORTED"].includes(error?.code);
-}
-async function freeChatAnswer(env,messages,mode,replyLevel,nativeFiles,remaining,onDelta){
- if(remaining<1500)throw Object.assign(Error("免费备用线路时间不足"),{code:"FREE_TEMPORARY",status:503});
- if(!nativeFiles.length)return freeText(env,messages,mode,"free:auto",Math.min(remaining,28000),true,replyLevel,true,true);
- // Preserve the complete image/PDF input. Never send a text-only fallback for a visual task.
- const plan=await planNativeChatAttachments(env,"free","free:auto",nativeFiles);
- return callExternal(plan.provider,plan.model,env.OPENROUTER_FREE_KEY,messages,false,15000,chatOutputBudget("openrouter",plan.model,replyLevel),onDelta,false,false,plan.parts,Math.max(1,remaining));
-}
 async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
@@ -815,8 +817,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(provider==="free"&&!sharedModel&&!FREE_MODELS.some(m=>m.id===model))throw Error("免费模型选择无效");
  if(sharedModel&&(nativeFiles.length||body.outputImages||body.imageOnly))throw Object.assign(Error("该共享模型仅开放文字聊天；图片及PDF请使用免费自动"),{status:400,code:"ATTACHMENT_UNSUPPORTED"});
  if(provider!=="free"&&!HOSTS[provider])throw Error("服务商不支持");
- let nativePlan=null,attachmentError=null;
- try{nativePlan=await planNativeChatAttachments(env,provider,model,nativeFiles)}catch(e){if(provider==="free"||!canUseFreeChatFallback(body,e,false,50000))throw e;attachmentError=e}
+ const nativePlan=await planNativeChatAttachments(env,provider,model,nativeFiles);
  let chatId=typeof body.chatId==="string"?body.chatId:null;
  const projectId=typeof body.projectId==="string"&&/^[0-9a-f-]{36}$/.test(body.projectId)?body.projectId:null;
  if(!chatId&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Error("项目不存在");
@@ -878,22 +879,12 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  const forward=typeof onDelta==="function"?token=>{emitted=true;onDelta(token)}:null;
  try{
   if(provider==="free"){
-   result=sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel),forward,false,false,[],remaining(),true):nativePlan?await callExternal(nativePlan.provider,nativePlan.model,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",nativePlan.model,replyLevel),forward,false,false,nativePlan.parts,remaining()):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true);
+   result=sharedModel?await callExternal("openrouter",sharedModel,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",sharedModel,replyLevel),forward,false,false,[],remaining(),true):nativePlan?await callExternal(nativePlan.provider,nativePlan.model,env.OPENROUTER_FREE_KEY,selectedMessages,false,15000,chatOutputBudget("openrouter",nativePlan.model,replyLevel),forward,false,false,nativePlan.parts,remaining()):await freeText(env,selectedMessages,mode,model,remaining(),false,replyLevel,false,true,true);
   }else{
-   try{
-    if(attachmentError)throw attachmentError;
-    const connected=await keyForProvider(env,user,provider,body.apiKey);
-    const outputLimit=chatOutputBudget(provider,model,replyLevel);
-    const reserve=body.freeFallback!==false&&!body.outputImages&&!body.imageOnly;
-    result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],reserve?Math.min(replyLevel==="long"?45000:24000,remaining()):remaining());
-    primarySucceeded=true;
-   }catch(e){
-    primaryFailure=typeof e?.code==="string"?e.code:"UPSTREAM_ERROR";
-    if(!canUseFreeChatFallback(body,e,emitted,remaining()))throw e;
-    // No second paid request: use only preconfigured free routes with the same stored message.
-    try{result=await freeChatAnswer(env,selectedMessages,mode,replyLevel,nativeFiles,remaining(),forward);freeFallback=true}
-    catch(fallback){throw Object.assign(Error("当前备用线路暂时不可用，原消息已保留供重试"),{status:503,code:"FREE_FALLBACK_FAILED"})}
-   }
+   const connected=await keyForProvider(env,user,provider,body.apiKey);
+   const outputLimit=chatOutputBudget(provider,model,replyLevel);
+   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining());
+   primarySucceeded=true;
   }
   // Continuation is explicit: never automatically generate a second answer.
  }catch(e){
@@ -2350,34 +2341,14 @@ async function workCreate(req,env,user){
  return response({ok:true,id,task:{id,status:"pending",nextStep:0,totalSteps:config.steps.length}},201);
 }
 function workRoutes(t,saved,index=0){
- const result=[],seen=new Set(),add=r=>{if(!seen.has(r.id)){result.push(r);seen.add(r.id)}};
- // Automatic fallback must not silently attempt consented paid models.
- const authorized=saved.filter(x=>providerModelIsFree(x.provider,x.model_id)||
- (x.provider==="openrouter"&&(x.model_id==="openrouter/free"||String(x.model_id).endsWith(":free"))));
- const selectedStep=workStepPlan(t)[index];
- // Reuse the exact configured, authenticated free router used by ordinary chat.
- // Legacy names map to one free:auto candidate, never three speculative public retries.
- const addFree=model=>{
-  add({id:"free:auto",provider:"free",model:"auto",label:"免费自动"});
- };
- const addSelected=(provider,model)=>{
-  if(provider==="free"){addFree(model);return}
-  const key=saved.find(x=>x.provider===provider);
-  if(!key)return;
-  const chosen=model||key.model_id;
-  if(!(key.consent===1||providerModelIsFree(provider,chosen)||(provider==="openrouter"&&(chosen==="openrouter/free"||chosen.endsWith(":free")))))return;
-  if(!validModelIdentifier(chosen))return;
-  add({id:provider+":"+chosen,provider,model:chosen,label:provider,entry:key});
- };
- if(selectedStep?.provider&&selectedStep.provider!=="auto")addSelected(selectedStep.provider,selectedStep.model);
- else addFree("auto");
- const requested=workRoutesConfig(t);
- if(t.fallback_enabled!==0){
-  for(const r of requested)addSelected(r.provider,r.model);
-  addFree("auto");
-  for(const row of authorized)addSelected(row.provider,row.model_id);
- }
- return result;
+ const step=workStepPlan(t)[index];
+ const provider=step?.provider||"auto";
+ if(provider==="auto"||provider==="free")return [{id:"free:auto",provider:"free",model:"auto",label:"免费自动"}];
+ const key=saved.find(x=>x.provider===provider);
+ if(!key)return [];
+ const model=step.model||key.model_id;
+ if(!validModelIdentifier(model)||!(key.consent===1||providerModelIsFree(provider,model)))return [];
+ return [{id:provider+":"+model,provider,model,label:provider,entry:key}];
 }
 async function workPrompt(env,user,t,index,prior){
  const steps=workStepPlan(t),step=steps[index],role=step?.name||"任务执行";
@@ -2415,7 +2386,7 @@ async function workPrompt(env,user,t,index,prior){
 }
 async function workStepWithFailover(env,user,t,index,prior){
  const saved=(await env.DB.prepare("SELECT provider,model_id,iv,ciphertext,consent FROM user_api_keys WHERE user_id=? ORDER BY updated_at DESC LIMIT 10").bind(user.id).all()).results||[];
- const blocked=new Set(JSON.parse(t.blocked_json||"[]")),candidates=workRoutes(t,saved,index).filter(x=>!blocked.has(x.id));
+ const blocked=new Set(),candidates=workRoutes(t,saved,index);
  const prompts=await workPrompt(env,user,t,index,prior),start=Date.now(),attempts=[];
  let answer=null;
  for(const route of candidates){
@@ -2424,10 +2395,10 @@ async function workStepWithFailover(env,user,t,index,prior){
   try{
    let result;
    if(route.provider==="free"){
-    result=await freeText(env,[{role:"user",body:prompts.full}], "general","free:auto",Math.min(45000,available-500),true,"long");
+    result=await freeText(env,[{role:"user",body:prompts.full}], /代码|开发|编程|修复|bug|github/i.test(t.prompt)?"code":"general","free:auto",Math.min(45000,available-500),true,"long",false,true,true);
    }else{
     const key=await revealKey(env,user.id,route.provider,route.entry.iv,route.entry.ciphertext);
-    result=await callExternal(route.provider,route.model,key,[{role:"system",body:"请如实执行文本/代码工作，不虚构外部操作。继续用户现有任务。"}, {role:"user",body:prompts.full}],true,15000,chatOutputBudget(route.provider,route.model,"long"),null,false,false,[],Math.min(45000,available-500));
+    result=await callExternal(route.provider,route.model,key,[{role:"system",body:"请如实执行文本/代码工作，不虚构外部操作。继续用户现有任务。"}, {role:"user",body:prompts.full}],route.entry.consent===1,15000,chatOutputBudget(route.provider,route.model,"long"),null,false,false,[],Math.min(45000,available-500));
    }
    if(!result?.content?.trim())throw Error("模型没有返回内容");
    answer={body:String(result.content),incomplete:!!result.incomplete,provider:route.provider==="free"?"免费线路 · "+route.label:route.label,model:result.actualModel||"上游未公开"};break;
