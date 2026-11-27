@@ -588,7 +588,7 @@ async function useSavedConnection(){
    S.connected.openai=catalog.models;entry.verified=true;refreshSourceChips();
    const directId=S.provider==="openrouter"&&S.model.startsWith("openai/")?S.model.slice(7):null;
    const candidate=[directId,model].find(id=>id&&catalog.models.some(m=>m.id===id&&m.type==="text"));
-   if(!candidate){hide("keyDialog");activateSource("openai");openModels();return}
+   if(!candidate){hide("keyDialog");activateSource("openai");openModels(true);return}
    model=candidate;
    await api("/api/connections/openai/selected",{model});entry.model=model;
   }
@@ -2937,7 +2937,7 @@ function setModel(row){
  if(unavailableChatModel(route,row.id)){flashError("此模型当前不可调用，请选择其他模型");return}
  if(row.type!=="text"&&!(row.type==="image"&&row.availableWith==="openrouter-key"&&row.outputImages)){
   if(row.type==="audio")return;
-  hide("modelDialog");
+  freeModeChoosing=false;hide("modelDialog");
   if(row.type==="image"){setComposerMode("image");$("prompt").focus({preventScroll:true})}
   else if(row.type==="video"){if(VIDEO_OPTIONS[row.provider]?.includes(row.id))chooseChatVideo(row.provider,row.id);else flashError("此视频模型暂无本站生成接口，请选择已接入的视频模型。")}
   
@@ -4055,7 +4055,7 @@ const HOME_BRAND_ROUTES=Object.freeze({
 let pendingHomeBrand=null,homeBrandBinding=null;
 function openHomeBrandModels(route){
  S.query="";S.source="family:"+route.family;S.filter="all";S.modelPage=0;
- openModels();activateSource(S.source);
+ openModels(true);activateSource(S.source);
  for(const p of [route.provider,route.alternate].filter(Boolean))if(S.savedProviders[p]?.verified)void refreshConnectedModelCatalog(p);
  $("sourceChips").querySelector('[data-source="'+S.source+'"]')?.scrollIntoView({block:"nearest",inline:"nearest"});
 }
@@ -4067,9 +4067,9 @@ function openHomeBrand(brand){
  openKeyPanel(route.provider);
  if(route.family==="llama"&&S.connectionsLoaded)$("keyStatus").textContent="Meta Llama 通过 OpenRouter 接入；绑定后选择 Llama 模型。";
 }
-function openModels(){
+function openModels(preserveFilter=false){
  restorePublicCatalog();
- S.source="all";S.filter="all";S.query="";
+ if(!preserveFilter){S.source="all";S.filter="all";S.query=""}
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
  S.modelPage=0;$("chatModeMenu").open=false;show("modelDialog");void loadCatalog();renderModels();$("modelScroll").scrollTop=0;$("sourceChips").scrollLeft=0;void loadModelHistory();
@@ -4545,7 +4545,7 @@ function wire(){
  $("navKeys").addEventListener("click",()=>{closeMenu();openKeyPanel()});
  $("groqConnect").addEventListener("click",()=>openKeyPanel("groq"));
  $("newChat").addEventListener("click",newChat);
- $("headerChatModels").addEventListener("click",()=>{if(!S.freeToolsMode){if(S.composerMode==="video"){S.source="all";S.filter="video";S.query="";S.modelPage=0}openModels()}});
+ $("headerChatModels").addEventListener("click",()=>{if(!S.freeToolsMode){if(S.composerMode==="video"){S.source="all";S.filter="video";S.query="";S.modelPage=0}openModels(S.composerMode==="video")}});
  $("headerNew").addEventListener("click",newChat);
  $("searchBtn").addEventListener("click",()=>{closeMenu();show("searchDialog");$("chatSearchInput").focus()});
  $("newProject").addEventListener("click",()=>openProject());
