@@ -3613,7 +3613,7 @@ function renderWorkConnectionStates(){
  const owner=String(S.user?.id||""),loaded=WK.loaded&&WK.owner===owner;
  for(const [kind,status,button,field,summary] of [["github","workGithubInfo","workGithubDisconnect","workGithubRepo","workGithubState"],["supabase","workDbInfo","workDbDisconnect","workDbRef","workDbState"]]){
   const x=loaded?WK.connections.find(v=>v.kind===kind):null;
-  const label=!owner?"未登录":!loaded?"未核实":x?(kind==="github"?(x.access==="public"?"已连接 · 只读":"已连接"):"已保存"):"未连接";
+  const label=!owner?"未登录":!loaded?"未核实":x?(kind==="github"?(x.access==="public"?"已连接 · 只读":"已连接"):"已保存 · 使用时验证"):"未连接";
   $(summary).textContent=label;$(summary).classList.toggle("connected",!!x);$(status).textContent=x?label+" · "+x.label+(x.branch?" · "+x.branch:""):label;
   $(button).disabled=!x;if(x&&!$(field).value)$(field).value=x.ref;
  }
@@ -3634,7 +3634,7 @@ function openWorkService(view){
 }
 async function wkConnections(){
  const owner=String(S.user?.id||"");
- if(WK.owner!==owner){Object.assign(WK,{owner,connections:[],loaded:false,loading:null,file:null,rows:null,proposal:null});for(const id of ["workGithubRepo","workGithubBranch","workGithubToken","workDbRef","workDbToken","workRepoPath","workDbTable","workPatchAnchor","workPatchInstruction","workWorkflow"])$(id).value="";for(const id of ["workRepoEntries","workRunResults"])$(id).replaceChildren();for(const id of ["workRepoPreview","workDbRows"]){$(id).textContent="";$(id).hidden=true}wkShowProposal();setWorkGithubMode("public")}
+ if(WK.owner!==owner){Object.assign(WK,{owner,connections:[],loaded:false,loading:null,file:null,rows:null,proposal:null});for(const id of ["workGithubRepo","workGithubBranch","workGithubToken","workDbRef","workDbToken","workDbTestTable","workRepoPath","workDbTable","workPatchAnchor","workPatchInstruction","workWorkflow"])$(id).value="";for(const id of ["workRepoEntries","workRunResults"])$(id).replaceChildren();for(const id of ["workRepoPreview","workDbRows"]){$(id).textContent="";$(id).hidden=true}wkShowProposal();setWorkGithubMode("public")}
  renderWorkConnectionStates();if(!owner)return;if(WK.loading)return WK.loading;
  const job=(async()=>{try{
   const d=await api("/api/work/integrations");if(String(S.user?.id||"")!==owner||WK.owner!==owner)return;
@@ -3647,10 +3647,10 @@ async function wkConnect(kind){
  WK.busy=true;wkStatus("正在验证并保存连接…");
  const form=$(kind==="github"?"workGithubForm":"workDbForm"),b=form.querySelector('[type="submit"]');b.disabled=true;
  try{
-  const payload=kind==="github"?{repo:$("workGithubRepo").value.trim(),branch:$("workGithubBranch").value.trim(),access:WK.githubMode,token:WK.githubMode==="key"?$("workGithubToken").value.trim():""}:{ref:$("workDbRef").value.trim(),token:$("workDbToken").value.trim()};
+  const payload=kind==="github"?{repo:$("workGithubRepo").value.trim(),branch:$("workGithubBranch").value.trim(),access:WK.githubMode,token:WK.githubMode==="key"?$("workGithubToken").value.trim():""}:{ref:$("workDbRef").value.trim(),token:$("workDbToken").value.trim(),table:$("workDbTestTable").value.trim()};
   const d=await api("/api/work/integrations/"+kind,payload);
   form.querySelector('input[type="password"]').value="";WK.file=null;WK.proposal=null;wkShowProposal();
-  await wkConnections();wkStatus(kind==="github"?"已连接 "+d.label+(d.access==="public"?"（只读）":""):"数据库连接已保存，可进行只读查询");
+  await wkConnections();wkStatus(kind==="github"?"已连接 "+d.label+(d.access==="public"?"（只读）":""):"数据库连接验证成功，可以进行只读查询");
  }catch(e){wkStatus("连接失败："+humanError(e))}
  finally{WK.busy=false;b.disabled=false}
 }
@@ -3789,7 +3789,7 @@ function renderWorkTasks(){
 function renderWorkDetail(){
  const d=S.workDetail,task=d?.task,container=$("workDetail");
  container.hidden=!task;$("workEmpty").hidden=!!task;
- if(!task){$("workStepList").replaceChildren();$("workTitle").textContent="";$("workGoal").textContent="";$("workState").textContent="";$("workErrorSlot").replaceChildren();$("workProgress").replaceChildren();$("workActionHistory").hidden=true;$("workAuditList").replaceChildren();return;}
+ if(!task){$("workStepList").replaceChildren();$("workTitle").textContent="";$("workGoal").textContent="";$("workState").textContent="";$("workErrorSlot").replaceChildren();$("workProgress").replaceChildren();$("workActionHistory").hidden=true;$("workAuditList").replaceChildren();$("workEvidenceInfo").hidden=true;$("workEvidenceInfo").textContent="";return;}
  $("workTitle").textContent=task.title;
  $("workGoal").textContent=task.prompt||"";
  const failed=task.status==="paused",stageName=task.steps?.[task.nextStep]?.name||"当前阶段";
@@ -3797,8 +3797,8 @@ function renderWorkDetail(){
  $("workState").textContent=failed?"执行暂停 · "+stageName+(partial?"已保存断点，可继续执行":"未完成，可重试或调整模型"):workStatus(task);
  const errorSlot=$("workErrorSlot");errorSlot.replaceChildren();
  if(task.error){
-  const details=node("details","work-error-detail"),summary=node("summary","",failed?"查看线路失败详情":"查看执行详情");
-  details.append(summary,node("p","",task.error));errorSlot.append(details);
+  const details=node("details","work-error-detail"),summary=node("summary","",failed?"查看暂停原因":"查看执行详情");
+  details.append(summary,node("p","",task.error));if(failed)details.open=true;errorSlot.append(details);
  }
  const progress=$("workProgress");progress.replaceChildren();
  const progressHead=node("div","work-progress-head");progressHead.append(node("strong","","任务进度"),node("small","",Math.min(task.nextStep,task.totalSteps)+" / "+task.totalSteps));
@@ -3822,6 +3822,7 @@ function renderWorkDetail(){
  }
  for(const obsolete of keep.values())obsolete.remove();
  const audit=$("workAuditList"),actions=d.actions||[];$("workActionHistory").hidden=!actions.length;audit.replaceChildren();
+ const evidence=actions.filter(x=>["读取仓库","查询数据库目录"].includes(x.action));$("workEvidenceInfo").hidden=!evidence.length;$("workEvidenceInfo").textContent=evidence.map(x=>x.action+" · "+x.detail).join("\n");
  for(const action of actions){const row=node("div","work-audit-row");row.append(node("strong","",action.action),node("span","",String(action.detail||"")),node("small","",new Date(action.created_at).toLocaleString()));audit.append(row)}
  $("workContinue").hidden=task.status==="completed"||task.status==="cancelled";
  $("workContinue").disabled=S.workBusy;
@@ -3875,7 +3876,7 @@ async function executeWorkTask(id){
    if(epoch!==S.workEpoch)break;
    const current=S.workDetail?.task;
    if(!current||current.id!==id||["completed","cancelled","paused"].includes(current.status)&&i>0)break;
-   $("workState").textContent="正在执行 "+(current.steps?.[current.nextStep]?.name||"步骤 "+(current.nextStep+1))+" · 不可用时切换候补 AI";
+   $("workState").textContent=(i===0?"正在读取相关项目资料并执行 ":"正在执行 ")+(current.steps?.[current.nextStep]?.name||"步骤 "+(current.nextStep+1));
    const d=await api("/api/work/tasks/"+id+"/advance",{});
    if(epoch!==S.workEpoch)break;
    if(d.busy){$("workState").textContent="此任务正在其他页面执行";break}

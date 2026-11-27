@@ -1,0 +1,7 @@
+const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
+const w=fs.readFileSync("standalone/worker.js","utf8");
+const src=w.slice(w.indexOf("function workEvidenceIntent("),w.indexOf("async function collectWorkRepository("));
+const f=new Function("projectFail",src+";return {workEvidenceIntent,workSafePath,workEvidenceExcerpt,workSourceRank}")((m)=>{throw Error(m)});
+test("connected repository is used for actual inspection, not unrelated writing",()=>{const git={kind:"github",ref:"a/b",branch:"main"};assert.equal(f.workEvidenceIntent("检查问题",[git]).git,git);assert.equal(f.workEvidenceIntent("写一首诗",[git]).git,null);assert.throws(()=>f.workEvidenceIntent("检查 https://github.com/c/d",[git]));});
+test("evidence paths exclude credential files and snippets use actual line numbers",()=>{assert.equal(f.workSafePath(".env"),false);assert.equal(f.workSafePath("src/credentials.json"),false);assert.equal(f.workSafePath("src/app.js"),true);const r=f.workEvidenceExcerpt('const a=1;\nconst token="secretvalue123";\nfetch(url);',"检查 fetch",1000);assert.match(r.text,/1: const a=1/);assert.doesNotMatch(r.text,/secretvalue123/);assert.match(r.text,/3: fetch/);});
+test("execution awaits real tools and caches results before model call",()=>{assert.match(w,/const actualEvidence=await ensureWorkEvidence\(env,user,t\)/);assert.match(w,/workStepWithFailover\(env,user,t,step,prior,actualEvidence\)/);assert.match(w,/await projectDbVerify\(ref,token/);assert.match(w,/SELECT scope,body FROM work_task_evidence/);assert.match(w,/读取仓库/);});

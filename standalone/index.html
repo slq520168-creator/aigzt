@@ -69,7 +69,7 @@
  <button type="button" data-work-draft="分析以下数据，核对来源并整理结论：" class="work-quick"><span class="ui-icon" data-icon="scan"></span><span class="work-quick-text"><strong>数据分析</strong><small>计算与报告</small></span></button></div></div>
     <div id="workDetail" class="work-detail" hidden>
      <h3 id="workTitle"></h3><div id="workGoal" class="work-goal"></div><div id="workState" class="work-state" role="status"></div><div id="workErrorSlot" class="work-error-slot"></div>
-     <div id="workProgress" class="work-progress"></div>
+     <div id="workProgress" class="work-progress"></div><div id="workEvidenceInfo" class="work-evidence-info" hidden></div>
      <div id="workStepList" class="work-step-list"></div><details id="workActionHistory" class="work-action-history" hidden><summary>真实工具操作记录</summary><div id="workAuditList"></div></details>
      <div class="work-actions">
       <button type="button" id="workContinue" class="primary work-continue-primary">继续执行</button>
@@ -345,10 +345,10 @@
  <div class="work-connect-actions"><button type="submit" class="primary">连接仓库</button><button type="button" class="outline" id="workGithubDisconnect" disabled>断开连接</button></div>
  </form></section>
  <section data-work-service="database" hidden><form id="workDbForm" class="work-tool-card">
-        <p id="workDbInfo">未连接</p>
+        <p id="workDbInfo">未连接</p><p>在 Supabase 项目的 Settings → API Keys 中复制公开密钥。只读权限由项目决定。</p>
         <label>项目地址<input id="workDbRef" placeholder="https://项目编号.supabase.co" required></label>
-        <label>公开访问密钥<input id="workDbToken" type="password" placeholder="Publishable / anon key" autocomplete="off" required></label>
-        <div class="work-tool-actions"><button class="outline" type="submit">连接数据库</button><button class="outline" type="button" id="workDbDisconnect">断开</button></div>
+        <label>公开访问密钥<input id="workDbToken" type="password" placeholder="sb_publishable_… 或 anon key" autocomplete="off" required></label><details class="work-connect-advanced"><summary>高级设置（API 目录关闭时使用）</summary><label>用于验证的表名<input id="workDbTestTable" placeholder="填写允许读取的表名" autocapitalize="off" spellcheck="false"></label></details>
+        <div class="work-tool-actions"><button class="primary" type="submit">验证并连接数据库</button><button class="outline" type="button" id="workDbDisconnect">断开</button></div>
        <a class="work-help-link" href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">获取公开访问密钥</a></form></section>
  <section data-work-service="files" hidden><section class="work-tool-card">
        

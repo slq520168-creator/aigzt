@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS work_task_evidence (task_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, scope TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY(task_id) REFERENCES work_tasks(id) ON DELETE CASCADE);
