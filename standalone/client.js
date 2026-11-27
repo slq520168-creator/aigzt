@@ -3922,8 +3922,9 @@ function renderWorkDetail(){
   details.append(summary,node("p","",task.error));if(failed)details.open=true;errorSlot.append(details);
  }
  const progress=$("workProgress");progress.replaceChildren();progress.classList.toggle("is-running",running);
- const progressHead=node("div","work-progress-head");progressHead.append(node("strong","","任务进度"),node("small","",Math.min(task.nextStep,task.totalSteps)+" / "+task.totalSteps));
- const meter=node("div","work-progress-meter"),fill=node("span","work-progress-fill");const total=Math.max(1,task.totalSteps),doneCount=Math.max(0,Math.min(task.nextStep,total));
+ const coverage=task.coverage;
+ const progressHead=node("div","work-progress-head");progressHead.append(node("strong","",coverage?"源码检查进度":"任务进度"),node("small","",coverage?coverage.checked+" / "+coverage.total+" 文件":Math.min(task.nextStep,task.totalSteps)+" / "+task.totalSteps));
+ const meter=node("div","work-progress-meter"),fill=node("span","work-progress-fill");const total=Math.max(1,coverage?.total||task.totalSteps),doneCount=Math.max(0,Math.min(coverage?.checked??task.nextStep,total));
  meter.setAttribute("role","progressbar");meter.setAttribute("aria-label","已完成步骤");meter.setAttribute("aria-valuemin","0");meter.setAttribute("aria-valuemax",String(total));meter.setAttribute("aria-valuenow",String(doneCount));fill.style.width=(doneCount/total*100)+"%";meter.append(fill);progress.append(progressHead,meter);
  for(let i=0;i<task.totalSteps;i++){
   const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1),done=i<task.nextStep,active=i===task.nextStep&&!["completed","cancelled"].includes(task.status);
@@ -4001,7 +4002,7 @@ async function executeWorkTask(id){
  S.workBusy=true;syncWorkExecutionMode();const epoch=++S.workEpoch;
  $("sendBtn").disabled=true;$("workContinue").disabled=true;
  try{
-  for(let i=0;i<12;i++){
+  for(let i=0;i<(S.workDetail?.task?.coverage?2000:12);i++){
    if(epoch!==S.workEpoch)break;
    const current=S.workDetail?.task;
    if(!current||current.id!==id||["completed","cancelled","paused"].includes(current.status)&&i>0)break;
@@ -4011,14 +4012,14 @@ async function executeWorkTask(id){
    if(epoch!==S.workEpoch)break;
    if(d.busy){S.workDetail={...S.workDetail,task:d.task};renderWorkDetail();break}
    S.workDetail=d;renderWorkDetail();
-   await fetchWorkTasks();
+   if(!d.task?.coverage)await fetchWorkTasks();
    const t=d.task;
    if(!t||t.status==="completed"||t.status==="paused"||t.status==="cancelled")break;
   }
  }catch(e){
   if(epoch===S.workEpoch){workActiveRequest=null;const message="暂时无法继续："+humanError(e);try{const latest=await api("/api/work/tasks/"+id);if(epoch===S.workEpoch)S.workDetail=latest}catch{}if(epoch===S.workEpoch){renderWorkDetail();flashError(message)}}
  }finally{
-  if(epoch===S.workEpoch){workActiveRequest=null;S.workBusy=false;$("sendBtn").disabled=false;$("workContinue").disabled=false;renderWorkDetail();void fetchWorkTasks()}
+  if(epoch===S.workEpoch){workActiveRequest=null;S.workBusy=false;syncWorkExecutionMode();$("sendBtn").disabled=false;$("workContinue").disabled=false;renderWorkDetail();void fetchWorkTasks()}
  }
 }
 async function stopWorkTask(){

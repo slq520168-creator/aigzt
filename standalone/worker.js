@@ -2196,7 +2196,7 @@ async function projectGit(token,repo,path,method="GET",body,timeout=12000){
  if(res.status>=300&&res.status<400)projectFail("GitHub 拒绝重定向",502);
  if(!res.ok){const reason=res.status===401?"密钥无效":res.status===403||res.status===429?(res.headers.get("x-ratelimit-remaining")==="0"?"接口额度用完，请使用密钥连接或稍后重试":"访问受限，请检查仓库权限或使用密钥连接"):res.status===404?"仓库、分支或文件不存在":res.status===409?"文件版本冲突":res.status===422?"仓库拒绝本次操作":"上游连接失败";projectFail("GitHub "+reason+" (HTTP "+res.status+")",[401,403,404,409,422,429].includes(res.status)?res.status:503)}
  if(res.status===204)return {triggered:true};
- const raw=await res.text();if(raw.length>(method==="GET"&&path.startsWith("/contents/")?700000:150000))projectFail("GitHub 响应过大",413);
+ const raw=await res.text();if(raw.length>(method==="GET"&&path.startsWith("/contents/")?700000:method==="GET"&&path.startsWith("/git/trees/")?1500000:150000))projectFail("GitHub 响应过大",413);
  try{return JSON.parse(raw)}catch{projectFail("GitHub 响应格式错误",502)}
 }
 async function projectConnection(env,user,kind){
@@ -2421,7 +2421,8 @@ async function workView(env,user,id){
  if(!t)return fail("任务不存在",404);
  const steps=(await env.DB.prepare("SELECT step_idx,phase,body,provider,model,attempts_json,created_at FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 12").bind(id,user.id).all()).results||[];
  const actions=(await env.DB.prepare("SELECT action,detail,created_at FROM work_action_audit WHERE task_id=? AND user_id=? ORDER BY created_at DESC LIMIT 8").bind(id,user.id).all()).results||[];
- return response({ok:true,task:workSummary(t),actions,steps:steps.map(x=>({step:x.step_idx,phase:x.phase,body:x.body,provider:x.provider,model:x.model,attempts:JSON.parse(x.attempts_json||"[]"),createdAt:x.created_at}))});
+ const coverage=await dbGet(env.DB,"SELECT CASE WHEN json_valid(body) THEN json_extract(body,'$.type') END AS kind, CASE WHEN json_valid(body) THEN json_extract(body,'$.checked') END AS checked, CASE WHEN json_valid(body) THEN json_array_length(body,'$.files') END AS total FROM work_task_evidence WHERE task_id=? AND user_id=?",id,user.id);
+ return response({ok:true,task:{...workSummary(t),...(coverage?.kind==="repo-audit-v2"?{coverage:{checked:coverage.checked,total:coverage.total}}:{})},actions,steps:steps.map(x=>({step:x.step_idx,phase:x.phase,body:x.body,provider:x.provider,model:x.model,attempts:JSON.parse(x.attempts_json||"[]"),createdAt:x.created_at}))});
 }
 async function workCreate(req,env,user){
  const b=await parseJSON(req),prompt=String(b.prompt||"").trim().replace(/^检查以下代码或需求，提出可执行的实现和验证方案：[\t \r]*\n+/,"").trim();
@@ -2558,6 +2559,113 @@ async function ensureWorkEvidence(env,user,t){
  return body;
 }
 
+
+// Repository audit is a resumable, pinned-revision read/analysis pipeline.
+// A model answer cannot advance coverage without the corresponding real source batch.
+function auditSourcePath(path){
+ return (workSafePath(path)||/^\.github\/workflows\/[\w.-]+\.ya?ml$/i.test(path))&&/\.(?:js|mjs|cjs|ts|tsx|jsx|html|css|py|go|rs|java|json|toml|ya?ml|sql|md|vue|svelte|php|rb|sh|webmanifest)$/i.test(path);
+}
+function auditManifest(tree,prompt){
+ if(tree.truncated||!Array.isArray(tree.tree))projectFail("仓库目录未完整返回，不能声称完成全仓库检查",413);
+ const blobs=tree.tree.filter(x=>x.type==="blob");
+ const eligible=blobs.filter(x=>auditSourcePath(x.path));
+ const files=eligible.filter(x=>x.mode!=="120000"&&x.size>0&&x.size<=450000&&/^[a-f0-9]{40}$/i.test(x.sha||"")).sort((a,b)=>workSourceRank(b,prompt)-workSourceRank(a,prompt)||a.path.localeCompare(b.path)).map(x=>({path:x.path,sha:x.sha,size:x.size}));
+ if(files.length>2000)projectFail("仓库可检查源码超过2000个文件，请按目录划分任务；未执行全仓库检查",413);
+ const unsupported=eligible.filter(x=>!files.some(f=>f.path===x.path)&&x.size!==0).map(x=>x.path);
+ return {files,unsupported,excluded:blobs.length-eligible.length,empty:eligible.filter(x=>x.size===0).length,submodules:tree.tree.filter(x=>x.type==="commit").map(x=>x.path)};
+}
+function auditRedact(raw){
+ let inside=false;
+ return raw.split("\n").map(line=>{
+  if(/-----BEGIN .*PRIVATE KEY-----/.test(line))inside=true;
+  const hide=inside||/(?:bearer\s+[a-z0-9._-]{12,}|gh[pousr]_[a-z0-9_]{12,}|github_pat_|sb_secret_|(?:password|secret|api[_-]?key|token)\s*[:=]\s*["'][^"']{8,})/i.test(line);
+  if(/-----END .*PRIVATE KEY-----/.test(line))inside=false;
+  return hide?"[可能含密钥，已省略]":line;
+ }).join("\n");
+}
+function auditSlice(raw,offset,budget){
+ const max=Math.min(raw.length,offset+budget);let end=max;
+ if(max<raw.length){const newline=raw.lastIndexOf("\n",max-1);if(newline>offset+Math.floor(budget/2))end=newline+1;if(end>offset&&/[\uD800-\uDBFF]/.test(raw.charAt(end-1)))end--;}
+ const line=1+(raw.slice(0,offset).match(/\n/g)||[]).length;
+ const column=offset-(raw.lastIndexOf("\n",offset-1)+1)+1;
+ const last= line+(raw.slice(offset,end).match(/\n/g)||[]).length;
+ return {text:raw.slice(offset,end),end,line,last,column};
+}
+async function auditNextBatch(state,load){
+ const sections=[],paths=[];let remaining=4400,reads=0;
+ while(state.index<state.files.length&&remaining>500&&sections.length<3){
+  const f=state.files[state.index];
+  if(!state.cache||state.cache.path!==f.path){
+   if(reads>=3)break;
+   const raw=await load(f);reads++;
+   state.cache={path:f.path,text:auditRedact(raw)};
+  }
+  const raw=state.cache.text,part=auditSlice(raw,state.offset,remaining);
+  sections.push("文件 "+f.path+" · blob "+f.sha+" · 行 "+part.line+"–"+part.last+" · 起始列 "+part.column+"\n"+part.text);
+  paths.push(f.path);remaining-=part.text.length+160;
+  if(part.end>=raw.length){state.index++;state.offset=0;state.cache=null}
+  else{state.offset=part.end;break}
+ }
+ return {sections,paths,through:state.index};
+}
+async function runRepositoryAudit(env,user,t,step,prior,lease,git,db){
+ const i=await projectConnection(env,user,"github");
+ if(i.ref!==git.ref||i.branch!==git.branch)projectFail("仓库连接已变化，检查暂停",409);
+ const scope=JSON.stringify([git,db||null]);
+ const saved=await dbGet(env.DB,"SELECT scope,body FROM work_task_evidence WHERE task_id=? AND user_id=?",t.id,user.id);
+ let state=null;
+ if(saved){try{state=JSON.parse(saved.body)}catch{}if(state?.type==="repo-audit-v2"&&saved.scope!==scope)projectFail("仓库连接已变化，请新建任务",409)}
+ if(state?.type!=="repo-audit-v2"){
+  const branch=await projectGit(i.token,i.ref,"/branches/"+encodeURIComponent(i.branch),"GET",undefined,8000);
+  const sha=branch.commit?.sha,treeSha=branch.commit?.commit?.tree?.sha;
+  if(!/^[a-f0-9]{40}$/i.test(sha||"")||!/^[a-f0-9]{40}$/i.test(treeSha||""))projectFail("GitHub 未返回完整版本信息",502);
+  const tree=await projectGit(i.token,i.ref,"/git/trees/"+treeSha+"?recursive=1","GET",undefined,10000);
+  const m=auditManifest(tree,t.prompt);
+  if(!m.files.length)projectFail("没有可检查的源码文件，未完成仓库检查",409);
+  state={type:"repo-audit-v2",sha,repo:i.ref,branch:i.branch,...m,index:0,offset:0,checked:0,batches:0,cache:null,pending:null};
+  if(db){const info=await collectWorkDatabase(env,user,db,t.prompt);state.dbEvidence=info.body;}
+ }
+ const live=async()=>{const q=await dbGet(env.DB,"SELECT status,lease_at FROM work_tasks WHERE id=? AND user_id=?",t.id,user.id);return q?.status==="running"&&q.lease_at===lease;};
+ if(!state.pending){
+  const batch=await auditNextBatch(state,async f=>{
+   const file=await projectGit(i.token,i.ref,"/contents/"+f.path.split("/").map(encodeURIComponent).join("/")+"?ref="+state.sha,"GET",undefined,7000);
+   if(file.type!=="file"||file.sha!==f.sha||file.encoding!=="base64"||typeof file.content!=="string"||file.size>450000)projectFail("文件无法完整读取或版本不一致："+f.path,409);
+   const raw=new TextDecoder("utf-8",{fatal:true}).decode(fromB64(file.content.replace(/\s/g,"")));if(raw.includes("\0"))projectFail("非文本文件："+f.path,409);
+   return raw;
+  });
+  if(!batch.sections.length)projectFail("没有获得下一批真实源码，检查未完成",409);
+  state.pending=batch;
+  if(!await live())return workView(env,user,t.id);
+  await dbRun(env.DB,"INSERT INTO work_task_evidence(task_id,user_id,scope,body,created_at) VALUES(?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET scope=excluded.scope,body=excluded.body,created_at=excluded.created_at WHERE user_id=excluded.user_id",t.id,user.id,scope,JSON.stringify(state),Date.now());
+ }
+ const batch=state.pending;
+ const coverage="已检查 "+state.checked+"/"+state.files.length+" 个源码文件；第 "+(state.batches+1)+" 批；版本 "+state.sha.slice(0,12);
+ const evidence=["GitHub 实际读取："+state.repo+" @ "+state.sha,coverage,"只检查本批源码，不得声称全仓库完成；密钥疑似内容已遮蔽。",...batch.sections,state.batches===0?state.dbEvidence||"":"", "逐个核对本批全部片段。输出「检查范围」「检查结论」，列出本批每个文件的准确路径，问题必须附行号；没有问题只写本片段未发现明确问题。不要重复前批，不要把正文放入代码围栏。"].filter(Boolean).join("\n\n");
+ // Do not resend all previous reports to the model; the server owns coverage.
+ const r=await workStepWithFailover(env,user,t,step,[],evidence);
+ if(!r.answer)projectFail((r.attempts.map(x=>x.provider+"："+x.reason).join("；")||"当前没有授权模型")+"；本批断点已保存",409);
+ const body=r.answer.body;
+ if(r.answer.incomplete||!batch.paths.every(path=>body.includes(path))||!body.includes("检查范围")||!body.includes("检查结论"))projectFail("本批模型输出不完整或缺少文件证据，未推进检查进度；可以继续或更换模型",409);
+ if(!await live())return workView(env,user,t.id);
+ const checkpoint=prior.find(x=>x.step_idx===step);
+ const first=state.batches===0?"## 仓库检查范围\n\n固定提交："+state.sha+"\n\n待检查源码 "+state.files.length+" 个；排除非目标或敏感路径 "+state.excluded+" 个，空文件 "+state.empty+" 个。\n\n":"";
+ const nextChecked=batch.through,done=state.index===state.files.length&&state.offset===0;
+ const limitations=[...state.unsupported,...state.submodules];
+ const summary=done?"\n\n## 覆盖核对\n\n已分析 "+nextChecked+"/"+state.files.length+" 个可读源码文件的全部非遮蔽内容；"+(limitations.length?"仍有 "+limitations.length+" 个不支持的文件或子模块："+limitations.join("、")+"。不能声称全仓库检查完成。":"所列可读源码范围已检查完毕。")+" 未执行浏览器或运行时测试，未修改仓库。":"";
+ const combined=(checkpoint?.body?checkpoint.body+"\n\n":"")+first+"## 第 "+(state.batches+1)+" 批 · "+nextChecked+"/"+state.files.length+"\n\n"+body+summary;
+ if(combined.length>100000)projectFail("累计报告达到100000字符容量，已保留前批与本批断点；请按目录划分剩余任务，不能标记完成",409);
+ state.checked=nextChecked;state.batches++;state.pending=null;
+ const complete=done&&!limitations.length,reason=done&&limitations.length?"可读源码已检查完，仍有不支持的文件或子模块；范围未全部完成":complete?"":"已检查 "+state.checked+"/"+state.files.length+" 个源码文件，继续下一批";
+ const now=Date.now();
+ await env.DB.batch([
+  env.DB.prepare("UPDATE work_task_evidence SET body=? WHERE task_id=? AND user_id=? AND EXISTS(SELECT 1 FROM work_tasks WHERE id=? AND user_id=? AND status='running' AND lease_at=?)").bind(JSON.stringify(state),t.id,user.id,t.id,user.id,lease),
+  env.DB.prepare("INSERT INTO work_steps(task_id,user_id,step_idx,phase,body,provider,model,attempts_json,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM work_tasks WHERE id=? AND user_id=? AND status='running' AND lease_at=?) ON CONFLICT(task_id,step_idx) DO UPDATE SET body=excluded.body,provider=excluded.provider,model=excluded.model,attempts_json=excluded.attempts_json,created_at=excluded.created_at").bind(t.id,user.id,step,workStepPlan(t)[step].name,combined,r.answer.provider,truncate(r.answer.model,160),JSON.stringify(r.attempts),now,t.id,user.id,lease),
+  env.DB.prepare("INSERT INTO work_action_audit(id,task_id,user_id,action,detail,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM work_tasks WHERE id=? AND user_id=? AND status='running' AND lease_at=?)").bind(crypto.randomUUID(),t.id,user.id,"读取仓库",state.repo+" @ "+state.sha.slice(0,12)+"；第 "+state.batches+" 批："+batch.paths.join("、")+"；累计 "+state.checked+"/"+state.files.length,now,t.id,user.id,lease),
+  env.DB.prepare("UPDATE work_tasks SET status=?,next_step=?,last_provider=?,last_model=?,last_error=?,updated_at=?,lease_at=0 WHERE id=? AND user_id=? AND status='running' AND lease_at=?").bind(complete?(step>=workStepPlan(t).length-1?"completed":"pending"):done?"paused":"pending",complete?step+1:step,r.answer.provider,truncate(r.answer.model,160),reason,now,t.id,user.id,lease)
+ ]);
+ return workView(env,user,t.id);
+}
+
 async function workPrompt(env,user,t,index,prior,actualEvidence=""){
  const steps=workStepPlan(t),step=steps[index],role=step?.name||"任务执行";
  let project="";
@@ -2628,6 +2736,12 @@ async function workAdvance(env,user,id){
  const stagePlan=workStepPlan(t),step=Math.min(stagePlan.length-1,Math.max(0,Number(t.next_step)||0));
  try{
   const prior=(await env.DB.prepare("SELECT step_idx,body FROM work_steps WHERE task_id=? AND user_id=? ORDER BY step_idx ASC LIMIT 12").bind(id,user.id).all()).results||[];
+  if(stagePlan[step]?.kind==="check"||workReadOnlyAudit(t.prompt)&&stagePlan[step]?.kind!=="edit"){
+   const rows=(await env.DB.prepare("SELECT kind,ref,branch,updated_at FROM work_integrations WHERE user_id=?").bind(user.id).all()).results||[];
+   const intent=workEvidenceIntent(t.prompt,rows);
+   const git=intent.git||(!intent.needDb?rows.find(x=>x.kind==="github"):null);
+   if(git)return await runRepositoryAudit(env,user,t,step,prior,now,git,intent.db);
+  }
   const actualEvidence=await ensureWorkEvidence(env,user,t);
   if(stagePlan[step]?.kind==="edit"){
    const existing=await dbGet(env.DB,"SELECT status FROM work_file_proposals WHERE task_id=? AND user_id=?",id,user.id);
