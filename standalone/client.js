@@ -2819,7 +2819,7 @@ function updateComposerModel(){
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
  const work=Boolean(S.workMode),active=work?currentWorkModelName():chatSelectedName();
- $("toolsAction").hidden=work;if(work)$("toolTray").hidden=true;
+ $("imageMode").hidden=work;$("toolsAction").hidden=work;if(work)$("toolTray").hidden=true;
  $("replyLevelTrigger").hidden=work;if(work)closeReplyLevel();
  name.classList.toggle("is-auto-model",work?["auto","free"].includes(currentWorkStage().step.provider):S.provider==="free"&&S.model==="free:auto");
  name.textContent=S.miniToolChoice==="gif"?"GIF 动图":S.miniToolChoice==="sticker"?"贴纸":imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(S.videoProvider==="freeloop"?"首尾帧视频":S.videoProvider==="freewan"?"图生视频":VIDEO_PROVIDER_NAMES[S.videoProvider]||"免费视频"):S.code?"代码 · "+active:active;
