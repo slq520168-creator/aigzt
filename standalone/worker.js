@@ -1159,14 +1159,13 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   }
   // Continuation is explicit: never automatically generate a second answer.
  }catch(e){
-  await Promise.all(quotaWrites);await recordModelUsage(env,user,provider,model,replyLevel,requestStarted,null,"");
+  await Promise.all([...quotaWrites,recordModelUsage(env,user,provider,model,replyLevel,requestStarted,null,provider!=="free"?provider:sharedModel?"openrouter":"")]);
   if(messageId)await dbRun(env.DB,"DELETE FROM messages WHERE id=? AND user_id=?",messageId,user.id).catch(()=>{});
   if(!body.chatId)await dbRun(env.DB,"DELETE FROM chats WHERE id=? AND user_id=?",chatId,user.id).catch(()=>{});
   throw e;
  }
- await Promise.all(quotaWrites);
  const actualProvider=provider==="free"?(result.source||(nativePlan||sharedModel?"openrouter":"")):provider;
- const dailyTracked=await recordModelUsage(env,user,provider,model,replyLevel,requestStarted,result,actualProvider);
+ const [dailyTracked]=await Promise.all([recordModelUsage(env,user,provider,model,replyLevel,requestStarted,result,actualProvider),...quotaWrites]);
  if(lookupResult){const foot=lookupSources.length?"\n\n**本次百科检索来源**\n"+lookupSources.map(x=>"- ["+x.title+"]("+x.url+")").join("\n"):"\n\n百科检索未取得结果。";result.content=String(result.content||"")+foot+"\n\n[进一步网页搜索](https://duckduckgo.com/?q="+encodeURIComponent(lookupQuery)+")";}
  const stamp=continuation?continuation.created_at:Date.now(),assistantMessageId=continuation?body.continueFrom:crypto.randomUUID();
  const images=Array.isArray(result.images)?result.images:[],remote=images.filter(x=>x.startsWith("https:")),temporary=images.filter(x=>x.startsWith("data:"));

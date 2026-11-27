@@ -1044,15 +1044,18 @@ function renderUsageOverview(d){
   for(const q of items){
    const box=node("section","usage-provider");
    box.append(node("strong","usage-provider-title",usageProviderName(q.provider)));
+   const providerRows=rows.filter(r=>(kind==="personal"?r.mode==="personal":r.mode!=="personal")&&(r.actual_provider||r.provider)===q.provider),used=usageSum(providerRows);
+   box.append(node("p","settings-hint","本人今日本站请求 "+usageNum(used.requests)+" 次 · Tokens "+usageToken(used.total_tokens,used.reported,used.requests)));
    if(!q.snapshots?.length){
     box.append(node("p","settings-hint",(q.selectedModel?q.selectedModel+" · ":"")+(q.unavailable?"额度暂时无法读取":"总额度及剩余额度未提供；已使用量见上方")));
    }else for(const snap of q.snapshots){
     const current=Date.now(),age=Number(snap.at)||0;
-    box.append(node("p","usage-observed",(snap.model==="account"?"账号额度":snap.model)+" · "+(age?new Date(age).toLocaleString():"未知时间")+(snap.stale?" · 上次读取":"")));
-    if(snap.fields?.length)box.append(usageTable(["额度项目","总量","已用","剩余"],snap.fields.map(f=>[f.label+(f.resetAt&&f.resetAt<=current?"（已过恢复时间）":""),usageNum(f.limit),usageNum(f.limit-f.remaining),usageNum(f.remaining)])));
+    box.append(node("p","usage-observed",(snap.model==="account"?"账号额度":snap.model)+" · "+(age?new Date(age).toLocaleString():"未知时间")+(snap.stale?" · 读取失败，保留上次":" · 上次实测")));
+    if(snap.fields?.length)box.append(usageTable(["额度项目","总量","上次已用","上次剩余"],snap.fields.map(f=>[f.label+(f.resetAt&&f.resetAt<=current?"（已过恢复时间）":""),usageNum(f.limit),usageNum(f.limit-f.remaining),usageNum(f.remaining)])));
     else box.append(node("p","settings-hint","服务商未返回可核实的请求总量与剩余。"));
     const resets=(snap.fields||[]).filter(f=>f.resetAt).map(f=>f.label+"："+new Date(f.resetAt).toLocaleString()+(f.resetAt<=current?"（等待新数据）":""));
     if(resets.length)box.append(node("p","settings-hint","恢复时间："+resets.join("；")));
+    if(q.provider==="groq")box.append(node("p","settings-hint","每日 Token 总额度及剩余需以 Groq 账号页面为准，响应头未提供。"));
     if(snap.source==="key"){
      const credits=[];if(snap.dailyCredit!==null&&snap.dailyCredit!==undefined)credits.push("今日 Key 消耗 $"+usageNum(snap.dailyCredit));
      if(snap.creditLimit!==null&&snap.creditLimit!==undefined)credits.push("Key 支出上限 $"+usageNum(snap.creditLimit));

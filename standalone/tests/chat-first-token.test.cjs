@@ -10,4 +10,4 @@ test("free stream delivers text before completion without waiting for directory"
  const result=await f({},[{role:"user",body:"hello"}],"general","free:auto",50000,false,"standard",false,true,true,t=>delivered.push(t));
  assert.equal(directory,0);assert.equal(requests,1);assert.equal(payload.stream,true);assert.equal(result.content,"first second");assert.equal(result.incomplete,false);
 });
-test("client renders first chunk immediately and complete non-stream replies without animation wait",()=>{assert.match(c,/if\(first\)\{updateAssistantText\(bubble,streamedContent\);return\}/);assert.doesNotMatch(c,/await revealCompletedReply/);assert.match(w,/false,true,true,forward\)/);assert.doesNotThrow(()=>new Function(c));});
+test("client renders first chunk immediately and complete non-stream replies without animation wait",()=>{assert.match(c,/if\(first\)\{updateAssistantText\(bubble,streamedContent\);return\}/);assert.doesNotMatch(c,/await revealCompletedReply/);assert.match(w,/false,true,true,forward,recordQuota\)/);assert.doesNotThrow(()=>new Function(c));});
