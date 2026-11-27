@@ -10,7 +10,7 @@
  <meta name="description" content="IMAI 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
  <title>IMAI · AI 聚合工作台</title>
  <script>(function(){var r=document.documentElement;if(!/iPhone|iPad|iPod/i.test(navigator.userAgent)||!(navigator.standalone===true||matchMedia("(display-mode: standalone)").matches))return;r.classList.add("aigzt-ios-pwa");var rainbow=true;try{rainbow=localStorage.getItem("aigzt:rainbow")!=="0"}catch(e){}if(rainbow)r.classList.add("pwa-boot-rainbow");var h=Math.round(Math.max(innerHeight,visualViewport?visualViewport.height:0)),sh=screen.height;if(sh>=h&&sh-h<=96)h=sh;if(h>0)r.style.setProperty("--aigzt-pwa-height",h+"px")})();</script>
- <link rel="stylesheet" href="/style.css"><script src="/app.js?v=536-ltx-video" defer></script>
+ <link rel="stylesheet" href="/style.css"><script src="/app.js?v=537-chat-only" defer></script>
 </head>
 <body>
  <div class="shell" id="shell">
@@ -32,10 +32,9 @@
    <div class="sidebar-lower">
     <div class="sidebar-projects">
      <div class="side-heading project-heading"><button id="projectsToggle" class="project-collapse-toggle" aria-expanded="false"><span>个人项目</span><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></button><button id="newProject" class="icon-btn small-btn" aria-label="新建项目"><span class="ui-icon" data-icon="plus" aria-hidden="true"></span></button></div>
-     <div id="projectsList" class="project-list" aria-label="个人项目与任务" hidden></div>
+     <div id="projectsList" class="project-list" aria-label="个人项目" hidden></div>
     </div>
     <div class="sidebar-links">
-     <button class="nav-row" id="navWork"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span>工作任务</span></button>
      <button class="nav-row" id="navCode"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>编程助手</span></button>
      <button class="nav-row" id="navFreeTools"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>免费工具</span></button>
      <button class="nav-row" id="navDraw"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>免费作图</span></button>
@@ -57,30 +56,6 @@
     <div class="page-actions-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="menu" aria-hidden="true"></span></button></div>
     <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button></div>
    </div>
-   <section class="work-board" id="workBoard" hidden aria-label="工作任务">
-    <div class="page-heading work-intro"><button class="icon-btn page-back" id="workClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>工作</h2><select id="workExecutionMode" class="work-execution-mode" aria-label="工作执行模式"><option value="standard">标准</option><option value="fast">快速交付</option><option value="check">快速检查</option><option value="edit">定向修改</option><option value="deploy">部署验证</option></select><div class="work-intro-actions"><button type="button" id="workHistoryOpen" class="icon-btn" aria-label="历史工作" title="历史工作"><span class="ui-icon" data-icon="history"></span></button><button type="button" id="workSettingsOpen" class="icon-btn" aria-label="工作设置" title="工作设置"><span class="ui-icon" data-icon="settings"></span></button><button type="button" id="workNewTask" class="icon-btn" aria-label="新建工作" title="新建工作"><span class="ui-icon" data-icon="square-pen"></span></button></div></div>
-    <div class="work-page-content" id="workScroll">
-    <div id="workEmpty" class="work-empty">
- <div class="work-welcome"><span class="work-eyebrow">IMAI WORK</span><strong>把想法变成成果。</strong><span class="work-home-note">研究、分析、创作与开发</span></div>
- <div class="work-quick-grid" aria-label="工作类型">
- <button type="button" data-work-draft="研究并比较以下主题，整理有依据的结论：" class="work-quick"><span class="ui-icon" data-icon="search"></span><span class="work-quick-text"><strong>资料研究</strong><small>整理资料与对比</small></span></button>
- <button type="button" data-work-draft="" class="work-quick"><span class="ui-icon" data-icon="code-2"></span><span class="work-quick-text"><strong>代码开发</strong><small>编写、检查和优化</small></span></button>
- <button type="button" data-work-draft="根据以下要求制作一份完整文档：" class="work-quick"><span class="ui-icon" data-icon="file-text"></span><span class="work-quick-text"><strong>文档制作</strong><small>方案与内容创作</small></span></button>
- <button type="button" data-work-draft="分析以下数据，核对来源并整理结论：" class="work-quick"><span class="ui-icon" data-icon="scan"></span><span class="work-quick-text"><strong>数据分析</strong><small>计算与报告</small></span></button></div></div>
-    <div id="workDetail" class="work-detail" hidden>
-     <h3 id="workTitle"></h3><div id="workGoal" class="work-goal"></div><div id="workState" class="work-state" role="status"></div><div id="workErrorSlot" class="work-error-slot"></div>
-     <div id="workProgress" class="work-progress"></div><div id="workEvidenceInfo" class="work-evidence-info" hidden></div>
-     <div id="workStepList" class="work-step-list"></div><details id="workActionHistory" class="work-action-history" hidden><summary>真实工具操作记录</summary><div id="workAuditList"></div></details>
-     <div class="work-actions">
-      <button type="button" id="workContinue" class="primary work-continue-primary">继续执行</button><button type="button" id="workReviewPatch" class="outline" hidden>审核修改</button>
-      <button type="button" id="workStop" class="outline">停止</button>
-      <button type="button" id="workExport" class="outline">导出 Markdown</button>
-      <button type="button" id="workDelete" class="danger-link">删除</button>
-     </div>
-    </div>
-    
-    </div>
-   </section>
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
     <div class="page-heading free-tools-intro"><button type="button" class="icon-btn free-tools-close page-back" id="freeToolsClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>免费工具</h2></div>
     <div class="free-tools-content">
@@ -117,13 +92,9 @@
      <button type="button" id="toolsAction" aria-expanded="false" aria-controls="toolTray"><span class="ui-icon" data-icon="blocks" aria-hidden="true"></span><span>工具</span></button>
      <div class="tool-tray" id="toolTray" hidden>
       <button type="button" class="subtle" id="publicSearchMode"><span class="ui-icon" data-icon="search" aria-hidden="true"></span><span>百科查询</span></button>
-      <button type="button" class="subtle" id="videoMode" aria-pressed="false"><span class="ui-icon" data-icon="video" aria-hidden="true"></span><span>视频</span></button>
       <button type="button" class="subtle" id="codeToggle" aria-pressed="false"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span>代码</span></button>
       <button type="button" class="mini-tool" id="miniImageEdit" aria-label="图生图" title="图生图" aria-pressed="false"><span class="ui-icon" data-icon="scan" aria-hidden="true"></span><span>图生图</span></button>
-      <button type="button" class="mini-tool" id="miniImageVideo" aria-label="图生视频" title="图生视频" aria-pressed="false"><span class="ui-icon" data-icon="film" aria-hidden="true"></span><span>图生视频</span></button>
       <button type="button" class="mini-tool" id="miniSticker" aria-pressed="false"><span class="ui-icon" data-icon="image" aria-hidden="true"></span><span>贴纸</span></button>
-      <button type="button" class="mini-tool" id="miniGif" aria-pressed="false"><span class="ui-icon" data-icon="film" aria-hidden="true"></span><span>GIF</span></button>
-      <button type="button" class="mini-tool" id="miniFrameVideo" aria-label="首尾帧" title="首尾帧" aria-pressed="false"><span class="ui-icon" data-icon="clapperboard" aria-hidden="true"></span><span>首尾帧</span></button>
      </div>
     </div>
     <div class="reply-level-menu" id="replyLevelMenu" role="group" aria-label="回复长度" hidden>
@@ -271,10 +242,10 @@
     </div>
    </section>
 
-   <section class="settings-section" aria-label="工作与数据">
+   <section class="settings-section" aria-label="工具与数据">
     <div class="settings-card">
      <details class="settings-entry" id="settingsCoding">
-      <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span></span><span class="settings-row-text"><strong>编程助手</strong><small>进入现有代码工作入口</small></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
+      <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span></span><span class="settings-row-text"><strong>编程助手</strong><small>普通聊天编程助手</small></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
       <div class="settings-entry-body"><button class="outline full" type="button" id="settingsOpenCoding">打开编程助手</button></div>
      </details>
      <details class="settings-entry" id="settingsStorage">
@@ -312,87 +283,6 @@
   </div>
  </dialog>
 
- <dialog id="workSettingsDialog" class="modal workspace-view" aria-label="工作设置">
- <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workSettingsDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left"></span></button><h2>工作设置</h2></div>
- <div class="work-settings-content">
- <h3 class="work-settings-heading">模型与任务</h3><div class="work-model-toolbar" aria-label="工作专用模型设置">
-     <button type="button" class="work-model-choose" id="workModelChoose"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span class="work-model-ident"><span>工作模型</span><strong id="workSelectedModel">自动模式</strong></span><span class="ui-icon model-settings-chevron" data-icon="chevron-right" aria-hidden="true"></span></button>
-    </div>
- <div class="work-settings-group"><button type="button" class="work-setting-row" data-work-settings-view="steps"><span class="ui-icon" data-icon="list-checks" aria-hidden="true"></span><span class="work-setting-label"><strong>任务步骤</strong><small>自动安排</small></span><span class="ui-icon work-setting-arrow" data-icon="chevron-right" aria-hidden="true"></span></button></div>
- <h3 class="work-settings-heading">连接服务</h3>
- <div class="work-settings-group"><button type="button" class="work-setting-row" data-work-settings-view="github"><span class="ui-icon" data-icon="code-2" aria-hidden="true"></span><span class="work-setting-label"><strong>GitHub</strong><small>连接仓库</small></span><span id="workGithubState" class="work-setting-state">未核实</span><span class="ui-icon work-setting-arrow" data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="work-setting-row" data-work-settings-view="database"><span class="ui-icon" data-icon="database" aria-hidden="true"></span><span class="work-setting-label"><strong>Supabase</strong><small>只读数据库</small></span><span id="workDbState" class="work-setting-state">未核实</span><span class="ui-icon work-setting-arrow" data-icon="chevron-right" aria-hidden="true"></span></button></div>
- <p id="workConnectionsNotice" class="work-field-note" role="status"></p>
- <h3 class="work-settings-heading">任务工具</h3>
- <div class="work-settings-group"><button type="button" class="work-setting-row" data-work-settings-view="files"><span class="ui-icon" data-icon="file-text" aria-hidden="true"></span><span class="work-setting-label"><strong>仓库文件</strong><small>读取与修改</small></span><span class="ui-icon work-setting-arrow" data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="work-setting-row" data-work-settings-view="data"><span class="ui-icon" data-icon="scan" aria-hidden="true"></span><span class="work-setting-label"><strong>数据查询</strong><small>只读</small></span><span class="ui-icon work-setting-arrow" data-icon="chevron-right" aria-hidden="true"></span></button><button type="button" class="work-setting-row" data-work-settings-view="deploy"><span class="ui-icon" data-icon="zap" aria-hidden="true"></span><span class="work-setting-label"><strong>部署与运行</strong><small>工作流</small></span><span class="ui-icon work-setting-arrow" data-icon="chevron-right" aria-hidden="true"></span></button></div>
- </div></dialog>
- <dialog id="workServiceDialog" class="modal workspace-view" aria-label="工作配置">
- <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workServiceDialog" aria-label="返回工作设置"><span class="ui-icon" data-icon="arrow-left"></span></button><h2 id="workServiceTitle">工作配置</h2></div>
- <div class="work-settings-content" id="workServiceContent">
- <section data-work-service="steps" hidden><details class="work-config" id="workConfig">
-     <summary>任务步骤 <span id="workConfigSummary">按任务类型自动规划</span></summary>
-     <div class="work-config-body">
-      <div class="work-config-section"><div class="work-section-heading"><strong>站内执行模型</strong><span>默认自动安排，需要时再自定义。</span></div><div id="workStageEditor" class="work-stage-editor"></div><button type="button" class="work-add" id="workAddStage">+ 添加步骤</button></div>
-      <p class="work-model-explain">自动模式仅调用站内直接免费模型；个人 API 必须手动选择，失败后不会自动换线。</p>
-      <div class="work-config-foot"><button type="button" class="outline" id="workSaveConfig">保存任务配置</button><span id="workConfigMessage" role="status"></span></div>
-     </div>
-    </details></section>
- <section data-work-service="github" hidden><form id="workGithubForm" class="work-tool-card">
- <p id="workGithubInfo" class="work-connection-info">未核实</p>
- <div class="work-connect-modes" role="group" aria-label="连接方式">
- <button type="button" data-github-mode="public" aria-pressed="true">直接连接</button><button type="button" data-github-mode="key" aria-pressed="false">密钥连接</button>
- </div>
- <label>仓库地址<input id="workGithubRepo" placeholder="https://github.com/用户名/仓库名" required autocapitalize="off" spellcheck="false"></label>
- <p id="workGithubModeNote" class="work-field-note">公开仓库可直接连接，只读。</p><p class="work-field-note">执行代码任务时，会将相关源码片段发送给选定的 AI 模型分析。请勿连接无权共享的仓库。</p>
- <div id="workGithubKeyFields" hidden><label>访问密钥<input id="workGithubToken" type="password" autocomplete="off" placeholder="GitHub Token"></label><a class="work-help-link" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">获取 GitHub 密钥</a><p class="work-field-note">私有仓库、提交或部署需要对应权限。</p></div>
- <details class="work-connect-advanced"><summary>高级设置</summary><label>分支（留空使用默认分支）<input id="workGithubBranch" placeholder="默认分支" autocapitalize="off" spellcheck="false"></label></details>
- <div class="work-connect-actions"><button type="submit" class="primary">连接仓库</button><button type="button" class="outline" id="workGithubDisconnect" disabled>断开连接</button></div>
- </form></section>
- <section data-work-service="database" hidden><form id="workDbForm" class="work-tool-card">
-        <p id="workDbInfo">未连接</p><p>在 Supabase 项目的 Settings → API Keys 中复制公开密钥。只读权限由项目决定。</p>
-        <label>项目地址<input id="workDbRef" placeholder="https://项目编号.supabase.co" required></label>
-        <label>公开访问密钥<input id="workDbToken" type="password" placeholder="sb_publishable_… 或 anon key" autocomplete="off" required></label><details class="work-connect-advanced"><summary>高级设置（API 目录关闭时使用）</summary><label>用于验证的表名<input id="workDbTestTable" placeholder="填写允许读取的表名" autocapitalize="off" spellcheck="false"></label></details>
-        <div class="work-tool-actions"><button class="primary" type="submit">验证并连接数据库</button><button class="outline" type="button" id="workDbDisconnect">断开</button></div>
-       <a class="work-help-link" href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer">获取公开访问密钥</a></form></section>
- <section data-work-service="files" hidden><section class="work-tool-card">
-       
-       <div class="work-tool-actions"><input id="workRepoPath" placeholder="文件路径（留空查看目录）" aria-label="仓库文件路径"><button class="outline" type="button" id="workRepoRead">读取文件</button><button class="outline" type="button" id="workRepoContext">添加到任务</button></div>
-       <div id="workRepoEntries" class="work-tool-actions"></div><pre id="workRepoPreview" class="work-code-preview" hidden></pre>
-       <label>修改定位（可选）<input id="workPatchAnchor" placeholder="函数名或原文片段"></label>
-       <label>补充修改要求<input id="workPatchInstruction" placeholder="只修复目标代码，不改变无关功能"></label>
-       <button type="button" class="outline" id="workPropose">生成修改建议</button>
-       <div id="workDraftArea" hidden>
-        <h3>修改审核</h3><p id="workDraftMeta"></p>
-        <div class="work-diff"><div><strong>原文</strong><pre id="workDiffOld" class="work-code-preview"></pre></div><div><strong>替换建议</strong><pre id="workDiffNew" class="work-code-preview"></pre></div></div>
-        <button id="workCommit" type="button" class="primary">确认后提交到 GitHub</button>
-       </div>
-      </section></section>
- <section data-work-service="data" hidden><section class="work-tool-card">
-       
-       <div class="work-tool-actions"><input id="workDbTable" placeholder="输入表名" aria-label="数据库表名"><button type="button" class="outline" id="workDbPreview">查询前 5 行</button><button type="button" class="outline" id="workDbContext">添加到任务</button></div>
-       <pre id="workDbRows" class="work-code-preview" hidden></pre>
-      </section></section>
- <section data-work-service="deploy" hidden><section class="work-tool-card">
-       
-       <p>仅触发已经存在的工作流，不会自动判定部署成功。</p>
-       <div class="work-tool-actions"><input id="workWorkflow" placeholder="已有工作流，例如 deploy.yml"><button class="outline" type="button" id="workDeploy">启动部署</button><button class="outline" type="button" id="workRuns">查看结果</button></div>
-       <div id="workRunResults"></div>
-      </section></section>
- <p id="workToolStatus" class="work-service-status" role="status"></p>
- </div></dialog>
- <dialog id="workHistoryDialog" class="modal workspace-view" aria-label="历史工作">
- <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workHistoryDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left"></span></button><h2>历史工作</h2></div>
- <div class="work-settings-content"><div id="workTaskList" class="work-task-list"></div></div></dialog>
- <dialog id="workModelDialog" class="modal work-model-dialog" aria-label="独立的工作模型选择">
-  <div class="page-heading"><button type="button" class="close-modal page-back" data-close="workModelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>选择工作模型</h2></div>
-  <div class="work-model-dialog-content">
-  
-   <div class="work-current-model" aria-live="polite"><span>当前工作模型</span><strong id="workCurrentModelName">自动模式</strong><small id="workCurrentModelNote">实际免费模型由线路调度 · 与聊天独立</small></div>
-   <div id="workAutoChoice" class="model-mode-choice"></div>
-   <div id="workAgentCatalog" class="work-agent-catalog" aria-label="工作模型服务商"></div>
-   <div id="workSpecificChooser" class="work-specific-chooser" hidden></div>
-   <div id="workModelMessage" class="work-model-message" role="status"></div>
-  </div>
- </dialog>
  <dialog id="modelDialog" class="modal wide-modal workspace-view" aria-label="模型大厅">
   <div class="page-heading"><button class="close-modal page-back" data-close="modelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>模型大厅</h2><details id="chatModeMenu" class="model-header-menu"><summary aria-label="模型设置" title="模型设置"><span class="ui-icon" data-icon="settings" aria-hidden="true"></span></summary><div class="model-header-menu-panel"><button type="button" id="chatAutoChoice" class="model-mode-button"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span class="model-mode-text"><strong>自动模式</strong><small>后台切换直接免费模型</small></span><span id="chatAutoMark" class="model-mode-mark" aria-hidden="true"></span></button><button type="button" id="chatBoundChoice" class="model-mode-button"><span class="ui-icon" data-icon="link" aria-hidden="true"></span><span class="model-mode-text"><strong>已连接模型</strong><small>个人 API</small></span><span class="ui-icon" data-icon="chevron-right" aria-hidden="true"></span></button></div></details></div>
   <div class="page-content" id="modelScroll"><div class="model-mode-current"><span>当前聊天模型</span><strong id="chatModeCurrent">自动模式</strong></div>
