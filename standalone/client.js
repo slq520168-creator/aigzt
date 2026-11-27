@@ -4120,13 +4120,13 @@ function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,vid
  const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
  const format=tool==="sticker"||tool==="gif"?tool:mode==="text"&&provider==="free"&&!code&&!continueFrom?requestedMediaFormat(prompt):"";
  if(format){if(!compatible||attachments.length>(format==="gif"?2:1))return {error:"贴纸最多1张参考图，GIF最多2张"};if(format==="sticker")return {mode:"image",format,videoProvider,videoModel};const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";return {mode:"video",format,videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};}
- if(mode==="text"&&!code&&!continueFrom&&compatible){
+ if(mode==="text"&&!continueFrom&&compatible){
   if(provider==="free"&&isDirectVideoRequest(prompt)){
    if(attachments.length>2)return {error:"自动视频最多使用两张首尾帧图片"};
    const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
    return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
   }
-  if(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt)))return {mode:"image",videoProvider,videoModel};
+  if(!code&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image",videoProvider,videoModel};
  }
  return {mode,videoProvider,videoModel};
 }
@@ -4244,7 +4244,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false){
    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
   }
   // A completed response never changes the user's selected model.
-  if(loading.isConnected&&submittedMode==="text"&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
+  if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");await revealCompletedReply(loading,result.reply)}
   if(loading.isConnected){
    S.chatId=result.chatId;
    if(submittedMode==="text"){
