@@ -1531,12 +1531,45 @@ function isDirectVideoRequest(value){
  const p=String(value||"").trim();if(!p||/(?:不要|不用|禁止|无需|如何|怎么|为什么|能不能|是否|分析|识别|检查|解释|提示词|脚本|代码|教程|方案|文案|视频链接|下载|播放|搜索|查找)/.test(p))return false;
  return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:(?:生成|制作|创建|做|拍|渲染|合成|输出)(?:一段|一个|一条|一部|一支|短)?[^，。！？\n]{0,20}视频|(?:文生视频|图生视频|首尾帧视频)|(?:让|把).{1,35}(?:动起来|变成视频|做成视频))/.test(p)||/^(?:generate|create|make|animate)\b.{0,40}\b(?:video|clip|animation)\b/i.test(p);
 }
+// Distinguish a pasted visual prompt from requests to discuss or write prompts.
+function imagePromptDiscussion(value){
+ const s=String(value||"").trim().replace(/^[\s*#>]+/,"");
+ return /^(?:(?:请|麻烦|帮我|请你|你|给我)\s*){0,4}(?:不要|不用|无需|禁止|先别|不需要|只写|仅写|如何|怎么|为什么|能不能|是否|什么是|分析|识别|检查|解释|评价|翻译|总结|润色|优化|修改提示词|改写|转换提示词|写(?!实)|编写|提供|给出|整理|列出|查询|搜索|教我|请问|tell me\b|explain\b|analy[sz]e\b|translate\b|rewrite\b|improve\b|review\b|describe\b|what\b|why\b|how\b|do not\b|don't\b|write\s+(?:an?\s+)?(?:image\s+)?prompt)/i.test(s)||
+ /(?:只|仅)(?:写|生成|输出|提供|给出).{0,20}提示词|(?:写|提供|输出|整理|设计|生成|编写|给出|制作|优化).{0,24}(?:提示词|prompts?)\s*(?:[。！!？?]|$)|(?:不|别)(?:要)?(?:直接)?(?:生成|制作|画)(?:任何)?(?:图片|图像|照片|图)/i.test(s)&&!/^(?:根据|按照|使用|用|using|based on).{0,45}(?:提示词|prompt).{0,35}(?:生成|绘制|画|作图|generate|create)/i.test(s);
+}
+function pastedImagePrompt(value){
+ const raw=String(value||"").trim();
+ if(!raw||imagePromptDiscussion(raw))return false;
+ if(/^\s*(?:def |class |function |const |let |var |import |export |SELECT\s|CREATE\s|<\/?\w|#!|package\s|return\s|\{|\[)/m.test(raw))return false;
+ const fences=Array.from(raw.matchAll(/^\s*(?:\x60{3,}|~{3,})\s*([\w+-]*)\s*$/gm));
+ if(fences.some(x=>! /^(?:text|plaintext|txt|image-prompt|prompt-set)?$/i.test(x[1])))return false;
+ if(/^(?:[#*\s>-]*)(?:视频|音乐|音效|音频|video|music|audio)\s*(?:生成|正向)?\s*(?:提示词|prompt)/im.test(raw))return false;
+ const labels=raw.split("\n").map(imagePromptLabel).filter(Boolean);
+ if(labels.length&&labels.every(x=>x.negative))return false;
+ const body=raw.replace(/^\s*(?:\x60{3,}|~{3,})(?:image-prompt|prompt-set|text|plaintext|txt)?\s*$/gim,"").trim();
+ const groups=[
+ /(?:photorealistic|ultra.realistic|hyper.realistic|写实|超写实|真实摄影|真实感|摄影|photography|realistic photo|8k|4k|high.resolution|高清)/i,
+ /(?:portrait|full.body|half.body|close.up|wide.shot|medium.shot|人像|人物|全身|半身|特写|近景|远景|俯拍|仰拍|构图|composition)/i,
+ /(?:lighting|light\s+(?:and|from)|soft light|golden hour|bokeh|光线|光影|灯光|逆光|柔光|自然光|景深)/i,
+ /(?:lens|camera|aperture|[0-9]{2,3}\s*mm|f\/[0-9]|镜头|相机|光圈|胶片)/i,
+ /(?:background|scenery|setting|scene|environment|背景|场景|海边|街道|室内|户外)/i,
+ /(?:wearing|outfit|clothing|hair|hairstyle|pose|expression|服装|穿着|身穿|发型|长发|短发|姿势|表情|动作)/i,
+ /(?:anime|illustration|digital art|watercolor|oil painting|3d render|cinematic|插画|动漫|卡通|水彩|油画|电影感|渲染|艺术风格)/i
+ ];
+ const score=groups.reduce((n,re)=>n+Number(re.test(body)),0);
+ const structured=/(?:image[- ]prompt|prompt[- ]set|(?:正向|中文|英文|图片|图像|作图|绘图|摄影)\s*提示词|(?:positive|image|english|chinese)\s*prompt)\s*(?:[:：*]|\n)/i.test(raw);
+ const separators=(body.match(/[,，、;；\n]/g)||[]).length;
+ if(/(?:[?？]\s*$|请问|你觉得|什么意思|有什么区别|有什么问题|能不能|是否可以|怎么做|如何做|请告诉我|告诉我|what is|how to|why does|could you explain)/i.test(body))return false;
+ return structured&&score>=1&&body.length>=18||labels.some(x=>!x.negative)&&score>=2&&body.length>=18||body.length>=25&&score>=3&&(separators>=2||/(?:8k|4k|photorealistic|超写实|高清摄影|真实人体摄影)/i.test(body));
+}
 function isDirectImageRequest(value){
- const s=String(value||"").trim();if(!s)return false;
- if(/(?:只|仅|不要|不用|无需|禁止|先别|不需要)(?:直接)?(?:生成|制作|画|绘制)(?:任何)?(?:图片|图像|照片|图)|(?:只|仅)(?:写|生成|输出|提供|给出).{0,16}提示词|(?:怎么|如何|为什么|能不能|是否|什么是).{0,24}(?:作图|画图|生成图片)/.test(s))return false;
- if(/(?:写|提供|输出|整理|设计|生成|编写|给出|制作).{0,24}(?:提示词|prompts?)/i.test(s)&&!/(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画|作图)/.test(s))return false;
+ const s=String(value||"").trim();
+ if(!s||imagePromptDiscussion(s))return false;
  if(/(?:写|生成|输出|提供).{0,20}(?:代码|网页|网站|功能|按钮|指令|视频|文章|故事)/.test(s))return false;
- return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:画(?:一张|一幅|个|出|一下)?|绘制|作图|生成(?:一张|一幅|一组|一套)?(?:图片|图像|照片|写真|海报|插画|头像|壁纸|人物图|效果图)|制作(?:一张|一幅)?(?:图片|图像|照片|海报|头像|壁纸))/.test(s)||/^(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画)(?:一张|一幅)?(?:图片|图像|照片)/.test(s);
+ if(/(?:画图|作图|绘图|生成图片).{0,6}(?:提示词|prompts?)\s*$/i.test(s))return false;
+ return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:画(?:一张|一幅|个|出|一下)?|绘制|作图|(?:生成|制作|创建|设计)(?:一张|一幅|一组|一套|一个)?[^，。！？\n]{0,25}?(?:图片|图像|照片|写真|海报|插画|头像|壁纸|人物图|效果图))/.test(s)||
+ /^(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画|作图)/.test(s)||
+ /^(?:please\s+)?(?:generate|create|draw|make|render|paint)\b.{0,40}\b(?:image|picture|photo|portrait|illustration|poster|artwork|wallpaper)\b/i.test(s);
 }
 function renderAssistantText(bubble,answer,imageContext=false){
  const lines=normalizePromptSections(normalizeAssistantMarkdown(answer),imageContext);
@@ -4074,7 +4107,7 @@ function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,vid
    const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
    return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
   }
-  if(isDirectImageRequest(prompt))return {mode:"image",videoProvider,videoModel};
+  if(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt)))return {mode:"image",videoProvider,videoModel};
  }
  return {mode,videoProvider,videoModel};
 }
