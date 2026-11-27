@@ -3924,8 +3924,9 @@ function renderWorkDetail(){
  const progress=$("workProgress");progress.replaceChildren();progress.classList.toggle("is-running",running);
  const coverage=task.coverage;
  const progressHead=node("div","work-progress-head");progressHead.append(node("strong","",coverage?"源码检查进度":"任务进度"),node("small","",coverage?coverage.checked+" / "+coverage.total+" 文件":Math.min(task.nextStep,task.totalSteps)+" / "+task.totalSteps));
- const meter=node("div","work-progress-meter"),fill=node("span","work-progress-fill");const total=Math.max(1,coverage?.total||task.totalSteps),doneCount=Math.max(0,Math.min(coverage?.checked??task.nextStep,total));
+ const meter=node("div","work-progress-meter"),fill=node("span","work-progress-fill");const total=Math.max(1,coverage?.total||task.totalSteps),fraction=coverage?.partialTotal>0?Math.min(1,coverage.partial/coverage.partialTotal):0,doneCount=Math.max(0,Math.min((coverage?.checked??task.nextStep)+fraction,total));
  meter.setAttribute("role","progressbar");meter.setAttribute("aria-label","已完成步骤");meter.setAttribute("aria-valuemin","0");meter.setAttribute("aria-valuemax",String(total));meter.setAttribute("aria-valuenow",String(doneCount));fill.style.width=(doneCount/total*100)+"%";meter.append(fill);progress.append(progressHead,meter);
+ if(coverage){const detail="已完成 "+coverage.batches+" 批"+(coverage.currentFile?" · 当前 "+coverage.currentFile+(coverage.partialTotal?" "+Math.floor(fraction*100)+"%":""):"");progress.append(node("small","work-step-name",detail));}
  for(let i=0;i<task.totalSteps;i++){
   const configured=task.steps?.[i],name=configured?.name||WORK_LABELS[i]||"步骤 "+(i+1),done=i<task.nextStep,active=i===task.nextStep&&!["completed","cancelled"].includes(task.status);
   const item=node("div","work-progress-step"+(done?" done":active?" current":""));
@@ -3977,6 +3978,9 @@ async function startWorkTask(){
  if(S.workBusy)return;
  if(!S.user){show("authDialog");return}
  const prompt=$("prompt").value.trim();if(prompt.length<3){flashError("请描述需要完成的任务");return}
+ if(/^(?:继续|继续检查|继续执行|接着检查|接着执行)[。！!\s]*$/.test(prompt)&&S.workDetail?.task?.id&&["pending","paused","running"].includes(S.workDetail.task.status)){
+  $("prompt").value="";settlePromptSize();void executeWorkTask(S.workDetail.task.id);return;
+ }
  const executionMode=workExecutionMode;
  const selection=workModelPreference||{provider:"auto",model:""};
  const steps=S.workTaskId?[{name:"规划",instruction:"理解需求，明确任务与交付内容",...selection},{name:"制作",instruction:"根据规划完成可用成果",...selection},{name:"检查交付",instruction:"核对并修正问题，提供最终成果",...selection}]:S.workStages;
@@ -4015,6 +4019,10 @@ async function executeWorkTask(id){
    if(!d.task?.coverage)await fetchWorkTasks();
    const t=d.task;
    if(!t||t.status==="completed"||t.status==="paused"||t.status==="cancelled")break;
+   if(t.coverage?.retryAt>Date.now()){
+    while(epoch===S.workEpoch&&Date.now()<t.coverage.retryAt){$("workState").textContent="模型限流 · "+Math.ceil((t.coverage.retryAt-Date.now())/1000)+"秒后自动继续";await new Promise(resolve=>setTimeout(resolve,Math.min(1000,Math.max(1,t.coverage.retryAt-Date.now()))));}
+    if(epoch!==S.workEpoch)break;
+   }
   }
  }catch(e){
   if(epoch===S.workEpoch){workActiveRequest=null;const message="暂时无法继续："+humanError(e);try{const latest=await api("/api/work/tasks/"+id);if(epoch===S.workEpoch)S.workDetail=latest}catch{}if(epoch===S.workEpoch){renderWorkDetail();flashError(message)}}
