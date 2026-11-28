@@ -734,36 +734,42 @@ async function externalModelFailure(res){
 async function readChatCompletionStream(res,model,onDelta){
   if(!res.body)throw Object.assign(Error("上游没有返回流式数据"),{code:"UPSTREAM_EMPTY"});
   const reader=res.body.getReader(),decoder=new TextDecoder();
-  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null,usage=null;
+  let buffer="",content="",upstreamModel=model,complete=false,finishReason=null,usage=null,transportInterrupted=false;
+  const acceptToken=token=>{if(typeof token==="string"&&token&&content.length<CHAT_REPLY_CHARS){const piece=token.slice(0,CHAT_REPLY_CHARS-content.length);content+=piece;if(content.trim())onDelta(piece)}};
+  const acceptEvent=event=>{
+   if(event.error)throw Object.assign(Error("模型流式回复中断"),{code:"UPSTREAM_ERROR"});
+   if(typeof event.model==="string")upstreamModel=event.model;
+   const measured=verifiedTokenUsage(event);if(measured)usage=measured;
+   if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
+   const delta=event.choices?.[0]?.delta||event.choices?.[0]?.message||{};
+   const token=typeof delta.content==="string"?delta.content:Array.isArray(delta.content)?delta.content.map(x=>x?.text||"").join(""):"";
+   acceptToken(token|| (typeof delta.refusal==="string"?delta.refusal:""));
+  };
+  const acceptLine=line=>{
+   line=line.trim();if(!line.startsWith("data:"))return;
+   const data=line.slice(5).trim();if(data==="[DONE]"){complete=true;return}
+   let event;try{event=JSON.parse(data)}catch{return}acceptEvent(event);
+  };
   try{
-  while(!complete){
-   const {done,value}=await reader.read();
-   if(done)break;
-   buffer+=decoder.decode(value,{stream:true});
-   if(buffer.length>350000)throw Error("上游回复超过流式安全上限");
-   let end;
-   while((end=buffer.indexOf("\n"))>=0){
-    const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);
-    if(!line.startsWith("data:"))continue;
-    const data=line.slice(5).trim();
-    if(data==="[DONE]"){complete=true;break}
-    let event;try{event=JSON.parse(data)}catch{continue}
-    if(event.error)throw Object.assign(Error("模型流式回复中断"),{code:"UPSTREAM_ERROR"});
-    if(typeof event.model==="string")upstreamModel=event.model;
-    const measured=verifiedTokenUsage(event);if(measured)usage=measured;
-    if(typeof event.choices?.[0]?.finish_reason==="string")finishReason=event.choices[0].finish_reason;
-    const delta=event.choices?.[0]?.delta?.content;
-    const token=typeof delta==="string"?delta:Array.isArray(delta)?delta.map(x=>x?.text||"").join(""):"";
-    if(token&&content.length<CHAT_REPLY_CHARS){
-     const piece=token.slice(0,CHAT_REPLY_CHARS-content.length);
-     content+=piece;if(content.trim())onDelta(piece);
-    }
+  const jsonResponse=/^application\/(?:[^;]+\+)?json(?:;|$)/i.test(res.headers?.get?.("content-type")||"");
+  if(jsonResponse){
+   let raw="";for(;;){const {done,value}=await reader.read();if(done)break;raw+=decoder.decode(value,{stream:true});if(raw.length>350000)throw Error("上游回复超过安全上限")}
+   raw+=decoder.decode();acceptEvent(JSON.parse(raw));complete=true;
+  }else{
+   while(!complete){
+    const {done,value}=await reader.read();if(done){buffer+=decoder.decode();if(buffer.trim())acceptLine(buffer);break}
+    buffer+=decoder.decode(value,{stream:true});
+    if(buffer.length>350000)throw Error("上游回复超过流式安全上限");
+    let end;while((end=buffer.indexOf("\n"))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);acceptLine(line);if(complete)break}
    }
   }
-  }catch(error){if(!content.trim())throw Object.assign(Error("服务商回复中断"),{code:error?.code||"UPSTREAM_NETWORK"});}
+  }catch(error){transportInterrupted=true;if(!content.trim()&&finishReason!=="content_filter")throw Object.assign(Error("服务商回复中断"),{code:error?.code||"UPSTREAM_NETWORK"});}
   finally{void reader.cancel().catch(()=>{})}
+  // A policy outcome is final, not a broken connection. Never retry it on another model.
+  if(!content.trim()&&finishReason==="content_filter")return {content:"无法提供该内容。",actualModel:upstreamModel,usage,incomplete:false};
   if(!content.trim())throw Object.assign(Error(finishReason==="length"||finishReason==="max_tokens"?"模型输出额度耗尽，未生成可见内容":"服务商没有返回有效文字"),{code:"UPSTREAM_EMPTY"});
-  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:!complete||replyWasLimited(finishReason)||content.length>=CHAT_REPLY_CHARS};
+  const terminal=complete||["stop","end_turn","content_filter"].includes(finishReason);
+  return {content:content.trim(),actualModel:upstreamModel,usage,incomplete:finishReason==="content_filter"?false:!terminal||replyWasLimited(finishReason)||content.length>=CHAT_REPLY_CHARS||(transportInterrupted&&!terminal)};
 }
 async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,maxTokens=750,onDelta=null,outputImages=false,imageOnly=false,inputParts=[],chatDeadline=null,zeroOnly=false,policy=null){
  requireModelId(model);
@@ -924,7 +930,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
  const states=await freeRouteStates(env),now=Date.now();
  const isAuto=sharedAuto&&preferred==="free:auto";
  // Standard conversation reaches the existing Groq fast route without waiting on the external catalog.
- const base=freeSources(env),fast=isAuto&&mode!=="code"&&replyLevel!=="long"?base.filter(s=>s.id==="groq"&&s.key):[];
+ const base=freeSources(env),fast=isAuto&&mode!=="code"?base.filter(s=>s.id==="groq"&&s.key):[];
  const blockedProviders=new Set(),attemptedRoutes=new Set();
  const eligible=s=>(!authenticatedOnly||Boolean(s.key))&&!blockedProviders.has(s.id)&&!attemptedRoutes.has(s.routeKey||s.id)&&(states.get(s.routeKey||s.id)?.cool_until||0)<=now;
  async function* candidates(){
@@ -959,7 +965,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
   const controller=new AbortController();
   const totalMs=Math.min(streaming?Math.max(source.ms,replyLevel==="long"?65000:35000):isAuto?Math.min(source.ms,9000):source.ms,remaining);
   const totalTimer=setTimeout(()=>controller.abort(),totalMs);
-  const firstMs=Math.min(totalMs,replyLevel==="long"||mode==="code"?9000:6000);
+  const firstMs=Math.min(totalMs,replyLevel==="long"||mode==="code"?14000:8000);
   const firstTimer=isAuto&&streaming?setTimeout(()=>controller.abort(),firstMs):null;
   const clearFirst=()=>{if(firstTimer!==null)clearTimeout(firstTimer)};
   try{
@@ -979,7 +985,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    }
    if(streaming){
     const result=await readChatCompletionStream(res,source.model,token=>{if(!visible&&token.trim()){visible=true;clearFirst()}if(visible)onDelta(token)});
-    await freeRouteRecover(env,routeKey,sourceState);
+    if(!result.incomplete)await freeRouteRecover(env,routeKey,sourceState);
     return {...result,actualModel:source.id+"/"+String(result.actualModel||source.model).slice(0,90),source:source.id};
    }
   let out;
@@ -987,8 +993,9 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
    await freeRouteFailure(env,routeKey,502,sourceState,res.headers);
    errors.push(source.id+" 响应格式异常");continue;
   }
-  const content=source.query?(out?.success===true?out.response:null):out?.choices?.[0]?.message?.content;
+  const content=source.query?(out?.success===true?out.response:null):(out?.choices?.[0]?.message?.content||out?.choices?.[0]?.message?.refusal);
   const answer=typeof content==="string"?content:Array.isArray(content)?content.map(x=>x?.text||"").join("\n"):"";
+  if(!answer.trim()&&out?.choices?.[0]?.finish_reason==="content_filter")return {content:"无法提供该内容。",actualModel:source.id+"/"+String(out?.model||source.model).slice(0,90),usage:verifiedTokenUsage(out),source:source.id,incomplete:false};
   if(!answer.trim()){
    await freeRouteFailure(env,routeKey,502,sourceState,res.headers);
    errors.push(source.id+" 空响应");continue;
@@ -1188,7 +1195,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
  if(context.length&&messages.length)messages[messages.length-1]={...messages[messages.length-1],body:message+"\n\n"+context.join("\n\n")};
  // Native attachment bytes are transmitted only to the chosen compatible API, never written into chat history.
  const mode=body.mode==="code"?"code":"general";
- if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。不要虚构执行状态。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。"});
+ if(mode==="general")messages.unshift({role:"system",body:"你正在普通聊天界面与用户交流。不要虚构执行状态。用户明确要求详细说明、写作成稿或完整代码时，应满足其要求。使用用户当前消息的语言回答；中文问题默认用中文，包括必要的限制说明。用户要求其他语言的内容时按要求输出。遵循适用安全规则，不将正常创作任务误判为网络故障。"});
  const levelInstruction={short:"简短回复：先回答核心问题，只保留必要的要点，不冗长。",standard:"标准回复：自然对话，说明关键原因、步骤和必要细节。",long:"详细回复：全面回答，包含充分的解释、可执行步骤和必要边界条件，不随意省略关键内容。"}[replyLevel];
  messages.unshift({role:"system",body:levelInstruction+" 用户当前明确要求的内容优先，尤其不能截断完整代码、写作成稿和必需数据。"});
  const custom=await dbGet(env.DB,"SELECT instruction FROM model_directives WHERE user_id=? AND provider=? AND model_id=?",user.id,provider,model);

@@ -3956,7 +3956,8 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading});
   });
   retry.append(node("span","",automaticTurn?"继续":"重试"));
-  const detail=automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):humanError(e);
+  const transient=["UPSTREAM_NETWORK","UPSTREAM_EMPTY","UPSTREAM_ERROR","FREE_FALLBACK_FAILED","RATE_LIMIT","CAPACITY"].includes(e?.code);
+  const detail=automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):transient?"消息已保留":humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?(automaticTurn?"已保留当前内容":"回复中断，已保留收到的内容"):detail),retry);
   if(submittedMode==="text"&&requestProvider!=="free"){
    const alternate=messageTool("layers","手动使用免费自动重试",()=>{
