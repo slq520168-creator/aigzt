@@ -6,3 +6,5 @@ test("generation stays separate from normal chat and supports real MP4 download"
 test("video preview clears at account change",()=>{assert.match(c,/resetVideoProjectOwner\(uid\)/);assert.match(c,/function resetVideoProjectOwner\(owner\)[\s\S]*?clearVideoProjectOutput\(\)/)});
 
 test("film mode sends a true cinematic-shot request with null optional media",()=>{const a=f.videoProjectArgs("a train","landscape",8,"film");assert.match(a[0],/Cinematic single continuous shot/);assert.match(a[0],/a train/);assert.equal(a[2],null);assert.equal(a[3],null);assert.equal(a[7],8);assert.match(c,/mode:videoProjectMode/);assert.match(c,/videoProjectStopPending/);assert.match(w,/VIDEO_PROJECT_POLL_LEASE/);assert.match(c,/重新读取视频/)});
+
+test("known video event or delivery survives transient network errors without resubmission",()=>{assert.match(w,/function videoProjectResumeQueued/);assert.match(w,/ref.phase==="queued"\|\|ref.phase==="delivered"\)return videoProjectResumeQueued/);assert.match(w,/phase:"delivered",url:result.url/);assert.match(w,/\["queued","delivered"\].includes\(ref.phase\)/);assert.match(w,/原免费视频任务已失效，未重复提交/);assert.match(c,/正在验证文件/)});

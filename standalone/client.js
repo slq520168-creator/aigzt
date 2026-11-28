@@ -843,7 +843,7 @@ async function runVideoProject(owner,epoch,id){
   if(!videoProjectCurrent(owner,epoch))return;
   if(result.status==="complete"){await deliverVideoProject(owner,epoch,id)}
   else if(result.status==="failed"){videoProjectUI(result.cancelled?"已停止生成":result.error||"免费视频服务暂不可用",false);videoProjectJob=null}
-  else{videoProjectUI(result.phase==="new"?"等待提交免费模型…":result.phase==="submitting"?"正在连接免费模型…":"生成中 · 共享 GPU 排队",true);again=true;delay=Math.max(1500,Math.min(15000,(result.waitSeconds||3)*1000))}
+  else{const kind=result.mode==="film"?"电影镜头":"视频";videoProjectUI(result.phase==="delivered"?kind+"已生成，正在验证文件…":result.phase==="new"?"等待提交免费模型…":result.phase==="submitting"?"正在连接免费模型…":kind+"生成中 · 共享 GPU 排队",true);again=true;delay=Math.max(1500,Math.min(15000,(result.waitSeconds||3)*1000))}
  }catch(e){
   if(videoProjectCurrent(owner,epoch)){videoProjectUI("连接中断，保留原任务并继续查询",true);again=true;delay=12000}
  }finally{
