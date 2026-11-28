@@ -3119,7 +3119,7 @@ function updateComposerModel(){
  if(!line||!name||!switcher)return;
  const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
  line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
- const active=isAutoChatModel()?(readModelPref(chatModelStorageKey(S.user?.id||"")+":auto-display")?.name||"自动选模"):String(S.modelTitle||S.model||"选择模型").replace(/^free:or\//,"");
+ const active=isAutoChatModel()?(readModelPref(chatModelStorageKey(S.user?.id||"")+":auto-display")?.name||"模型"):String(S.modelTitle||S.model||"选择模型").replace(/^free:or\//,"");
  name.classList.toggle("is-auto-model",S.provider==="free"&&S.model==="free:auto");
  name.textContent=S.miniToolChoice==="sticker"?"贴纸":imageMode?(S.miniToolChoice==="image-edit"?"图生图 · 上传参考图":"免费作图"):videoMode?(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频"):S.code?"代码 · "+active:active;
  name.title=imageMode?"图片生成或修改将在当前聊天展示":videoMode?"正在使用"+(VIDEO_PROVIDER_NAMES[S.videoProvider]||"视频")+"，点击模型图标返回聊天":S.code?"代码模式 · "+active:"当前聊天选择："+active;
