@@ -10,3 +10,10 @@ Cloudflare Worker：aigzt-standalone；独立 D1 与 R2，禁止复用 IM、YOUX
 - 新版提交以稳定请求 ID 预留去重记录，已完成请求复用结果；不确定请求不重复执行。历史会话切换按请求版本和账户校验。
 ## 部署与验收
 只更新 standalone 四个运行文件的内嵌构建；保留现有 Worker 绑定和独立数据库。新增表见 migrations/20261128-workbench-stability.sql，Worker 有幂等初始化保护。禁止提交密钥。正式手机端真实登录、生成、录音和网络切换必须单独验证；源码测试不等于端到端通过。
+
+## 安全与缓存
+- 自动聊天只使用已配置合法密钥的 Groq / OpenRouter，不向未授权公共聊天中转发送消息。未配置时不能承诺自动聊天可用。
+- 个人 API Key 按账户 AES-GCM 加密存储，Worker 持有服务端主密钥，调用时可以解密；不是仅用户可解密。不得将密钥写入代码或日志。
+- 图片下载限制固定来源主机，不跟随重定向；图片提交复用 RATE 绑定，未新增每日收费或每日次数限制。
+- HTML 保持 no-store；JS/CSS 使用版本化 URL 缓存。每次静态内容变化必须同步更新 ASSET_VERSION 与 HTML 引用。
+- 本地构建：`node standalone/build.mjs`。部署仍使用现有独立 Worker 和原绑定。

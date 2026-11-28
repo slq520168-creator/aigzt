@@ -3492,7 +3492,6 @@ function isPerchanceTool(item){
  try{return new URL(item.url).hostname==="perchance.org"||item.provider==="Perchance 社区"}catch{return false}
 }
 const PERCHANCE_CREATOR_PATHS=new Set(["/fur-ai","/ai-character-chat","/ai-character-chat-extended","/ai-character-generator","/ai-chat-roleplay-v2","/ai-character-description"]);
-const freeToolLogoLoads=new Map();
 function freeToolGraphic(item){
  const graphic=node("span","free-tool-icon");graphic.setAttribute("aria-hidden","true");
  let hostname=null;try{hostname=item.url?new URL(item.url).hostname:null}catch{}
@@ -3501,20 +3500,7 @@ function freeToolGraphic(item){
  const fallback=node("span","free-tool-icon-fallback");
  fallback.innerHTML='<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(ICONS[glyph]||ICONS.blocks)+'</svg>';
  graphic.append(fallback);
- if(isPerchanceTool(item))return graphic;
- const domain=repair?repair.domain:hostname;
- if(domain){
-  let load=freeToolLogoLoads.get(domain);
-  if(!load){
-   load=new Promise(resolve=>{const img=new Image();img.referrerPolicy="no-referrer";
-    img.onload=()=>resolve(img.naturalWidth>=24&&img.naturalHeight>=24?img.src:null);
-    img.onerror=()=>resolve(null);img.src="https://www.google.com/s2/favicons?domain="+encodeURIComponent(domain)+"&sz=64";
-   });freeToolLogoLoads.set(domain,load);
-  }
-  void load.then(src=>{if(!src)return;const logo=node("img","free-tool-logo");logo.alt="";logo.width=32;logo.height=32;logo.referrerPolicy="no-referrer";
-   logo.onload=()=>graphic.classList.add("has-logo");logo.onerror=()=>logo.remove();graphic.append(logo);logo.src=src;
-  });
- }
+
  return graphic;
 }
 function renderFreeTools(){

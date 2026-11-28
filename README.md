@@ -1,6 +1,6 @@
 # aigzt · AI 聚合工作台
 
-基于 React + TypeScript + Vite 构建的网页版、手机版 AI 统一工作台。当前以 **Tiniest Cloud 草稿预览**，正式站未发布。
+基于 React + TypeScript + Vite 构建的网页版、手机版 AI 统一工作台。此目录描述历史 React/Tiniest Cloud 实现；正式站为 [IMAI 独立工作台](https://aigzt.youxuansi.online)，见 `standalone/README.md`。
 
 ## 功能
 
@@ -32,7 +32,7 @@ npm run build
 5. 在模型中心点击「检测并获取模型」，成功后 AI 对话页的 FreeLLMAPI 引擎可选择。
 6. 若网关出错，界面明确返回错误，不会无提示改用其他收费模型。内部免费配额的切换由 FreeLLMAPI 处理。
 
-**安全约束：**严禁将任何 API Key、统一网关密钥、环境变量文件或真实令牌提交到此公开仓库。网页不存储密钥。不要将 87 家服务商的理论总容量视作已经获得的使用额度。
+**安全约束：**严禁将任何 API Key、统一网关密钥、环境变量文件或真实令牌提交到此公开仓库。历史 React 实现与正式站的密钥托管机制不同；正式站以 standalone 文档为准。不要将 87 家服务商的理论总容量视作已经获得的使用额度。
 
 ## 部署规则
 
@@ -50,7 +50,7 @@ FreeLLMAPI 原项目：[tashfeenahmed/freellmapi](https://github.com/tashfeenahm
 
 - 默认入口先选择 FREE 智能调度：站点免费线路优先，故障时只切有限配额的内置 AI 备用，不自动走付费线路。
 - 当前真实免费来源不能等同 FreeLLMAPI 理论声称的 87 家与 1313 个端点。OpenRouter 免费路由尚需有效服务商密钥，Groq/Cerebras 公共应用许可未核准，所以不会假报全部在线。
-- 普通用户可以在设置中通过 OpenRouter 账号授权，或使用个人 OpenAI/Grok/Gemini/千问等 API Key；密钥只在本人浏览器内存中，选择加密保存后才写入本人云端密文。
+- 普通用户可以在设置中通过 OpenRouter 账号授权，或使用个人 OpenAI/Grok/Gemini/千问等 API Key；历史 React 实现支持本地密钥及可选云端密文；正式站由服务端加密托管并在调用时解密，不是端到端加密。
 - GPT/Grok 等文本与创作媒体调用通过独立的 Cloudflare BYOK Worker 中转，不借用站长付费密钥；媒体请求需要单次费用确认。
 - 免费池 Tiniest Cloud 后端函数重命名为 `freerouter`，以避免下划线函数文件未被部署平台识别的问题。该改动已提交源代码，但还需发布并完成 `run_function` 实测；不要把构建通过当作正式验证。
 - Tiniest Cloud 免费每日源码构建次数已达上限，本轮不再重复尝试；当前源码修复放在 GitHub main，正式版本继续保持已有发布状态。

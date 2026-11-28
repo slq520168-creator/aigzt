@@ -10,7 +10,7 @@
  <meta name="description" content="IMAI 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
  <title>IMAI · AI 聚合工作台</title>
  <script>(function(){var r=document.documentElement;if(!/iPhone|iPad|iPod/i.test(navigator.userAgent)||!(navigator.standalone===true||matchMedia("(display-mode: standalone)").matches))return;r.classList.add("aigzt-ios-pwa");var rainbow=true;try{rainbow=localStorage.getItem("aigzt:rainbow")!=="0"}catch(e){}if(rainbow)r.classList.add("pwa-boot-rainbow");var h=Math.round(Math.max(innerHeight,visualViewport?visualViewport.height:0)),sh=screen.height;if(sh>=h&&sh-h<=96)h=sh;if(h>0)r.style.setProperty("--aigzt-pwa-height",h+"px")})();</script>
- <link rel="stylesheet" href="/style.css"><script src="/app.js?v=547-attachments" defer></script>
+ <link rel="stylesheet" href="/style.css?v=548-security-performance"><script src="/app.js?v=548-security-performance" defer></script>
 </head>
 <body>
  <div class="shell" id="shell">
@@ -240,7 +240,7 @@
      </details>
      <details class="settings-entry" id="settingsConnections">
       <summary class="settings-row"><span class="settings-entry-icon"><span class="ui-icon" data-icon="link" aria-hidden="true"></span></span><span class="settings-row-text"><strong>AI 连接与授权</strong><small>查看和管理已保存的服务商连接</small></span><span class="settings-chevron ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary>
-      <div class="settings-entry-body"><p class="settings-hint">密钥由网站现有的加密连接功能管理，付费调用必须单独授权。</p><button class="outline full" type="button" id="settingsOpenConnections">管理 AI 连接</button></div>
+      <div class="settings-entry-body"><p class="settings-hint">密钥由本网站服务端加密托管。自动聊天内容会提交给已配置的 Groq 或 OpenRouter；免费作图描述会提交给所选外部作图服务。付费调用必须单独授权。</p><button class="outline full" type="button" id="settingsOpenConnections">管理 AI 连接</button></div>
      </details>
     </div>
    </section>
@@ -320,7 +320,7 @@
    <label id="manualModelWrap" hidden>模型 ID（仅在目录不可用时填写）<input id="manualModel" type="text" autocomplete="off" spellcheck="false" placeholder="官方模型 ID"></label>
    <button type="submit" class="primary full" id="keySaveLabel">加密保存密钥</button>
   </details>
-  <p class="small-note">密钥仅加密保存到当前账号，可随时更换或删除。</p>
+  <p class="small-note">密钥由本网站服务端加密保存，调用所选服务商时由服务端解密；并非仅本人可解密。可随时更换或删除。</p>
   <p id="keyStatus" class="form-message" role="status"></p>
   <button type="button" class="outline full" id="disconnectProvider" hidden>删除已保存密钥</button>
  </form>
