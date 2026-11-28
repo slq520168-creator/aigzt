@@ -894,7 +894,7 @@ function filmSequenceCurrent(owner,epoch){return owner===S.user?.id&&owner===fil
 function saveFilmSequence(){if(!filmSequence||!filmSequenceOwner)return;try{localStorage.setItem(filmSequenceKey(filmSequenceOwner),JSON.stringify(filmSequence))}catch{throw Error("无法保存创作进度，请检查本机存储")}}
 function filmSequenceDelay(ms){return new Promise(r=>setTimeout(r,ms))}
 function filmSequenceUI(message){
- const q=filmSequence,root=$("filmSequenceRows");$("filmSequenceProgress").hidden=!q;$("filmDirectVideo").disabled=filmSequenceRunning;$("filmSequenceStop").hidden=!filmSequenceRunning;$("filmSequenceResume").hidden=!q||filmSequenceRunning||q.phase==="complete";
+ const q=filmSequence,root=$("filmSequenceRows");$("filmSequenceProgress").hidden=!q;$("filmDirectVideo").disabled=filmSequenceRunning;$("filmSequenceStop").hidden=!q||q.phase==="complete"||q.phase==="stopped";$("filmSequenceStop").disabled=filmSequenceStopRequested;$("filmSequenceResume").hidden=!q||filmSequenceRunning||q.phase==="complete";
  $("filmSequenceStatus").textContent=message||q?.message||"";root.replaceChildren();
  if(!q)return;
  const finished=q.clips.filter(x=>x.state==="complete").length;$("filmSequenceBar").value=q.phase==="complete"?100:q.clips.length?Math.floor(10+80*finished/q.clips.length):0;
@@ -925,7 +925,7 @@ async function restoreFilmSequence(){
  filmSequenceUI();
 }
 async function startFilmSequence(){
- if(filmSequenceRunning||filmPlanBusy||videoProjectJob||videoProjectSubmitting)return;
+ if(filmSequenceRunning||filmSequenceStopRequested||filmPlanBusy||videoProjectJob||videoProjectSubmitting)return;
  if(!S.user){show("authDialog");return}
  if(!filmPrefs?.accepted){openFilmSettings();$("filmSettingsStatus").textContent="请先确认服务授权";return}
  const prompt=$("filmPlanPrompt").value.trim(),choice=$("filmQuickDuration").value,seconds=Number(choice==="custom"?$("filmCustomDuration").value:choice);
@@ -1002,7 +1002,7 @@ async function sequenceEdit(owner,epoch,q){
  q.phase="complete";q.message="成片已完成";saveFilmSequence();await filmSequenceOutput(owner,epoch,q,blob);
 }
 async function runFilmSequence(){
- if(filmSequenceRunning||!filmSequence||!S.user)return;
+ if(filmSequenceRunning||filmSequenceStopRequested||!filmSequence||!S.user)return;
  const owner=S.user.id,epoch=++filmSequenceEpoch,q=filmSequence;filmSequenceRunning=true;filmSequenceStopRequested=false;
  try{
   if(q.phase==="complete")return;
@@ -1013,10 +1013,10 @@ async function runFilmSequence(){
   if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;
   await sequenceEdit(owner,epoch,q);
  }catch(e){if(filmSequenceCurrent(owner,epoch)&&!filmSequenceStopRequested){q.message=humanError(e);q.phase=q.clips.length?"paused":"planning";try{saveFilmSequence()}catch{};filmSequenceUI()}}
- finally{if(filmSequenceCurrent(owner,epoch)){filmSequenceRunning=false;filmSequenceUI()}}
+ finally{if(filmSequenceCurrent(owner,epoch)&&!filmSequenceStopRequested){filmSequenceRunning=false;filmSequenceUI()}}
 }
 async function stopFilmSequence(){
- if(!filmSequenceRunning||!filmSequence)return;const owner=S.user?.id,epoch=filmSequenceEpoch,q=filmSequence;filmSequenceStopRequested=true;q.message="正在停止…";filmSequenceUI();
+ if(!filmSequence||filmSequence.phase==="complete"||filmSequenceStopRequested||!S.user)return;const owner=S.user.id,epoch=filmSequenceEpoch,q=filmSequence;filmSequenceStopRequested=true;filmSequenceRunning=true;q.message="正在停止…";filmSequenceUI();
  if(filmSequenceWorker){filmSequenceWorker.terminate();filmSequenceWorker=null;if(filmSequenceReject){filmSequenceReject(Error("已停止剪辑"));filmSequenceReject=null}}
  try{
   if(filmSequenceCreating){for(let i=0;i<35&&filmSequenceCreating;i++)await filmSequenceDelay(500);if(filmSequenceCreating)throw Error("提交尚未确认，请重试停止")}
@@ -1024,7 +1024,7 @@ async function stopFilmSequence(){
   const active=q.clips.find(x=>x.state==="running");
   if(active){const r=await api("/api/video/project/"+active.id+"/cancel",{},12000);if(r.status==="failed")active.state="failed"}
   else if(!q.clips.length){const r=await api("/api/film/plan/"+q.planId+"/cancel",{},12000);if(r.job?.status==="cancelled")q.planRetry=true}
-  if(!filmSequenceCurrent(owner,epoch))return;++filmSequenceEpoch;q.phase="stopped";q.message="已停止，已完成片段保留";filmSequenceRunning=false;saveFilmSequence();filmSequenceUI()
+  if(!filmSequenceCurrent(owner,epoch))return;++filmSequenceEpoch;q.phase="stopped";q.message="已停止，已完成片段保留";filmSequenceRunning=false;filmSequenceStopRequested=false;saveFilmSequence();filmSequenceUI()
  }catch(e){if(filmSequenceCurrent(owner,epoch)){filmSequenceStopRequested=false;q.message="停止尚未确认："+humanError(e);filmSequenceRunning=false;saveFilmSequence();filmSequenceUI()}}
 }
 
