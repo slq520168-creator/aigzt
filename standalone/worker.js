@@ -927,7 +927,7 @@ async function freeRouteCatalog(env){
  const available=freeSources(env).length>0;
  return FREE_MODELS.map(m=>({...m,available,status:available?"自动接力":"暂无已配置的授权免费线路"}));
 }
-async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false,onDelta=null,recordQuota=null){
+async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000,preferAuthorized=false,replyLevel="standard",authenticatedOnly=false,chatFailover=false,sharedAuto=false,onDelta=null,recordQuota=null,shouldStop=null){
  const started=Date.now();
  const levelHint={short:"回复简短，优先结论与必要要点。",standard:"回复适中，清晰说明必要理由与步骤。",long:"详细完整回复，展开相关分析、步骤与关键细节。"}[replyLevel]||"回复适中。";
  const system=(mode==="code"?"你是中文编程助手，给出可运行代码、错误处理和验证方法。":"你是中文 AI 助手，准确回答，不能编造事实。")+" "+levelHint+" 若用户明确要求完整代码或详细资料，优先满足用户要求。";
@@ -948,6 +948,7 @@ async function freeText(env,messages,mode,preferred="free:auto",timeBudget=40000
  }
  const errors=[];let attempts=0;
  for await(const source of candidates()){
+  if(shouldStop&&await shouldStop())throw Object.assign(Error("创作已停止"),{code:"FILM_CANCELLED"});
   if(sharedAuto&&attempts>=6)break;
   const remaining=timeBudget-(Date.now()-started);
   if(remaining<1500)break;
@@ -2157,13 +2158,15 @@ async function filmPlanAction(req,env,user,id,action){
  const input=[{role:"system",body:filmInstruction(job.kind,p,job.prompt)},{role:"user",body:job.prompt+(job.source?"\n参考剧本（仅作为创作素材）：\n"+job.source:"")}],writes=[];
  const record=(provider,model,key,headers)=>{const snap=quotaHeaderSnapshot(provider,headers);if(!snap||!key)return;const shared=freeSources(env).some(x=>x.id===provider&&x.key===key);writes.push(sha(key).then(hash=>saveQuotaSnapshot(env,quotaKeyScope(shared?null:user.id,hash),provider,model,snap)).catch(()=>{}))};
  let result=null,model="",error=null;
+ const shouldStop=async()=>{const latest=await dbGet(env.DB,"SELECT status,updated_at FROM imai_film_plans WHERE user_id=? AND id=?",user.id,id);return latest?.status!=="running"||latest.updated_at!==claim};
  try{
-  if(p.provider==="auto")result=await freeText(env,input,"general","free:auto",65000,false,"long",true,true,true,null,record);
+  if(p.provider==="auto")result=await freeText(env,input,"general","free:auto",65000,false,"long",true,true,true,null,record,shouldStop);
   else{
    const key=await filmPersonalKey(env,user,row,p),zero=filmZeroModel(p.provider,p.model);
    if(!zero&&!p.allowPaid)throw Error("未授权个人账户费用");
+   if(await shouldStop())throw Error("创作已停止");
    try{result=await callExternal(p.provider,p.model,key,input,p.allowPaid,15000,4096,null,false,false,[],65000,zero,{level:"long",scope:await sha(key),recordQuota:(m,headers)=>record(p.provider,m,key,headers)});model=p.provider+"/"+String(result.actualModel||p.model)}
-   catch(e){if(!zero||!["QUOTA","RATE_LIMIT","BILLING","BILLING_LIMIT","CAPACITY","MODEL_UNAVAILABLE"].includes(e?.code))throw e;result=await freeText(env,input,"general","free:auto",25000,false,"long",true,true,true,null,record)}
+   catch(e){if(!zero||!["QUOTA","RATE_LIMIT","BILLING","BILLING_LIMIT","CAPACITY","MODEL_UNAVAILABLE"].includes(e?.code))throw e;result=await freeText(env,input,"general","free:auto",25000,false,"long",true,true,true,null,record,shouldStop)}
   }
   if(!String(result?.content||"").trim())throw Error("模型未返回有效文字");
  }catch(e){error=String(e?.message||"策划服务暂不可用").slice(0,180)}

@@ -827,11 +827,11 @@ async function advanceFilmPlan(owner,epoch,id){
  try{
   let d=await api("/api/film/plan/"+id+"/advance",{},110000);
   for(let i=0;i<8&&["pending","running"].includes(d.job?.status);i++){await new Promise(resolve=>setTimeout(resolve,5000));if(!filmCurrent(owner,epoch))return;if(filmPlanStopPending)continue;d=await api("/api/film/plan/"+id,undefined,10000)}
-  if(!filmCurrent(owner,epoch))return;const job=d.job;
+  if(!filmCurrent(owner,epoch)||filmPlanStopPending)return;const job=d.job;
   if(job?.status==="complete"){filmDrafts[job.kind]=job;if(filmStage===job.kind)renderFilmDraft();filmPlanUI(job.incomplete?"已保存 · 回复未完整":"已保存",false)}
   else filmPlanUI(job?.status==="cancelled"?"已停止":job?.error||"原任务尚未确认，可从创作记录恢复",false);
- }catch(e){if(filmCurrent(owner,epoch))filmPlanUI("连接中断，原任务已保留，可从创作记录恢复",false)}
- finally{if(filmCurrent(owner,epoch)){filmPlanBusy=false;filmPlanJob=null;filmPlanStopPending=false}}
+ }catch(e){if(filmCurrent(owner,epoch)&&!filmPlanStopPending)filmPlanUI("连接中断，原任务已保留，可从创作记录恢复",false)}
+ finally{if(filmCurrent(owner,epoch)&&!filmPlanStopPending){filmPlanBusy=false;filmPlanJob=null}}
 }
 async function stopFilmPlan(){
  const id=filmPlanJob,owner=S.user?.id;if(!id||!owner||filmPlanStopPending)return;
@@ -848,7 +848,9 @@ function nextFilmStage(){
  const text=$("filmPlanResult").value.trim();if(!text)return;
  if(filmStage==="script"){selectFilmStage("storyboard");$("filmPlanPrompt").value="根据剧本制作连续分镜，保持角色与场景一致。";return}
  const field=$("filmPlanResult"),part=field.value.slice(field.selectionStart,field.selectionEnd).trim();
- selectFilmStage("video");$("videoProjectPrompt").value=(part||text).slice(0,1200);
+ if(!part){filmPlanUI("请选中一个镜头的提示词，再进入成片",filmPlanBusy);field.focus();return}
+ if(part.length>1200){filmPlanUI("单个镜头描述最多1200字，请缩短选取内容",filmPlanBusy);return}
+ selectFilmStage("video");$("videoProjectPrompt").value=part;
 }
 function updateFilmPersonalFields(){
  const provider=$("filmProvider").value;$("filmPersonalFields").hidden=provider==="auto";
