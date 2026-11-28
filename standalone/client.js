@@ -300,7 +300,7 @@ function setAuthUI(){
  $("avatarQuickInput").disabled=!logged;
  if(uid!==avatarOwner){avatarOwner=uid;refreshAvatar()}
  const q=S.quota;
- $("quotaLabel").textContent=q&&logged?"免费请求保护配额："+q.remaining+"/"+q.limit+" · 全站剩余 "+q.siteRemaining:"外部免费 · 登录后使用";
+ $("quotaLabel").textContent=logged?(Number.isFinite(q?.remaining)&&Number.isFinite(q?.limit)?"免费请求保护配额："+q.remaining+"/"+q.limit:"上游额度以实际统计为准"):"外部免费 · 登录后使用";
 }
 async function uploadAvatar(file){
  if(!S.user){show("authDialog");return}
@@ -636,7 +636,7 @@ async function fetchMe(){
   const v=await api("/api/me",undefined,8000);if(epoch!==accountFetchEpoch)return;
   const old=String(S.user?.id||""),owner=String(v.user?.id||"");
   if(old!==owner){++chatOpenEpoch;chatOpenLoading=false;S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
-  S.user=v.user;S.quota=v.quota;accountCheckedAt=Date.now();if(old&&old!==owner){S.chats=[];S.projects=[];S.notes=[];S.activeProjectId=null;newChat();renderProjects();if(owner){void fetchProjects();void fetchChats()}}setAuthUI();
+  S.user=v.user;S.quota=v.quota;S.voiceTranscriptionConfigured=v.voiceTranscriptionConfigured===true;accountCheckedAt=Date.now();if(old&&old!==owner){S.chats=[];S.projects=[];S.notes=[];S.activeProjectId=null;newChat();renderProjects();if(owner){void fetchProjects();void fetchChats()}}setAuthUI();
   restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();void loadModelHistory();
   if(owner){void hydrateModelPreferences(owner);if(!S.connectionsLoaded)void fetchConnections();if($("modelDialog").open)void syncCatalogFavorites("models");if(S.freeToolsMode)void syncCatalogFavorites("tools")}
  }catch(e){if(epoch!==accountFetchEpoch)return;chatModelPreferenceReady=true;updateModelTitle();flashError("账号状态读取失败："+humanError(e))}
@@ -1038,7 +1038,7 @@ function usagePercent(pool){
 }
 function usageModeBar(title,mode,total,pool){
  const section=node("section","usage-mode"),head=node("div","usage-mode-head");
- const p=usagePercent(pool),shared=mode!=="personal";
+ const p=usagePercent(pool),shared=mode==="auto";
  head.append(node("strong","",title),node("span","usage-mode-count",p.percent===null?"—%":p.percent.toLocaleString("zh-CN",{maximumFractionDigits:1})+"%"+(p.reference?" 参考":"")));
  section.append(head);
  const track=node("div","usage-progress"+(p.percent===null?" unknown":p.reference?" reference":""));
@@ -1077,8 +1077,8 @@ function usageModelRows(d){
 function renderUsageOverview(d){
  const root=$("settingsUsageResults"),fragment=document.createDocumentFragment();
  const rows=Array.isArray(d.rows)?d.rows:[],pools=d.pools||{};
- fragment.append(usageModeBar("自动模式","auto",usageSum(rows.filter(r=>r.mode==="auto")),pools.shared));
- fragment.append(usageModeBar("自由模式","shared",usageSum(rows.filter(r=>r.mode==="shared")),pools.shared));
+ fragment.append(usageModeBar("自动模式","auto",usageSum(rows.filter(r=>r.mode==="auto"||r.mode==="shared")),pools.shared));
+ fragment.append(usageModeBar("自由模式","free",usageSum(rows.filter(r=>r.mode==="free")),pools.free));
  fragment.append(usageModeBar("个人模式","personal",usageSum(rows.filter(r=>r.mode==="personal")),pools.personal));
  const automaticCount=new Set([...(d.automaticModels||d.sharedModels||[]),...(!d.catalogComplete?(S.sharedFreeModels||[]).map(m=>({provider:"openrouter",model:m.sharedModel||String(m.id||"").replace(/^free:or\//,"")})):[])].filter(m=>m.model).map(m=>m.provider+"|"+m.model)).size;
  const modelHeading=node("div","usage-mode-head usage-title");modelHeading.append(node("strong","","模型用量"),node("span","usage-mode-count",(d.catalogComplete?"":"已知 ")+"免费自动线路 "+automaticCount+" 项"));fragment.append(modelHeading);
@@ -1088,24 +1088,24 @@ function renderUsageOverview(d){
 }
 function renderUsageDetails(d){
  const root=$("settingsUsageDetails");root.replaceChildren();
- root.append(node("p","settings-hint","自动与自由模式共用同一免费额度池，两个进度条展示相同的共享余额，不可相加。本人请求按模式分别统计。仅汇总已核实且未过恢复时间的每日请求额度；未知线路不计入总额，分钟限流、Tokens、费用均独立统计。共享额度不是个人余额。"));
+ root.append(node("p","settings-hint","自动模式使用平台共享免费额度；自由模式使用用户绑定的免费模型；个人模式使用本人授权的模型。自由与个人模式可能共用同一服务商账号，额度不可相加。旧版误归入个人模式的记录无法可靠拆分，保留历史分类。仅汇总已核实且未过恢复时间的每日请求额度。"));
  if(d.pools?.shared){
   const p=d.pools.shared;
   root.append(node("p","settings-hint","共享已知 "+p.known+" 个额度池 · 未知 "+p.unknown+" 个；个人已知 "+d.pools.personal.known+" 个 · 未知 "+d.pools.personal.unknown+" 个。额度为上次实测，不保证此刻可用。"));
   if(p.referenceEntries?.length)root.append(node("p","settings-hint","参考值：Groq GPT-OSS 20B 官方免费方案每日 1,000 次；参考总量 "+usageNum(p.referenceTotal)+" 次。参考百分比只计算已测额度池消耗占参考总量的比例，Groq 实际使用量和其他线路总额度未知，不是实际整体使用率。官方来源：https://console.groq.com/docs/rate-limits"));
   const same=(d.quotas||[]).filter(q=>q.sharesSitePool);if(same.length)root.append(node("p","settings-hint",same.map(q=>usageProviderName(q.provider)).join("、")+" 与本站使用同一密钥，不另算个人额度。"));
  }
- root.append(node("p","settings-hint","本站统计目前覆盖聊天请求；图片、视频等其他计量单位不混入请求额度。"));
+ root.append(node("p","settings-hint","本站统计目前覆盖聊天请求；图片及语音等其他计量单位不混入请求额度。"));
 
  const rows=Array.isArray(d.rows)?d.rows:[],all=usageSum(rows);
- const modeRows=[["自动模式",rows.filter(r=>r.mode==="auto")],["自由模式（共享）",rows.filter(r=>r.mode==="shared")],["自由模式（个人）",rows.filter(r=>r.mode==="personal")],["合计",rows]];
+ const modeRows=[["自动模式（含旧共享）",rows.filter(r=>r.mode==="auto"||r.mode==="shared")],["自由模式",rows.filter(r=>r.mode==="free")],["个人模式（含旧未区分记录）",rows.filter(r=>r.mode==="personal")],["合计",rows]];
  root.append(node("h3","usage-title","今日聊天使用量"),usageTable(["模式","请求","成功/失败","Tokens"],modeRows.map(([label,list])=>{const t=usageSum(list);return [label,usageNum(t.requests),usageNum(t.succeeded)+"/"+usageNum(t.failed),usageToken(t.total_tokens,t.reported,t.requests)]})));
  root.append(node("p","settings-hint","输入 "+usageToken(all.input_tokens,all.reported,all.requests)+" · 输出 "+usageToken(all.output_tokens,all.reported,all.requests)+" · 已报告 "+usageNum(all.reported)+"/"+usageNum(all.requests)+" 次。本站不设统一每日聊天上限，实际可用量取决于服务商。"));
  if(d.historical?.reported>0)root.append(node("p","settings-hint","今日未分类历史：已保存 "+usageNum(d.historical.reported)+" 条回复，已报告 "+usageNum(d.historical.total_tokens)+" Tokens（不重复计入新统计；旧记录不能可靠区分自动与自由模式）。"));
  const groups=new Map();
  for(const r of rows){const key=JSON.stringify([r.mode,r.actual_provider||r.provider,r.actual_model||r.model]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r)}
  root.append(node("h3","usage-title","模型与服务商明细"));
- if(groups.size)root.append(usageTable(["模式 / 服务商 / 模型","请求","Tokens"],[...groups.entries()].map(([key,list])=>{const [mode,provider,model]=JSON.parse(key),t=usageSum(list);return [(mode==="auto"?"自动":mode==="shared"?"共享":"个人")+" · "+usageProviderName(provider)+" · "+model,usageNum(t.requests),usageToken(t.total_tokens,t.reported,t.requests)]})));
+ if(groups.size)root.append(usageTable(["模式 / 服务商 / 模型","请求","Tokens"],[...groups.entries()].map(([key,list])=>{const [mode,provider,model]=JSON.parse(key),t=usageSum(list);return [(mode==="auto"?"自动":mode==="shared"?"旧共享":mode==="free"?"自由":"个人")+" · "+usageProviderName(provider)+" · "+model,usageNum(t.requests),usageToken(t.total_tokens,t.reported,t.requests)]})));
  else root.append(node("p","settings-hint","今日尚无新版统计记录。"));
  for(const [kind,title] of [["shared","自动模式及共享免费线路额度"],["personal","个人 API 额度"]]){
   root.append(node("h3","usage-title",title));
@@ -1114,7 +1114,7 @@ function renderUsageDetails(d){
   for(const q of items){
    const box=node("section","usage-provider");
    box.append(node("strong","usage-provider-title",usageProviderName(q.provider)));
-   const providerRows=rows.filter(r=>(kind==="personal"?r.mode==="personal":r.mode!=="personal")&&(r.actual_provider||r.provider)===q.provider),used=usageSum(providerRows);
+   const providerRows=rows.filter(r=>(kind==="personal"?["personal","free"].includes(r.mode):["auto","shared"].includes(r.mode))&&(r.actual_provider||r.provider)===q.provider),used=usageSum(providerRows);
    box.append(node("p","settings-hint","本人今日本站请求 "+usageNum(used.requests)+" 次 · Tokens "+usageToken(used.total_tokens,used.reported,used.requests)));
    if(!q.snapshots?.length){
     box.append(node("p","settings-hint",(q.selectedModel?q.selectedModel+" · ":"")+(q.sharesSitePool?"共用本站额度":q.unavailable?"额度暂时无法读取":"总额度及剩余额度未提供；已使用量见上方")));
@@ -2005,9 +2005,9 @@ function settingsDictationLanguage(){
 function startDictation(){
  if(dictationCapture||dictationRecognition){stopDictation();return}
  if(!S.user){show("authDialog");return}
- if(voiceSession.active||voiceSession.reading)voiceStop();stopMessageReader();
+ if(voiceSession.active||voiceSession.reading||voiceSession.opening||voiceSession.request)voiceStop();stopMessageReader();
  const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
- if(voiceRecordSupported()){void startRecordedDictation();return}
+ if(voiceRecordSupported()&&(S.voiceTranscriptionConfigured!==false||!Speech)){void startRecordedDictation();return}
  if(!Speech){flashError("当前浏览器不支持录音，请使用键盘听写");return}
  const rec=new Speech();dictationRecognition=rec;const chosen=settingsDictationLanguage();
  rec.lang=chosen==="auto"?(navigator.language||"zh-CN"):chosen;rec.interimResults=false;rec.continuous=false;
@@ -2251,7 +2251,7 @@ async function readerCloud(p){
   const ctrl=new AbortController();p.abort=ctrl;
   p.timer=setTimeout(()=>{ctrl.abort();readerFail(p,"云朗读生成超时，请重试")},45000);
   try{
-   const res=await fetch("/api/message/read-aloud",{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify({text:chunks[i],confirmed:true,apiKey:S.keys.gemini||undefined}),signal:ctrl.signal});
+   const res=await fetch("/api/message/read-aloud",{method:"POST",credentials:"same-origin",cache:"no-store",headers:{"content-type":"application/json"},body:JSON.stringify({text:chunks[i],confirmed:true}),signal:ctrl.signal});
    if(messageReader!==p||p.phase!=="loading")return;
    if(!res.ok){const err=await res.json().catch(()=>null);throw Error(err?.error||"语音服务 HTTP "+res.status)}
    const blob=await res.blob();if(messageReader!==p||p.phase!=="loading")return;
@@ -2391,7 +2391,7 @@ function voiceListen(auto=false){
  stopDictation(true);stopMessageReader();voiceCancel();voiceSession.active=true;voiceSession.resumePending=false;
  if(!auto){voiceStreamReset();voiceAudioContext();voicePrime()}
  const turn=++voiceSession.turn;
- if(voiceRecordSupported()){voiceSession.opening=true;void voiceRecord(turn)}else voiceNativeListen(turn);
+ if(voiceRecordSupported()&&(S.voiceTranscriptionConfigured!==false||!(window.SpeechRecognition||window.webkitSpeechRecognition))){voiceSession.opening=true;void voiceRecord(turn)}else voiceNativeListen(turn);
 }
 function voiceOpen(){
  voiceLoad();$("voiceLang").value=voiceSession.lang;$("voiceRate").value=String(voiceSession.rate);
