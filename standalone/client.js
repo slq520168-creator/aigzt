@@ -840,7 +840,7 @@ function renderFilmDraft(){
  for(const shot of data.shots){
   const row=node("article","film-shot"),head=node("div","film-shot-heading");head.append(node("strong","",String(shot.number).padStart(2,"0")+" · "+shot.title),node("span","film-shot-duration",shot.duration+" 秒"));row.append(head,node("p","",shot.description));
   const detail=node("details","film-shot-prompt"),summary=node("summary","","查看提示词");detail.append(summary,node("p","",shot.prompt));row.append(detail);
-  if(!filmSequence||filmSequence.planId!==draft.id){const button=node("button","film-shot-generate","生成视频");button.type="button";button.addEventListener("click",()=>void generateFilmShot(shot));row.append(button)}root.append(row);
+  if(!filmSequence||filmSequence.planId!==draft.id){const button=node("button","film-shot-generate");button.type="button";button.append(providerLogo("freetext"),node("span","","生成视频"));button.addEventListener("click",()=>void generateFilmShot(shot));row.append(button)}root.append(row);
  }
  if(!data.shots.length&&draft.kind!=="script")root.append(node("p","video-project-note","此记录未包含可识别的镜头，仍可查看原内容或直接生成视频。"));
 }
@@ -854,8 +854,14 @@ async function generateFilmShot(shot){
  if(videoProjectJob||videoProjectSubmitting){selectFilmStage("video");return}
  $("videoProjectPrompt").value=shot.prompt;$("videoProjectRatio").value=shot.ratio||$("filmQuickRatio").value;$("videoProjectDuration").value=String(shot.duration);$("filmSelectedShot").textContent=shot.title||"视频制作";selectFilmStage("video");await startVideoProject({preventDefault(){}});
 }
+function renderFilmMainModels(){
+ const planner=$("filmMainPlanner"),video=$("filmMainVideo");const p=filmPrefs?.provider||"auto";
+ planner.replaceChildren(providerLogo(p),node("span","",filmPrefs?(p==="auto"?"自动策划":providerLabel(p)):"策划模型"),iconSlot("chevron-down"));
+ planner.title=filmPrefs?.model||"策划模型设置";
+ video.replaceChildren(providerLogo("freetext"),node("span","","LTX"),iconSlot("chevron-down"));video.title="视频模型设置";renderIcons(planner);renderIcons(video);
+}
 function openVideoProject(){
- initFilmSkills();show("videoProjectDialog");void loadFilmPreferences(false);void restoreFilmSequence();
+ initFilmSkills();renderFilmMainModels();show("videoProjectDialog");void loadFilmPreferences(false);void restoreFilmSequence();
 }
 function filmCurrent(owner,epoch){return S.user?.id===owner&&epoch===filmPlanEpoch;}
 function resetFilmOwner(owner){
@@ -1063,7 +1069,7 @@ function updateFilmPersonalFields(){
  syncFilmConnectButton();
 }
 function fillFilmPreferences(p){
- filmPrefs=p;$("filmProvider").value=p.provider||"auto";$("filmModel").value=p.model||"";$("filmApiKey").value="";$("filmApiKey").placeholder=p.hasKey||p.linked?"••••••••••":"API Key";
+ filmPrefs=p;renderFilmMainModels();$("filmProvider").value=p.provider||"auto";$("filmModel").value=p.model||"";$("filmApiKey").value="";$("filmApiKey").placeholder=p.hasKey||p.linked?"••••••••••":"API Key";
  $("filmPaidConsent").checked=p.allowPaid===true;$("filmExternalConsent").checked=p.accepted===true;$("filmDefaultRatio").value=p.ratio||"landscape";$("filmDefaultDuration").value=String(p.duration||5);$("videoSkillChoice").value=String(p.skill||"auto");updateFilmPersonalFields();
  if(!videoProjectJob){if(!filmSequence){$("filmQuickRatio").value=p.ratio||"landscape";} $("videoProjectRatio").value=p.ratio||"landscape";$("videoProjectDuration").value=String(p.duration||5)}
 }
@@ -5245,7 +5251,7 @@ function wire(){
  $("videoProjectPlan").addEventListener("click",e=>void startVideoProjectPlan(e));
  $("filmBackToPlan").addEventListener("click",()=>selectFilmStage("script"));
  $("filmPlanStop").addEventListener("click",()=>void stopFilmPlan());
- $("filmSettingsOpen").addEventListener("click",openFilmSettings);
+ $("filmSettingsOpen").addEventListener("click",openFilmSettings);$("filmMainPlanner").addEventListener("click",openFilmSettings);$("filmMainVideo").addEventListener("click",openFilmSettings);
  $("filmHistoryOpen").addEventListener("click",()=>void openFilmHistory());
  $("filmSettingsForm").addEventListener("submit",e=>void saveFilmPreferences(e));
  $("videoSkillChoice").addEventListener("change",()=>void saveFilmSkill());
