@@ -763,10 +763,12 @@ function renderProjects(){
  }
  if(!S.projects.length)box.append(node("div","hint","暂无个人项目"));
 }
+let projectFetchSerial=0;
 async function fetchProjects(){
- if(!S.user){S.projects=[];renderProjects();return}
- try{const d=await api("/api/projects");S.projects=d.projects||[];renderProjects()}
- catch(e){flashError("项目加载失败："+humanError(e))}
+ const owner=S.user?.id,seq=++projectFetchSerial;
+ if(!owner){S.projects=[];renderProjects();return}
+ try{const d=await api("/api/projects");if(owner!==S.user?.id||seq!==projectFetchSerial)return;S.projects=d.projects||[];renderProjects()}
+ catch(e){if(owner===S.user?.id&&seq===projectFetchSerial)flashError("项目加载失败："+humanError(e))}
 }
 function openProject(project=null){
  if(!S.user){show("authDialog");return}
@@ -996,7 +998,7 @@ async function openSettings(expandUsage=false){
  $("settingsDictationLang").value=settingsDictationLanguage();
  updateTokenSettingsSummary();
  try{
-  const d=await api("/api/memory");S.notes=d.notes||[];S.memoryEnabled=d.enabled;applyTheme(d.theme);
+  const owner=S.user?.id;const d=await api("/api/memory");if(owner!==S.user?.id)return;S.notes=d.notes||[];S.memoryEnabled=d.enabled;applyTheme(d.theme);
   $("settingMemory").checked=S.memoryEnabled;renderNotes();
  }catch(e){flashError(humanError(e))}
 }
@@ -3240,20 +3242,24 @@ async function uploadSelected(files){
  if(S.uploading)return;
  if(!files.length)return;
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
+ const owner=S.user.id,view=chatOpenEpoch;const current=()=>S.user?.id===owner&&chatOpenEpoch===view;
  S.uploading=true;$("attachButton").disabled=true;flashError("");
  try{
  for(const file of files){
   try{
    const heic=/^image\/hei[cf]$/i.test(file.type||"")||/\.(heic|heif)$/i.test(file.name||"");
    const autoReference=S.provider==="free"&&S.model==="free:auto"&&/^(?:image\/(?:jpeg|png|webp|hei[cf]))$/i.test(file.type||"");
+   if(!current())break;
    const selected=await optimizeImageReference(file,heic||autoReference);
+   if(!current())break;
    if(selected.size>8000000){flashError("单文件最大8MB："+file.name);continue}
    const body=new FormData();body.append("file",selected);
    const r=await fetch("/api/files/upload",{method:"POST",credentials:"same-origin",body});
    const d=await r.json().catch(()=>null);
    if(!r.ok||!d?.ok)throw Error(d?.error||"HTTP "+r.status);
+   if(!current())break;
    S.attachments.push(d);renderAttachments();
-  }catch(e){flashError("上传失败："+humanError(e))}
+  }catch(e){if(current())flashError("上传失败："+humanError(e))}
  }
  }finally{S.uploading=false;$("attachButton").disabled=false}
 }
@@ -3643,7 +3649,7 @@ async function apiChatStream(payload,onDelta){
     const data=packet.split("\n").find(line=>line.startsWith("data:"));if(!data)continue;
     let event;try{event=JSON.parse(data.slice(5).trim())}catch{continue}
     if(event.type==="delta"&&typeof event.text==="string")onDelta(event.text);
-    else if(event.type==="error")throw Object.assign(Error(event.error||"回复中断"),{code:event.code||null,upstreamStatus:event.upstreamStatus||null});
+    else if(event.type==="error")throw Object.assign(Error(event.error||"回复中断"),{code:event.code||null,upstreamStatus:event.upstreamStatus||null,savedTurn:event.savedTurn||null});
     else if(event.type==="done"){
      if(!event.chatId||typeof event.reply!=="string")throw Error("回复中断，未收到完整结果");
      return event;
@@ -3762,7 +3768,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
     let pending="",scheduled=false,active=true;
     const bubble=loadingBubble,viewport=$("conversation");
     const onDelta=token=>{
-     if(!active||!loading.isConnected)return;
+     if(!active||!loading.isConnected||S.user?.id!==mediaOwner)return;
      const first=!receivedStreamingText;
      if(first)setPortraitState(loading,"speaking");
       receivedStreamingText=true;
@@ -3810,6 +3816,8 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
   void fetchChats();
   usageOverviewCache=null;
  }catch(e){
+   if(S.user?.id!==mediaOwner||!loading.isConnected)return;
+   if(e?.savedTurn?.chatId&&e.savedTurn.userMessageId){S.chatId=e.savedTurn.chatId;sentRow.dataset.messageId=e.savedTurn.userMessageId;appendMessageCopy(sentRow,sentBody);void fetchChats()}
    if(submittedMode==="text"&&["MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","AUTH","ACCESS","UPSTREAM_NETWORK","UPSTREAM_EMPTY","FREE_FALLBACK_FAILED"].includes(e?.code))recordModelOutcome(requestProvider,requestModel,false,e.code);
    if(submittedMode==="text"&&requestProvider!=="free"&&["MODEL_RETIRED","MODEL_UNAVAILABLE"].includes(e?.code)){
     unavailableChatModels.set(chatModelKey(requestProvider,requestModel),{code:e.code,at:Date.now()});
@@ -3835,7 +3843,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading,requestId:e?.code==="REQUEST_RETRYABLE"?undefined:requestId,originalChatId:requestChatId,payload:submittedPayload});
   });
   retry.append(node("span","",["REQUEST_PENDING","REQUEST_UNCERTAIN"].includes(e?.code)?"继续查询":automaticTurn?"继续":"重试"));
-  const transient=["REQUEST_PENDING","REQUEST_RETRYABLE","UPSTREAM_NETWORK","UPSTREAM_EMPTY","UPSTREAM_ERROR","FREE_FALLBACK_FAILED","RATE_LIMIT","CAPACITY"].includes(e?.code);
+  const transient=["REQUEST_PENDING","REQUEST_RETRYABLE","SAVED_RETRYABLE","UPSTREAM_NETWORK","UPSTREAM_EMPTY","UPSTREAM_ERROR","FREE_FALLBACK_FAILED","RATE_LIMIT","CAPACITY"].includes(e?.code);
   const detail=e?.code==="REQUEST_UNCERTAIN"?"原请求结果未确认，请核对聊天记录":e?.code==="REQUEST_PENDING"?"原请求尚未确认，点击继续查询":automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):transient?"消息已保留":humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?(automaticTurn?"已保留当前内容":"回复中断，已保留收到的内容"):detail),retry);
   if(submittedMode==="text"&&requestProvider!=="free"&&e?.code==="REQUEST_RETRYABLE"){
