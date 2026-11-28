@@ -95,7 +95,7 @@ a{color:inherit}
 .film-shot-prompt p{margin-top:8px}
 .film-shot-generate{min-height:41px;border-radius:8px;background:#213d4b;color:white;font-size:14px;font-weight:600}
 #filmPlanStatus:empty,#videoProjectStatus:empty{display:none}
-#filmPlanPrompt{min-height:110px}
+#filmPlanPrompt{min-height:94px}
 #filmPlanOutput{padding:12px 0}
 #filmPlanOutput[hidden],#filmPlanPanel[hidden],#filmVideoPanel[hidden],#filmPersonalFields[hidden]{display:none}
 .film-result-heading{display:flex;align-items:center;gap:5px;margin:0 0 8px}

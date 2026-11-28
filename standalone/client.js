@@ -828,7 +828,7 @@ function selectFilmStage(stage){
 }
 async function generateFilmShot(shot){
  if(videoProjectJob||videoProjectSubmitting){selectFilmStage("video");return}
- $("videoProjectPrompt").value=shot.prompt;$("videoProjectDuration").value=String(shot.duration);$("filmSelectedShot").textContent=shot.title||"视频制作";selectFilmStage("video");await startVideoProject({preventDefault(){}});
+ $("videoProjectPrompt").value=shot.prompt;$("videoProjectRatio").value=shot.ratio||$("filmQuickRatio").value;$("videoProjectDuration").value=String(shot.duration);$("filmSelectedShot").textContent=shot.title||"视频制作";selectFilmStage("video");await startVideoProject({preventDefault(){}});
 }
 function openVideoProject(){
  initFilmSkills();show("videoProjectDialog");void restoreVideoProject();void restoreFilmPlans();void loadFilmPreferences(false);
@@ -882,10 +882,10 @@ async function saveFilmDraft(){
  const draft=currentFilmDraft(),owner=S.user?.id;if(!draft||!owner)return;const result=$("filmPlanResult").value.trim();if(!result)return;
  try{const r=await api("/api/film/plan/"+draft.id+"/edit",{result},10000);if(S.user?.id!==owner)return;filmDrafts[draft.kind]=r.job;renderFilmDraft();$("filmEditDetails").open=false;filmPlanUI("已保存",filmPlanBusy)}catch(e){filmPlanUI(humanError(e),filmPlanBusy)}
 }
-function directFilmVideo(){
- const prompt=$("filmPlanPrompt").value.trim();if(!prompt){$("filmPlanPrompt").focus();return}
+function directFilmVideo(e){
+ e?.preventDefault();const prompt=$("filmPlanPrompt").value.trim();if(!prompt){$("filmPlanPrompt").focus();return}
  if(prompt.length>1200){filmPlanUI("视频描述最多1200字",filmPlanBusy);return}
- void generateFilmShot({prompt,duration:Number(filmPrefs?.duration||5),title:"视频制作"});
+ void generateFilmShot({prompt,duration:Number($("filmQuickDuration").value),ratio:$("filmQuickRatio").value,title:"视频制作"});
 }
 function updateFilmPersonalFields(){
  const provider=$("filmProvider").value;$("filmPersonalFields").hidden=provider==="auto";
@@ -898,7 +898,7 @@ function updateFilmPersonalFields(){
 function fillFilmPreferences(p){
  filmPrefs=p;$("filmProvider").value=p.provider||"auto";$("filmModel").value=p.model||"";$("filmApiKey").value="";$("filmApiKey").placeholder=p.hasKey?"已加密保存 · 留空保留":p.linked?"使用账号现有连接 · 可另填":"输入个人 API Key";
  $("filmPaidConsent").checked=p.allowPaid===true;$("filmExternalConsent").checked=p.accepted===true;$("filmDefaultRatio").value=p.ratio||"landscape";$("filmDefaultDuration").value=String(p.duration||5);$("videoSkillChoice").value=String(p.skill||"auto");updateFilmPersonalFields();
- if(!videoProjectJob){$("videoProjectRatio").value=p.ratio||"landscape";$("videoProjectDuration").value=String(p.duration||5)}
+ if(!videoProjectJob){$("filmQuickRatio").value=p.ratio||"landscape";$("filmQuickDuration").value=String(p.duration||5);$("videoProjectRatio").value=p.ratio||"landscape";$("videoProjectDuration").value=String(p.duration||5)}
 }
 async function loadFilmPreferences(showStatus=true){
  const owner=S.user?.id;if(!owner)return;const epoch=++filmSettingsEpoch;
@@ -5072,8 +5072,8 @@ function wire(){
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
  $("videoProjectForm").addEventListener("submit",e=>void startVideoProject(e));
- $("filmPlanForm").addEventListener("submit",e=>void startVideoProjectPlan(e));
- $("filmDirectVideo").addEventListener("click",directFilmVideo);
+ $("filmPlanForm").addEventListener("submit",directFilmVideo);
+ $("videoProjectPlan").addEventListener("click",e=>void startVideoProjectPlan(e));
  $("filmBackToPlan").addEventListener("click",()=>selectFilmStage("script"));
  $("filmPlanStop").addEventListener("click",()=>void stopFilmPlan());
  $("filmSettingsOpen").addEventListener("click",openFilmSettings);
