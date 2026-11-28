@@ -342,7 +342,7 @@ async function uploadAvatar(file){
 const KEY_SITES={
  openrouter:{url:"https://openrouter.ai/settings/keys",name:"获取 OpenRouter 密钥"},
  groq:{url:"https://console.groq.com/keys",name:"获取 Groq 密钥"},
- cerebras:{url:"https://cloud.cerebras.ai/",name:"打开 Cerebras 控制台"},
+ cerebras:{url:"https://cloud.cerebras.ai/platform",name:"打开 Cerebras 密钥控制台"},
  openai:{url:"https://platform.openai.com/api-keys",name:"获取 OpenAI 密钥"},
  claude:{url:"https://console.anthropic.com/settings/keys",name:"获取 Claude API 密钥"},
  novai:{url:"https://once-cf.novai.su/",name:"Nova AI（novai.su）创建令牌"},
@@ -355,20 +355,20 @@ const KEY_SITES={
  qwen:{url:"https://modelstudio.console.alibabacloud.com/",name:"打开千问密钥控制台"},
  deepseek:{url:"https://platform.deepseek.com/api_keys",name:"获取DeepSeek密钥"},
  zhipu:{url:"https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys",name:"获取智谱 GLM密钥"},
- kimi:{url:"https://platform.kimi.com/",name:"获取Kimi密钥"},
- minimax:{url:"https://platform.minimaxi.com/",name:"获取MiniMax密钥"},
+ kimi:{url:"https://platform.kimi.com/console/api-keys",name:"获取 Kimi 密钥"},
+ minimax:{url:"https://platform.minimaxi.com/user-center/basic-information/interface-key",name:"获取 MiniMax 密钥"},
  siliconflow:{url:"https://cloud.siliconflow.cn/account/ak",name:"获取硅基流动密钥"},
  doubao:{url:"https://console.volcengine.com/ark/region:cn-beijing/apikey",name:"获取豆包 / 方舟密钥"},
- qianfan:{url:"https://console.bce.baidu.com/qianfan/overview",name:"获取百度千帆密钥"},
- hunyuan:{url:"https://console.cloud.tencent.com/hunyuan",name:"获取腾讯混元密钥"},
- stepfun:{url:"https://platform.stepfun.com/",name:"获取阶跃星辰 API Key"},
- xiaomi:{url:"https://platform.xiaomimimo.com/",name:"获取小米 MiMo API Key"},
+ qianfan:{url:"https://console.bce.baidu.com/qianfan/ais/console/apiKey",name:"获取百度千帆密钥"},
+ hunyuan:{url:"https://console.cloud.tencent.com/hunyuan/start",name:"打开腾讯混元 API 开通与密钥页面"},
+ stepfun:{url:"https://platform.stepfun.com/interface-key",name:"获取阶跃星辰 API Key"},
+ xiaomi:{url:"https://platform.xiaomimimo.com/#/console/api-keys",name:"获取小米 MiMo API Key"},
  longcat:{url:"https://longcat.chat/platform/",name:"获取美团 LongCat API Key"},
  baichuan:{url:"https://platform.baichuan-ai.com/",name:"获取百川智能 API Key"},
  iflytek:{url:"https://console.xfyun.cn/services/bm35",name:"获取讯飞星火 API Password"},
  sensetime:{url:"https://token.sensetime.com/",name:"获取商汤 SenseNova API Key"},
- yandex:{url:"https://console.yandex.cloud/",name:"打开 Yandex Cloud API 密钥设置"},
- gigachat:{url:"https://developers.sber.ru/",name:"获取 GigaChat 授权密钥"}
+ yandex:{url:"https://aistudio.yandex.cloud/platform/",name:"获取 Yandex AI Studio 密钥"},
+ gigachat:{url:"https://developers.sber.ru/studio/workspaces/",name:"打开 GigaChat 项目授权控制台"}
 };
 const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu","freetext","freewan","freeloop"]);
 const RETIRED_VIDEO_MODEL_IDS=new Set(["wan2.2-ti2v","wan2.2-i2v-fast","wan2.2-firstlast","grok-imagine-video-1.5","gen4.5","veo3.1_fast","seedance2_fast","ray-2","ray-flash-2","viduq3-turbo","viduq3-pro","viduq2"]);
@@ -413,7 +413,7 @@ function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
  renderProviderPicker();
  const a=$("providerKeyLink");a.href=site.url;a.textContent=site.name;
- $("providerHelp").textContent=provider==="yandex"?"请输入 Yandex AI Studio API Key，且在模型 ID 中填写 gpt://你的FolderID/yandexgpt-5.1 或 gpt://你的FolderID/aliceai-llm。":
+ $("providerHelp").textContent=provider==="yandex"?"在 AI Studio 右上角创建 API Key（自动配置权限），粘贴密钥及 Folder ID；本站自动读取模型目录。需要已激活的计费账户，不能保证免费。":
  provider==="gigachat"?"填写 GigaChat 项目的授权密钥（默认个人版 PERS；企业版可加 B2B: 前缀）。本站按需兑换短期令牌。":
  provider==="iflytek"?"使用官方 HTTP API Password；模型目录可能不支持，请按控制台填写实际模型 ID（例如 generalv3.5），未实测不会显示已验证。":
  provider==="sensetime"?"使用 TokenPlan 的 API Key，模型是否可调用以该账号目录和权限为准。":
@@ -431,7 +431,12 @@ function refreshKeyPanel(){
  if(!$("personalKey").value)$("keyAdvanced").open=!rec;
  $("keyAdvancedSummary").textContent=rec?"更换 API Key（不需要时无需展开）":"首次连接 · 输入 API Key";
  $("manualModelWrap").hidden=provider==="openrouter"||provider==="gemini"||VIDEO_ONLY_PROVIDERS.has(provider);
- $("manualModel").placeholder=provider==="yandex"?"gpt://你的FolderID/yandexgpt-5.1":provider==="gigachat"?"GigaChat":"官方模型 ID";
+ const manualInput=$("manualModel"),manualWrap=$("manualModelWrap");
+ if(manualInput.dataset.provider!==provider){
+  manualInput.dataset.provider=provider;manualInput.value=provider==="yandex"?(String(rec?.model||"").match(/^gpt:\/\/([^/]+)\//)?.[1]||""):"";
+ }
+ if(manualWrap.firstChild?.nodeType===3)manualWrap.firstChild.nodeValue=provider==="yandex"?"Folder ID（文件夹 ID）":"模型 ID（仅在目录不可用时填写）";
+ manualInput.placeholder=provider==="yandex"?"b1g…":provider==="gigachat"?"GigaChat":"官方模型 ID";
  $("allowPaid").checked=Boolean(rec?.consent);
  $("keyStatus").textContent=rec?(VIDEO_ONLY_PROVIDERS.has(provider)?"视频密钥已加密保存（未收费测试）":rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";
  $("openrouterLogin").hidden=provider!=="openrouter";
@@ -5070,9 +5075,12 @@ async function verifyKey(event){
  if(submit)submit.disabled=true;
  $("keyStatus").textContent="验证连接中…";
  try{
-  const manualModel=$("manualModel").value.trim();
+  const rawModel=$("manualModel").value.trim();
+  const folderId=p==="yandex"?(rawModel.match(/^gpt:\/\/([^/]+)\//)?.[1]||rawModel):"";
+  if(p==="yandex"&&!/^b1g[a-z0-9]{8,61}$/i.test(folderId))throw Error("请填写 Yandex 文件夹 Folder ID（b1g 开头），不要填写服务账号 ID");
+  const manualModel=p==="yandex"?"":rawModel;
   const selectedModel=S.provider===p&&!VIDEO_ONLY_PROVIDERS.has(p)?S.model:"";
-  const data=await api("/api/connections",{provider:p,apiKey:key,model:manualModel||selectedModel||undefined,consent:$("allowPaid").checked});
+  const data=await api("/api/connections",{provider:p,apiKey:key,model:manualModel||(p==="yandex"?undefined:selectedModel)||undefined,...(p==="yandex"?{folderId}:{}),consent:$("allowPaid").checked});
   const rec=data.connection;
   if(!rec)throw Error("密钥保存失败");
   S.savedProviders[p]={model:rec.model||"",consent:!!rec.consent,verified:!!rec.verified,updatedAt:rec.updatedAt};

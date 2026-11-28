@@ -563,19 +563,21 @@ async function saveUserProvider(env,user,body){
  if(plain.length<12||plain.length>1500||/[\r\n\0]/.test(plain))
   throw Object.assign(new Error("请输入有效格式的 API Key"),{status:400});
  const older=await loadUserProvider(env,user.id,provider);
- const desired=validModelIdentifier(body?.model)?String(body.model):older?.model_id||"";
+ const folderId=provider==="yandex"?String(body?.folderId||"").trim():"";
+ if(folderId&&!/^b1g[a-z0-9]{8,61}$/i.test(folderId))throw Object.assign(Error("请填写有效的 Yandex Folder ID（b1g 开头）"),{status:400});
+ const desired=folderId?(String(older?.model_id||"").startsWith("gpt://"+folderId+"/")?older.model_id:""):validModelIdentifier(body?.model)?String(body.model):older?.model_id||"";
  const consent=body.consent===true?1:0;
  let models=[],verified=false,model=desired,warning="";
  if(!isVideoOnlyProvider(provider)){
   try{
-   const catalog=await providerModels({provider,apiKey:plain,model:desired||undefined});
+   const catalog=await providerModels({provider,apiKey:plain,model:desired||undefined,folderId:folderId||undefined});
    models=Array.isArray(catalog.models)?catalog.models:[];
    verified=catalog.verified===true;
    if(!verified&&older)throw Object.assign(Error("新密钥未能验证，已保留原密钥"),{status:409,code:"KEY_NOT_VERIFIED"});
    const favorite=provider==="groq"?["openai/gpt-oss-20b","openai/gpt-oss-120b","llama-3.3-70b-versatile"].map(id=>models.find(x=>x.id===id)).find(Boolean):
     ["novai","novai_pro"].includes(provider)?models.find(x=>x.free===true&&x.type==="text"):null;
-   const selected=desired?models.find(x=>x.id===desired):favorite||models.find(x=>x.type==="text")||models[0];
-   model=desired||selected?.id||"";
+   const selected=(desired?models.find(x=>x.id===desired):null)||favorite||models.find(x=>x.type==="text")||models[0];
+   model=provider==="yandex"?(selected?.id||""):(desired||selected?.id||"");
    if(desired&&!selected)warning="密钥已验证，但所选模型未出现在当前目录，请选择实际可用模型。";
    if(!verified)warning="密钥已保存；服务商不提供目录验证，实际模型权限尚未验证。";
   }catch(error){
@@ -625,9 +627,9 @@ async function providerModels(body){
  const h=HOSTS[id],manual=validModelIdentifier(body.model)?body.model:null;
  const headers=id==="gemini"?{"x-goog-api-key":key}:id==="claude"?{"x-api-key":key,"anthropic-version":"2026-10-21"}:{Authorization:"Bearer "+key};
  if(id==="yandex"){
-  const folder=String(manual||"").match(/^gpt:\/\/([a-zA-Z0-9_-]{5,64})\/[a-zA-Z0-9._-]+(?:\/latest)?$/)?.[1];
-  if(!folder)throw Error("请填写 Yandex 模型 URI，例如 gpt://你的FolderID/yandexgpt-5.1");
-  headers.Authorization="Api-Key "+key;headers["OpenAI-Project"]=folder;
+  const folder=String(body.folderId||"").trim()||String(manual||"").match(/^gpt:\/\/([^/]+)\//)?.[1];
+  if(!folder||!/^b1g[a-z0-9]{8,61}$/i.test(folder))throw Error("请填写 Yandex Folder ID（b1g 开头）");
+  headers.Authorization="Api-Key "+key;headers["x-project"]=folder;
  }else if(id==="gigachat")headers.Authorization="Bearer "+await getGigaChatAccessToken(key);
  let resp;
  try{resp=await fetch("https://"+h.host+h.models,{headers,redirect:"manual",signal:AbortSignal.timeout(10000)})}
@@ -637,11 +639,13 @@ async function providerModels(body){
   // Some vendor accounts expose chat completion without model-list endpoints.
   // A user-supplied ID may be saved, but this is explicitly not a verified connection.
   if(resp.status===404&&manual)return {ok:true,models:[{id:manual,name:manual}],verified:false};
-  throw await externalModelFailure(resp);
+  const failure=await externalModelFailure(resp);
+  if(id==="yandex"&&resp.status===403)failure.message="Yandex 模型目录拒绝访问（403）：请在 AI Studio 检查密钥的文本模型权限、Folder ID 和计费账户状态";
+  throw failure;
  }
  const json=await resp.json();
  let models=id==="gemini"?(json.models||[]).filter(x=>x.name?.startsWith("models/gemini-")).map(x=>({id:x.name.slice(7),name:x.displayName||x.name})):
-  (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired"&&x.active!==false).map(x=>({
+  (json.data||[]).filter(x=>validModelIdentifier(x.id)&&x.lifecycle!=="retired"&&x.active!==false&&(id!=="yandex"||/^gpt:\/\/[^/]+\/[a-zA-Z0-9._-]+(?:\/latest)?$/.test(x.id))).map(x=>({
   id:x.id,name:(x.display_name||x.name||x.id)+(x.lifecycle==="deprecated"?"（即将停用）":""),
   free:providerModelIsFree(id,x.id),
   inputImages:id==="groq"&&groqVisionModel(x.id),
