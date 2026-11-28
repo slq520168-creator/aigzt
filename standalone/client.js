@@ -638,7 +638,7 @@ async function fetchMe(){
   if(old!==owner){S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
   S.user=v.user;S.quota=v.quota;accountCheckedAt=Date.now();setAuthUI();
   restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();void loadModelHistory();
-  if(owner){void hydrateModelPreferences(owner);if(!S.connectionsLoaded)void fetchConnections()}
+  if(owner){void hydrateModelPreferences(owner);if(!S.connectionsLoaded)void fetchConnections();if($("modelDialog").open)void syncCatalogFavorites("models");if(S.freeToolsMode)void syncCatalogFavorites("tools")}
  }catch(e){if(epoch!==accountFetchEpoch)return;chatModelPreferenceReady=true;updateModelTitle();flashError("账号状态读取失败："+humanError(e))}
 }
 let chatFetchSerial=0,historyScope="",historyNextCursor=null,historyLoading=false;
@@ -1567,6 +1567,12 @@ function normalizePromptSections(lines,imageContext=false){
  const closeAt=(from,open)=>{let j=from;for(;j<lines.length;j++){const f=mark(lines[j]);if(f&&!f[2]&&f[1][0]===open[1][0]&&f[1].length>=open[1].length)break}return j};
  for(let i=0;i<lines.length;i++){
   const label=imagePromptLabel(lines[i]),f=mark(lines[i]);
+  if(/^\s*>\s?/.test(lines[i])&&!label){
+   let j=i;const quoted=[];
+   while(j<lines.length&&/^\s*>/.test(lines[j])){quoted.push(lines[j].replace(/^\s*>\s?/,""));j++}
+   const value=quoted.join("\n").trim();
+   if(!negativeLine(value)&&pastedImagePrompt(value)){wrap(value,false,true);i=j-1;continue}
+  }
   if(label){
    const body=label.body?[label.body]:[];let j=i+1;
    while(j<lines.length&&!lines[j].trim())j++;
@@ -1588,15 +1594,18 @@ function normalizePromptSections(lines,imageContext=false){
    const end=closeAt(i+1,f),body=lines.slice(i+1,end).join("\n");
    const prev=lines.slice(0,i).reverse().find(x=>x.trim())||"";
    const neg=negativeLine(prev)||negativeLine(body);
-   if(isText(f[2])&&!neg&&(looksLikeImagePrompt(body)||imageContext&&/^(?:prompt|imageprompt|positive-prompt)$/i.test(f[2]))){
+   if(isText(f[2])&&!neg&&!body.split("\n").some(line=>imagePromptLabel(line))&&(pastedImagePrompt(body)||imageContext&&/^(?:prompt|imageprompt|positive-prompt)$/i.test(f[2]))){
     wrap(body,false,true);
-   }else if(isText(f[2])&&imagePromptLabel(body.split("\n")[0])){
-    out.push(...normalizePromptSections(body.split("\n"),imageContext));
+   }else if(isText(f[2])&&body.split("\n").some(line=>imagePromptLabel(line))){
+    const inner=body.split("\n"),tail=imagePromptLabel(inner.at(-1));
+    if(tail&&!tail.body&&!tail.negative){let j=end+1;while(j<lines.length&&!lines[j].trim())j++;for(;j<lines.length&&lines[j].trim()&&!mark(lines[j])&&!promptSectionBoundary(lines[j]);j++)inner.push(lines[j]);if(j>end+1){out.push(...normalizePromptSections(inner,imageContext));i=j-1;continue}}
+    out.push(...normalizePromptSections(inner,imageContext));
    }else out.push(...lines.slice(i,end<lines.length?end+1:end));
    i=end;continue;
   }
   // Unlabelled natural-language image descriptions with an adjacent generation parameter.
   if(looksLikeImagePrompt(lines[i])&&(/^\s*(?:参数|parameters?|--ar\b)/i.test(lines[i+1]||"")||/--ar\s+\d+:\d+/i.test(lines[i]))){wrap(lines[i],false,true);continue}
+  if(!label&&pastedImagePrompt(lines[i])&&!negativeLine(lines[i])){wrap(lines[i],false,true);continue}
   out.push(lines[i]);
  }
  return out;
@@ -1875,6 +1884,7 @@ function updateAssistantText(bubble,answer,complete=false){
  renderAssistantText(staged,text,imageContext);
  bubble.classList.remove("chat-revealing");
  syncAssistantChildren(bubble,staged);
+ if(row)markImageMessage(row,row.dataset.messageKind==="image"||!!bubble.querySelector(".chat-image-prompt"));
  assistantTextState.set(bubble,renderKey);
 }
 // Position the new text turn once; do not chase its growing end while reading.
@@ -2336,7 +2346,7 @@ async function voiceRecord(turn){
    }catch(e){if(turn===voiceSession.turn&&voiceSession.active){voiceReady("重新说话");sayStatus(e?.name==="AbortError"?"语音识别超时，请重试":String(e?.message||"识别失败，请重试"))}}
    finally{clearTimeout(timeout);if(voiceSession.request===request)voiceSession.request=null;if(turn===voiceSession.turn&&voiceSession.resumePending)voiceAutoNext()}
   };
-  recorder.start();if(voiceSession.context?.state!=="running")try{await voiceSession.context?.resume()}catch{}
+  recorder.start();if(voiceSession.context?.state!=="running")try{await Promise.race([voiceSession.context?.resume(),new Promise(resolve=>setTimeout(resolve,600))])}catch{}
   if(turn!==voiceSession.turn||voiceSession.recorder!==recorder)return;
   const automatic=voiceWatchSilence(stream,recorder,turn);
   $("voiceStart").disabled=false;$("voiceStart").textContent="结束本句";$("voiceHeard").textContent="正在录音…";sayStatus(automatic?"正在聆听":"点击结束本句发送");
@@ -2814,6 +2824,11 @@ function attachUserMessageText(row,bubble,textBody){
  });
  bubble.prepend(textBody,toggle);
 }
+function markImageMessage(row,active){
+ if(!row)return;let tag=row.querySelector(":scope > .image-message-tag");
+ if(active&&!tag){tag=node("span","image-message-tag","作图");row.append(tag)}
+ else if(!active&&tag)tag.remove();
+}
 function appendMessage(role,content,model,existingRow=null,incomplete=false,messageId=null,saved=false,feedback=0,usage=null,createdAt=null,replyImages=[]){
  const row=existingRow||node("div","message "+role),bubble=existingRow?.querySelector(".bubble")||node("div","bubble");
  if(existingRow){
@@ -2855,6 +2870,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   }
   if(Array.isArray(replyImages)&&replyImages.length){for(const src of replyImages)appendReplyImage(bubble,src)}
   else if(!existingRow&&messageId&&!pending&&!picture&&!localDone&&!videoPending&&!videoDone&&!paidVideo)void restoreReplyImages(bubble,messageId);
+  markImageMessage(row,row.dataset.messageKind==="image"&&!row.dataset.mediaFormat||!!bubble.querySelector(".chat-image-prompt")||!!replyImages?.length);
    if(!pending&&!videoPending&&!videoDone&&!paidVideo&&!picture&&!localDone)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
@@ -2891,7 +2907,9 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  }
  return row;
 }
+let chatOpenEpoch=0;
 function newChat(keepDrawer=false){
+ ++chatOpenEpoch;
  stopDictation(true);
  closeMessageMore();
  stopMessageReader();if(voiceSession.active||voiceSession.reading){voiceStop();hide("voiceDialog")}
@@ -2912,6 +2930,7 @@ function startCoding(){
 }
 async function loadChat(id){
  if(S.busy)return;
+ const epoch=++chatOpenEpoch,owner=S.user?.id;
  stopDictation(true);
  closeMessageMore();
  stopMessageReader();if(voiceSession.active||voiceSession.reading){voiceStop();hide("voiceDialog")}
@@ -2919,7 +2938,8 @@ async function loadChat(id){
  if(S.freeToolsMode)setFreeToolsMode(false);
  
  try{
-  const v=await api("/api/chats/"+id);
+  const v=await api("/api/chats/"+id,undefined,12000);
+  if(epoch!==chatOpenEpoch||S.user?.id!==owner||S.busy)return;
   S.chatId=id;restoreChatInputMode();$("messageList").replaceChildren();hideWelcome();
   for(const m of v.messages){let incomplete=false;try{incomplete=Boolean(JSON.parse(m.usage_json||"null")?.incomplete)}catch{}appendMessage(m.role,m.body,m.model,null,incomplete,m.id,Boolean(m.saved),m.feedback,m.usage_json,m.created_at)}
   const c=S.chats.find(c=>c.id===id);
@@ -2927,7 +2947,7 @@ async function loadChat(id){
   // A chat's saved provider is historical; viewing it must not overwrite the active selection.
   updateModelTitle();
   renderHistory();closeMenu();
- }catch(e){flashError("会话读取失败："+humanError(e))}
+ }catch(e){if(epoch===chatOpenEpoch&&S.user?.id===owner)flashError("会话读取失败："+humanError(e))}
 }
 function isAutoChatModel(){return S.provider==="free"&&S.model==="free:auto"}
 // Mode restoration is based on real successful calls, not the last catalog click.
@@ -3307,11 +3327,40 @@ function normalizeFavorites(value){
 function readFavorites(kind){
  try{return normalizeFavorites(JSON.parse(localStorage.getItem(favoriteScope(kind))||"[]"))}catch{return []}
 }
+const favoriteFlights=new Map();
+function favoriteSyncState(scope){
+ try{const value=JSON.parse(localStorage.getItem(scope+":sync")||"null");return {seeded:value?.seeded===true,ops:Array.isArray(value?.ops)?value.ops:[]}}catch{return {seeded:false,ops:[]}}
+}
+function queueFavoriteSync(kind,entry,active){
+ if(!S.user?.id)return;
+ const scope=favoriteScope(kind),state=favoriteSyncState(scope);
+ state.ops=state.ops.filter(x=>x.entry.key!==entry.key);state.ops.push({id:crypto.randomUUID(),entry,active});
+ try{localStorage.setItem(scope+":sync",JSON.stringify(state))}catch{return}
+ void syncCatalogFavorites(kind);
+}
+async function syncCatalogFavorites(kind){
+ const owner=S.user?.id;if(!owner)return;
+ const scope=favoriteScope(kind);if(favoriteFlights.has(scope))return favoriteFlights.get(scope);
+ let synced=false;
+ const flight=(async()=>{
+  const state=favoriteSyncState(scope),seed=state.seeded?null:readFavorites(kind),ops=state.ops.slice(0,80);
+  try{
+   const result=await api("/api/catalog-favorites",{owner,kind,seed,ops},12000);
+   if(S.user?.id!==owner||favoriteScope(kind)!==scope)return;
+   const completed=new Set(ops.map(x=>x.id)),now=favoriteSyncState(scope);
+   const remaining=now.ops.filter(x=>!completed.has(x.id));let rows=normalizeFavorites(result.items);
+   for(const op of remaining){rows=rows.filter(x=>x.key!==op.entry.key);if(op.active&&rows.length<FAVORITE_LIMIT)rows.unshift(op.entry)}
+   localStorage.setItem(scope,JSON.stringify(rows));localStorage.setItem(scope+":sync",JSON.stringify({seeded:true,ops:remaining}));synced=true;
+   if(kind==="models"&&$("modelDialog").open)renderModels();else if(kind==="tools"&&S.freeToolsMode)renderFreeTools();
+  }catch{/* Offline or server unavailable: retain local favorites and pending changes. */}
+ })().finally(()=>{favoriteFlights.delete(scope);if(synced&&S.user?.id===owner&&favoriteSyncState(scope).ops.length)void syncCatalogFavorites(kind)});
+ favoriteFlights.set(scope,flight);return flight;
+}
 function toggleFavorite(kind,entry){
  const rows=readFavorites(kind),exists=rows.some(x=>x.key===entry.key);
  if(!exists&&rows.length>=FAVORITE_LIMIT)return "full";
  const next=exists?rows.filter(x=>x.key!==entry.key):[entry,...rows];
- try{localStorage.setItem(favoriteScope(kind),JSON.stringify(next));return exists?"removed":"added"}catch{return "storage"}
+ try{localStorage.setItem(favoriteScope(kind),JSON.stringify(next));queueFavoriteSync(kind,entry,!exists);return exists?"removed":"added"}catch{return "storage"}
 }
 function modelFavoriteKey(m){return modelRoute(m)+"\0"+m.id}
 function modelFavoriteEntry(m){
@@ -3536,7 +3585,7 @@ function setFreeToolsMode(enabled){
  if(enabled){
   $("conversation").hidden=true;
   $("composerArea").hidden=true;
-  $("navFreeTools").classList.add("active");renderFreeTools();$("freeToolsBoard").hidden=false;void freeToolRecentHydrate();syncWorkspaceRoute("tools");
+  $("navFreeTools").classList.add("active");renderFreeTools();$("freeToolsBoard").hidden=false;void freeToolRecentHydrate();void syncCatalogFavorites("tools");syncWorkspaceRoute("tools");
  }else{
   $("freeToolsBoard").hidden=true;$("composerArea").hidden=false;$("navFreeTools").classList.remove("active");
   $("conversation").hidden=false;syncWorkspaceRoute("");
@@ -3561,7 +3610,7 @@ async function apiChatStream(payload,onDelta){
  const deadline=setTimeout(()=>controller.abort(),extended?210000:90000);
  try{
   const resp=await fetch("/api/chat/stream",{method:"POST",headers:{"content-type":"application/json",accept:"text/event-stream"},credentials:"same-origin",cache:"no-store",body:JSON.stringify(payload),signal:controller.signal});
-  if(!resp.ok){const data=await resp.json().catch(()=>null);throw Error(data?.error||"请求失败 HTTP "+resp.status)}
+  if(!resp.ok){const data=await resp.json().catch(()=>null);throw Object.assign(Error(data?.error||"请求失败 HTTP "+resp.status),{code:data?.code||null})}
   if(!resp.body)throw Error("浏览器不支持流式传输");
   reader=resp.body.getReader();const decoder=new TextDecoder();let buffer="";
   for(;;){
@@ -3626,11 +3675,14 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  const submittedCode=S.code;
  const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments});
  const submittedMode=turn.mode;
+ const requestId=retryContext?.requestId||crypto.randomUUID();
+ let submittedPayload=null;
+ ++chatOpenEpoch;
  if(!S.user){show("authDialog");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成描述");return}
  // Request routing is independent of the selected model preference.
- let requestProvider=S.provider,requestModel=S.model;
- const requestChatMode=forceFreeOnce?"auto":selectedChatMode;
+ let requestProvider=retryContext?.payload?.provider||S.provider,requestModel=retryContext?.payload?.model||S.model;
+ const requestChatMode=retryContext?.payload?.chatMode||(forceFreeOnce?"auto":selectedChatMode);
  if(submittedMode==="text"&&S.provider!=="free"&&!forceFreeOnce){
   if(requestChatMode==="free"&&!personalFreeChoice(S.provider,S.model))return;
   if(!S.connectionsLoaded&&!connected(S.provider)){
@@ -3647,6 +3699,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  if(submittedMode==="text"&&forceFreeOnce){requestProvider="free";requestModel="free:auto"}
  hideWelcome();flashError("");
  const mediaOwner=S.user?.id;
+ const requestChatId=retryContext&&"originalChatId" in retryContext?retryContext.originalChatId:S.chatId;
  const isNew=!S.chatId;
  const automaticTurn=forceFreeOnce||requestProvider==="free"&&requestModel==="free:auto";
  const isFreeMessage=submittedMode==="text"&&requestProvider==="free";
@@ -3659,6 +3712,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  settlePromptSize();
  const loading=retryContext?.loading||appendMessage("assistant","");
  loading.dataset.automaticTurn=automaticTurn?"1":"0";
+ if(isImageMessage){loading.dataset.messageKind="image";markImageMessage(loading,true)}
  if(retryContext){loading.querySelector(":scope > .message-copy-bar")?.remove();assistantTextState.delete(loading.querySelector(".bubble"));}
   setPortraitState(loading,isImageMessage?"creating":"thinking");
   let receivedStreamingText=false,streamedContent="";
@@ -3701,12 +3755,12 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
       if(nearBottom)viewport.scrollTop=viewport.scrollHeight;
      },60);
     };
-    try{result=await apiChatStream({chatId:S.chatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
-      mode:submittedCode?"code":"general",chatMode:requestChatMode,freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined},onDelta);}
+    try{submittedPayload=retryContext?.payload?{...retryContext.payload,requestId}:{requestId,chatId:requestChatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
+      mode:submittedCode?"code":"general",chatMode:requestChatMode,freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined};result=await apiChatStream(submittedPayload,onDelta);}
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
-    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt});
+    submittedPayload=retryContext?.payload?{...retryContext.payload,requestId}:{chatId:requestChatId,projectId:S.activeProjectId,mode:"image",requestId,prompt};result=await api("/api/chat/media",submittedPayload,25000);
    }
   // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");updateAssistantText(loadingBubble,result.reply,true)}
@@ -3753,14 +3807,14 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    if(isImageMessage)setComposerMode("image");
    else{restoreChatInputMode();if(submittedCode){S.code=true;$("codeToggle").classList.add("active");$("codeToggle").setAttribute("aria-pressed","true");setComposerMode("text")}}
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
-   settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading});
+   settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading,requestId:e?.code==="REQUEST_RETRYABLE"?undefined:requestId,originalChatId:requestChatId,payload:submittedPayload});
   });
   retry.append(node("span","",automaticTurn?"继续":"重试"));
-  const transient=["UPSTREAM_NETWORK","UPSTREAM_EMPTY","UPSTREAM_ERROR","FREE_FALLBACK_FAILED","RATE_LIMIT","CAPACITY"].includes(e?.code);
+  const transient=["REQUEST_PENDING","REQUEST_RETRYABLE","UPSTREAM_NETWORK","UPSTREAM_EMPTY","UPSTREAM_ERROR","FREE_FALLBACK_FAILED","RATE_LIMIT","CAPACITY"].includes(e?.code);
   const detail=automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):transient?"消息已保留":humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?(automaticTurn?"已保留当前内容":"回复中断，已保留收到的内容"):detail),retry);
-  if(submittedMode==="text"&&requestProvider!=="free"){
-   const alternate=messageTool("layers","手动使用免费自动重试",()=>{
+  if(submittedMode==="text"&&requestProvider!=="free"&&e?.code==="REQUEST_RETRYABLE"){
+    const alternate=messageTool("layers","手动使用免费自动重试",()=>{
     if(S.busy||S.freeToolsMode||!sentRow.isConnected)return;
     if(($("prompt").value.trim()||S.attachments.length)&&!confirm("重试会替换未发送的草稿及附件，继续吗？"))return;
     if(S.composerMode!=="text")setComposerMode("text");
@@ -4070,9 +4124,9 @@ function renderModels(){
   info.append(title,node("small","",via==="free"?(item.shared?"本站共享零价文字模型 · 无需个人密钥 · ID："+item.sharedModel:"免费自动路由 · 实际上游模型可能变化"):(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.freeTier?" · 需要本人免费计划/API Key，额度及计费由服务商决定":"")+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
   const actionable=["text","image"].includes(item.type);
   const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
-  button.disabled=!!blocked||!actionable||selected||!!item.favoriteMissing;
-   if(item.favoriteMissing)button.textContent="待目录确认";
-  if(actionable&&!blocked&&!item.favoriteMissing)button.addEventListener("click",()=>setModel(item));
+  button.disabled=!!blocked||!actionable||selected||!!item.favoriteMissing&&!connected(via);
+   if(item.favoriteMissing&&!connected(via))button.textContent="待目录确认";
+  if(actionable&&!blocked&&(!item.favoriteMissing||connected(via)))button.addEventListener("click",()=>setModel(item));
   row.append(info,favoriteButton("models",modelFavoriteEntry(item),renderModels,favoriteRank.has(modelFavoriteKey(item))),button);list.append(row);
  }
  dialog.scrollTop=previousTop;
@@ -4145,7 +4199,7 @@ function openModels(preserveFilter=false,modeScope=null){
  if(!preserveFilter){S.source="all";S.filter="all";S.query=""}
  $("modelSearch").value=S.query;$("modelFilter").value=S.filter;
  for(const el of els("#sourceChips .chip"))el.classList.toggle("active",el.dataset.source===S.source);
- S.modelPage=0;$("chatModeMenu").open=false;show("modelDialog");void loadCatalog();renderModels();$("modelScroll").scrollTop=0;$("sourceChips").scrollLeft=0;void loadModelHistory();
+ S.modelPage=0;$("chatModeMenu").open=false;show("modelDialog");void loadCatalog();renderModels();void syncCatalogFavorites("models");$("modelScroll").scrollTop=0;$("sourceChips").scrollLeft=0;void loadModelHistory();
  if(S.source==="family:gpt"&&S.savedProviders.openai)void refreshConnectedModelCatalog("openai");
  else if(S.savedProviders[S.source])void refreshConnectedModelCatalog(S.source);
  else if(S.provider!=="free"&&S.savedProviders[S.provider])void refreshConnectedModelCatalog(S.provider);
@@ -4317,7 +4371,7 @@ async function drawTrackJob(id,tile,batch){
  for(let tries=0;tries<150&&!batch.cancelled;tries++){
   let waitMs=12000;
   try{
-   const r=await api("/api/image/task/"+encodeURIComponent(id));
+   const r=await api("/api/image/task/"+encodeURIComponent(id),undefined,55000);
    if(batch.cancelled)return false;
    if(r.done){
     if(r.failed){showDrawRetry(tile,r.error||"免费来源暂未返回图片");return false}
@@ -4370,7 +4424,7 @@ async function runFreeDraw(){
   if(batch.cancelled)return;
   tile.startedAt=Date.now();tile.sourcePrompt=prompt;tile.clock.hidden=false;tile.caption.textContent="正在提交";
   try{
-   const result=await api("/api/image",{prompt,style,shape});
+   const result=await api("/api/image",{prompt,style,shape,requestId:crypto.randomUUID()},25000);
    if(batch.cancelled)return;
    if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
    tile.caption.textContent="正在生成图片";
