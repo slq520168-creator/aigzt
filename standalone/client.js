@@ -756,7 +756,6 @@ function renderProjects(){
  $("projectsToggle").setAttribute("aria-expanded",String(S.projectsExpanded));
  $("projectsToggle").classList.toggle("expanded",S.projectsExpanded);
  if(!S.projectsExpanded)return;
- const video=node("button","project-select video-project-entry");video.type="button";video.append(iconSlot("clapperboard"),node("span","project-name","视频模式"),iconSlot("chevron-right"));video.addEventListener("click",openVideoProject);const videoRow=node("div","project-row");videoRow.append(video);box.append(videoRow);renderIcons(videoRow);
  if(!S.user){box.append(node("div","hint","登录后查看个人项目"));return}
  for(const p of S.projects){
   const row=node("div","project-row"+(S.activeProjectId===p.id?" active":""));
@@ -768,7 +767,7 @@ function renderProjects(){
  if(!S.projects.length)box.append(node("div","hint","暂无个人项目"));
 }
 const VIDEO_PROJECT_SKILLS=Object.freeze([["视频规划 Skill","list-checks","免费策划","输出主题、受众、分段时长、镜头清单、素材需求和完整时间轴。","https://github.com/agentara/skills/blob/main/skills/aigc/video-plan/SKILL.md"],["Seedance 导演 Skill","clapperboard","免费策划","输出连续镜头脚本、人物一致性约束、镜头运动、转场及逐镜头中英文提示词。","https://github.com/liyue-aigc/seedance-2-5-video-director"],["AI 电影导演 Skills","film","免费策划","输出叙事结构、景别、构图、光线、运镜及逐镜头提示词。","https://github.com/smixs/visual-skills"],["可灵提示词 Skill","file-text","免费策划","输出可灵适用的主体、动作、环境、镜头、时长及负面约束的中英文提示词。","https://github.com/kevingao-ai/kling-ai-guide"],["TikTok 视频 Skill","video","免费策划","输出开场钩子、短视频脚本、镜头、口播、字幕与音乐节奏表。","https://github.com/Fangyuan025/tiktok-video-skill"],["UGC 视频 Skill","camera","免费策划","输出真实感用户原创视频的口播、场景、动作、镜头和字幕脚本，避免虚假体验。","https://github.com/Jarad-z/ugc-video-skill"],["即梦 Skills","image","生成需授权","输出即梦适用的素材与逐镜头中英文提示词；不声称已调用即梦。","https://github.com/full-aigc-skills/dreamina-skills"],["可灵 Skills","video","生成需授权","输出可灵视频镜头描述、动作与镜头约束；不声称已调用可灵。","https://github.com/full-aigc-skills/kling-skills"],["Remotion 视频 Skill","code-2","渲染环境待接入","输出可运行的 Remotion React 源码、素材清单、依赖和本地渲染命令；不声称已经渲染。","https://github.com/remotion-dev/skills"],["HeyGen Hyperframes","layers","渲染环境待接入","输出 HTML 动画视频场景、时间轴、素材清单及渲染步骤；不声称已经渲染。","https://github.com/heygen-com/hyperframes"]]);
-function openVideoProject(){
+function openVideoProject(mode="video"){
  const choice=$("videoSkillChoice"),list=$("videoSkillList");
  if(!choice.options.length){
   VIDEO_PROJECT_SKILLS.forEach(([name,icon,status,task,url],index)=>{
@@ -777,6 +776,10 @@ function openVideoProject(){
    const source=node("a","video-skill-source","来源");source.href=url;source.target="_blank";source.rel="noopener noreferrer";source.setAttribute("aria-label",name+" 技能来源");row.append(button,source);list.append(row);renderIcons(row);
   });
  }
+ const film=mode==="film";
+ $("videoProjectTitle").textContent=film?"电影模式":"视频模式";
+ $("videoProjectDialog").setAttribute("aria-label",film?"电影模式":"视频模式");
+ choice.value=film?"2":"0";
  show("videoProjectDialog");
 }
 function startVideoProject(e){
@@ -1281,8 +1284,11 @@ function chatImageNearBottom(bubble){
  return !!viewport&&!viewport.hidden&&!!row?.isConnected&&row===$("messageList")?.lastElementChild&&
   viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<140;
 }
-function showChatImageWaiting(bubble,label){
- bubble.classList.add("chat-image-task");bubble.replaceChildren(label,createImageWaitingFrame());
+function showChatImageWaiting(bubble,label,onStop){
+ bubble.classList.add("chat-image-task");
+ const actions=node("div","chat-image-progress");actions.append(label);
+ if(onStop){const stop=node("button","chat-image-stop","停止作图");stop.type="button";stop.setAttribute("aria-label","停止作图");stop.addEventListener("click",onStop,{once:true});actions.append(stop)}
+ bubble.replaceChildren(actions,createImageWaitingFrame());
  // Follow only the newly submitted picture, never historical jobs during chat restore.
  if(S.busy)followLatestImage(bubble);
 }
@@ -1445,12 +1451,30 @@ async function restoreDeviceMedia(bubble,id,kind,legacyUrl="",legacyJobId=""){
  if(blob instanceof Blob&&bubble.isConnected&&deviceMediaKey(id)===key){renderDeviceMedia(bubble,blob,kind);return true}return false;
 }
 
+function showImageStopped(bubble,detail="已停止作图"){
+ delete bubble.dataset.imageTask;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");
+ bubble.replaceChildren(node("div","image-stop-status",detail));
+ setPortraitState(bubble.closest(".message"),"idle");
+}
+async function cancelChatImageJob(bubble,id){
+ delete bubble.dataset.imageTask;delete bubble.dataset.imageFinalizing;
+ showImageStopped(bubble,"正在停止作图…");
+ try{
+  const result=await api("/api/image/task/"+id+"/cancel",{},12000);
+  if(!bubble.isConnected)return;
+  if(result.completed){showImageStopped(bubble,"图片已生成，无法撤销已完成的计算");const view=node("button","chat-image-stop","查看图片");view.type="button";view.addEventListener("click",()=>renderImageJob(bubble,id),{once:true});bubble.append(view);return}
+  showImageStopped(bubble,"已停止作图");
+ }catch(e){
+  if(!bubble.isConnected)return;
+  showImageStopped(bubble,"停止尚未确认");const retry=node("button","chat-image-stop","重试停止");retry.type="button";retry.addEventListener("click",()=>void cancelChatImageJob(bubble,id),{once:true});bubble.append(retry);
+ }
+}
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
  const mediaLabel="作图中";
  const label=node("span","image-job-label",mediaLabel+" 1秒");
  bubble.dataset.imageStart=String(Date.now());
- showChatImageWaiting(bubble,label);
+ showChatImageWaiting(bubble,label,()=>void cancelChatImageJob(bubble,id));
  const interval=window.setInterval(()=>{
   if(!bubble.isConnected||bubble.dataset.imageTask!==id){window.clearInterval(interval);return}
   const elapsed=Math.max(1,Math.floor((Date.now()-Number(bubble.dataset.imageStart||Date.now()))/1000)+1);
@@ -1484,6 +1508,7 @@ async function pollImageJob(bubble,id,manual){
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
+   if(r.cancelled){showImageStopped(bubble);return}
    if(r.retired){delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.closest(".message")?.remove();return}
    if(r.failed){showImageRetry(bubble);return}
    const img=blob instanceof Blob?localImageElement(blob):node("img","chat-generated-image");
@@ -1697,12 +1722,25 @@ function pastedImagePrompt(value){
   body.length>=25&&score>=3;
 
 }
+// Automatic generation requires an explicit command or a high-confidence, standalone visual prompt.
+function automaticImagePrompt(value){
+ const raw=String(value||"").trim();
+ if(!raw||raw.length>1800||imagePromptDiscussion(raw))return false;
+ if(/(?:工作台|工作模式|个人项目|技能库|免费额度|服务商|接入|部署|验收|接口|数据库|代码|源代码|技术方案|执行要求|使用策略|优先级|禁止未经授权|自动匹配|自动切换|提示词生成|视频制作|镜头规划|Agent\s+Skills|AIGZT|\bAPI\b|\bSDK\b|\bCLI\b|\bJSON\b|\bGitHub\b|\bRemotion\b|\bHyperframes\b)/i.test(raw))return false;
+ if(/^\s*(?:#{1,6}\s|[-*]\s|\d+[.)、]\s|\|)|\|[^\n]+\|/m.test(raw))return false;
+ const lines=raw.split("\n").map(x=>x.trim()).filter(Boolean);
+ const first=imagePromptLabel(lines[0]);
+ if(first&&!first.negative&&/(?:作图|画图|绘图|生图|图片|图像|摄影|正向|positive|image|drawing|midjourney|flux|sdxl)/i.test(first.label))return pastedImagePrompt(raw);
+ if(lines.length>3||/[。！？?!]/.test(raw)||/https?:\/\//i.test(raw))return false;
+ const visual=/(?:真实摄影|真实人体摄影|超写实|高清摄影|写实风格|photorealistic|cinematic|illustration|anime|watercolor|oil painting|masterpiece|--ar\s+\d+:\d+)/i.test(raw);
+ return visual&&(raw.match(/[,，、;；]/g)||[]).length>=2&&pastedImagePrompt(raw);
+}
 function isDirectImageRequest(value){
  const s=String(value||"").trim();
  if(!s||imagePromptDiscussion(s))return false;
  if(/(?:写|生成|输出|提供).{0,20}(?:代码|网页|网站|功能|按钮|指令|视频|文章|故事)/.test(s))return false;
  if(/(?:画图|作图|绘图|生成图片).{0,6}(?:提示词|prompts?)\s*$/i.test(s))return false;
- return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:画(?:一张|一幅|个|出|一下)?|绘制|作图|(?:生成|制作|创建|设计)(?:一张|一幅|一组|一套|一个)?[^，。！？\n]{0,25}?(?:图片|图像|照片|写真|海报|插画|头像|壁纸|人物图|效果图))/.test(s)||
+ return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:画(?!面|质|风|笔|册|法)(?:一张|一幅|一只|个|出|一下)?|绘制|作图(?!功能|模式|提示词|按钮|设置)|(?:生成|制作|创建|设计)(?:一张|一幅|一组|一套|一个)?[^，。！？\n]{0,25}?(?:图片|图像|照片|写真|海报|插画|头像|壁纸|人物图|效果图))/.test(s)||
  /^(?:根据|按照|使用|用)(?:以下|下面|这[个段套])?提示词.{0,20}(?:生成|绘制|画|作图)/.test(s)||
  /^(?:please\s+)?(?:generate|create|draw|make|render|paint)\b.{0,40}\b(?:image|picture|photo|portrait|illustration|poster|artwork|wallpaper)\b/i.test(s);
 }
@@ -3715,7 +3753,7 @@ function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments}){
  if(code||continueFrom||attachments.length)return {mode:"text"};
  if(mode==="image")return {mode:"image"};
  if(isDirectVideoRequest(prompt))return {mode:"text"};
- if(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt)))return {mode:"image"};
+ if(isDirectImageRequest(prompt)||(provider==="free"&&automaticImagePrompt(prompt)))return {mode:"image"};
  return {mode:"text"};
 }
 async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,retryContext=null,forceText=false){
@@ -3775,13 +3813,14 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  const dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));
  dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);
- if(isImageMessage)showChatImageWaiting(loadingBubble,waitLabel);
+ let imageStopRequested=false;
+ if(isImageMessage)showChatImageWaiting(loadingBubble,waitLabel,()=>{imageStopRequested=true;showImageStopped(loadingBubble,"正在停止作图…")});
  else loadingBubble.replaceChildren(status);
  const textReading=submittedMode==="text"&&!(requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages));
  const releaseReadingSpace=textReading&&!retryContext?positionNewTextReply(loading,sentRow,$("conversation")):null;
  const startedAt=Date.now();
  const imageTimer=isImageMessage?window.setInterval(()=>{
-  if(!loading.isConnected){window.clearInterval(imageTimer);return}
+  if(!loading.isConnected||imageStopRequested){window.clearInterval(imageTimer);return}
   waitLabel.textContent="正在创建您的图片 · "+Math.max(1,Math.floor((Date.now()-startedAt)/1000)+1)+"秒";
  },1000):null;
  S.busy=true;$("sendBtn").disabled=true;
@@ -3815,6 +3854,14 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
   else if(isImageMessage){
     submittedPayload=retryContext?.payload?{...retryContext.payload,requestId}:{chatId:requestChatId,projectId:S.activeProjectId,mode:"image",requestId,prompt};result=await api("/api/chat/media",submittedPayload,25000);
    }
+  if(isImageMessage&&imageStopRequested){
+   if(S.user?.id===mediaOwner){
+    if(loading.isConnected){S.chatId=result.chatId;if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}if(result.assistantMessageId)loading.dataset.messageId=result.assistantMessageId}
+    if(result.jobId)await cancelChatImageJob(loadingBubble,result.jobId);
+    void fetchChats();
+   }
+   return;
+  }
   // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");updateAssistantText(loadingBubble,result.reply,true)}
   if(loading.isConnected&&S.user?.id===mediaOwner){
@@ -3840,6 +3887,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
   usageOverviewCache=null;
  }catch(e){
    if(S.user?.id!==mediaOwner||!loading.isConnected)return;
+   if(isImageMessage&&imageStopRequested){showImageStopped(loadingBubble,"已停止等待，服务器状态未确认");return}
    if(e?.savedTurn?.chatId&&e.savedTurn.userMessageId){S.chatId=e.savedTurn.chatId;sentRow.dataset.messageId=e.savedTurn.userMessageId;appendMessageCopy(sentRow,sentBody);void fetchChats()}
    if(submittedMode==="text"&&["MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","AUTH","ACCESS","UPSTREAM_NETWORK","UPSTREAM_EMPTY","FREE_FALLBACK_FAILED"].includes(e?.code))recordModelOutcome(requestProvider,requestModel,false,e.code);
    if(submittedMode==="text"&&requestProvider!=="free"&&["MODEL_RETIRED","MODEL_UNAVAILABLE"].includes(e?.code)){
@@ -4767,6 +4815,8 @@ function wire(){
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
  $("videoProjectForm").addEventListener("submit",startVideoProject);
+ $("videoProjectOpen").addEventListener("click",()=>openVideoProject("video"));
+ $("filmProjectOpen").addEventListener("click",()=>openVideoProject("film"));
  $("deleteProject").addEventListener("click",()=>void deleteProject());
  $("searchForm").addEventListener("submit",searchChats);
  $("chatSearchInput").addEventListener("compositionstart",()=>{chatSearchComposing=true;clearTimeout(chatSearchTimer);++chatSearchSerial});
