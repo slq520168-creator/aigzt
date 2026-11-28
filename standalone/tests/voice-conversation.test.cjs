@@ -9,7 +9,7 @@ test("voice entry exists and both features are enabled",()=>{
 test("recorder uses actual audio bytes and cancels stale turns",()=>{
  assert.match(c,/navigator\.mediaDevices\.getUserMedia/);assert.match(c,/new window\.MediaRecorder/);
  assert.match(c,/fetch\("\/api\/voice\/transcribe"/);assert.match(c,/voiceSession\.turn\+\+/);assert.match(c,/track\.stop\(\)/);
- assert.match(c,/voiceSession\.utterance=u/);assert.match(c,/u\.onstart=/);assert.match(c,/setTimeout\(fail,6000\)/);
+ assert.match(c,/voiceSession\.utterance=u/);assert.match(c,/u\.onstart=/);assert.match(c,/setTimeout\(fail,10000\)/);
 });
 test("voice text is split without losing Chinese characters",()=>{
  const chunks=new Function(c.slice(c.indexOf("function voiceChunks("),c.indexOf("function voiceLanguage("))+";return voiceChunks")();
