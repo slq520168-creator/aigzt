@@ -838,11 +838,14 @@ function renderFilmDraft(){
  const data=filmProjectContent(draft);$("filmOutputTitle").textContent=data.title||"创作结果";$("filmPlanResult").value=draft.result||"";
  $("filmScriptDetails").hidden=!data.script;$("filmScriptText").textContent=data.script;$("filmScriptDetails").open=!!data.script&&!data.shots.length;
  for(const shot of data.shots){
-  const row=node("article","film-shot"),head=node("div","film-shot-heading");head.append(node("strong","",String(shot.number).padStart(2,"0")+" · "+shot.title),node("span","film-shot-duration",shot.duration+" 秒"));row.append(head,node("p","",shot.description));
-  const detail=node("details","film-shot-prompt"),summary=node("summary","","查看提示词");detail.append(summary,node("p","",shot.prompt));row.append(detail);
-  if(!filmSequence||filmSequence.planId!==draft.id){const button=node("button","film-shot-generate");button.type="button";button.append(providerLogo("freetext"),node("span","","生成视频"));button.addEventListener("click",()=>void generateFilmShot(shot));row.append(button)}root.append(row);
+  const row=node("article","film-shot film-shot-split"),left=node("div","film-shot-left"),right=node("div","film-shot-right"),head=node("div","film-shot-heading");row.dataset.shot=String(shot.number);row.dataset.plan=draft.id;
+  head.append(node("strong","",String(shot.number).padStart(2,"0")+" · "+shot.title),node("span","film-shot-duration",shot.duration+" 秒"));left.append(head,node("p","",shot.description));
+  const detail=node("details","film-shot-prompt"),summary=node("summary","","查看提示词");detail.append(summary,node("p","",shot.prompt));left.append(detail);
+  const button=node("button","film-shot-generate");button.type="button";button.addEventListener("click",()=>void generateFilmShot(shot));left.append(button);
+  const preview=node("div","film-shot-preview"),status=node("span","film-shot-preview-status");status.setAttribute("aria-live","polite");right.append(preview,status);row.append(left,right);root.append(row);
  }
- if(!data.shots.length&&draft.kind!=="script")root.append(node("p","video-project-note","此记录未包含可识别的镜头，仍可查看原内容或直接生成视频。"));
+ if(!data.shots.length&&draft.kind!=="script")root.append(node("p","video-project-note","此记录未包含可识别的镜头。"));
+ syncFilmShotViews();
 }
 function selectFilmStage(stage){
  filmStage=stage==="video"?"video":"script";
@@ -850,9 +853,21 @@ function selectFilmStage(stage){
  if(filmStage!=="video")renderFilmDraft();
 }
 async function generateFilmShot(shot){
- if(filmSequenceRunning){filmPlanUI("完整影片正在制作",false);return}
- if(videoProjectJob||videoProjectSubmitting){selectFilmStage("video");return}
- $("videoProjectPrompt").value=shot.prompt;$("videoProjectRatio").value=shot.ratio||$("filmQuickRatio").value;$("videoProjectDuration").value=String(shot.duration);$("filmSelectedShot").textContent=shot.title||"视频制作";selectFilmStage("video");await startVideoProject({preventDefault(){}});
+ if(!S.user){show("authDialog");return}if(!filmPrefs?.accepted){openFilmSettings();$("filmSettingsStatus").textContent="请先确认服务授权";return}
+ if(filmSequenceRunning||filmSequenceStopRequested||videoProjectJob||videoProjectSubmitting||filmPlanBusy)return;
+ const draft=currentFilmDraft(),owner=S.user.id;if(!draft)return;resetFilmSequence(owner);
+ if(filmSequence?.planId!==draft.id){
+  if(filmSequence&&!["complete","stopped"].includes(filmSequence.phase)){filmPlanUI("请先继续或停止当前作品",false);return}
+  const shots=filmProjectContent(draft).shots,seconds=shots.reduce((sum,x)=>sum+x.duration,0);
+  if(!shots.length||shots.length>15||seconds<5||seconds>120){filmPlanUI("当前分镜总时长或数量超出合成范围",false);return}
+  clearFilmClipMemory();clearFilmFinal();filmSequence={id:crypto.randomUUID(),planId:draft.id,prompt:draft.prompt||$("filmPlanPrompt").value,ratio:$("filmQuickRatio").value,seconds,phase:"clips",clips:shots.map(x=>({title:x.title,prompt:x.prompt,duration:x.duration,sourceNumber:x.number,id:crypto.randomUUID(),state:"waiting"})),planResult:draft.result,manual:true,message:"",createdAt:Date.now()};
+ }
+ const q=filmSequence,clip=q.clips.find((x,i)=>(x.sourceNumber||i+1)===shot.number);if(!clip||clip.state==="complete")return;
+ const pending=q.clips.find(x=>x!==clip&&x.state==="running");if(pending){filmSequenceUI("请继续原镜头任务");return}
+ const epoch=++filmSequenceEpoch;filmSequenceRunning=true;filmSequenceStopRequested=false;q.phase="clips";
+ try{saveFilmSequence();filmSequenceUI();await sequenceClip(owner,epoch,q,clip,q.clips.indexOf(clip));if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;if(q.clips.every(x=>x.state==="complete"))await sequenceEdit(owner,epoch,q);else{q.phase="paused";q.message="";saveFilmSequence()}}
+ catch(e){if(filmSequenceCurrent(owner,epoch)&&!filmSequenceStopRequested){q.phase="paused";q.message=humanError(e);try{saveFilmSequence()}catch{}}}
+ finally{if(filmSequenceCurrent(owner,epoch)&&!filmSequenceStopRequested){filmSequenceRunning=false;filmSequenceUI()}}
 }
 function renderFilmMainModels(){
  const planner=$("filmMainPlanner"),video=$("filmMainVideo");const p=filmPrefs?.provider||"auto";
@@ -916,6 +931,22 @@ async function saveFilmDraft(){
 
 // Film orchestration uses dedicated task IDs and device storage; never chat send state.
 let filmSequence=null,filmSequenceOwner=null,filmSequenceEpoch=0,filmSequenceRunning=false,filmSequenceWorker=null,filmSequenceReject=null,filmSequenceUrl=null,filmSequenceCreating=false,filmSequenceStopRequested=false;
+const filmClipMemory=new Map(),filmClipUrls=new Map(),filmClipFlights=new Map();let filmFinalBlob=null;
+function clearFilmClipMemory(){for(const url of filmClipUrls.values())URL.revokeObjectURL(url);filmClipUrls.clear();filmClipMemory.clear();filmClipFlights.clear()}
+function clearFilmFinal(){if(filmSequenceUrl)URL.revokeObjectURL(filmSequenceUrl);filmSequenceUrl=null;filmFinalBlob=null;$("filmFinalResult").replaceChildren()}
+async function readFilmClip(owner,clip){const id=clip.id,key=owner+":film-clip:"+id;if(filmClipMemory.has(id))return filmClipMemory.get(id);if(filmClipFlights.has(id))return filmClipFlights.get(id);const q=filmSequence;const flight=(async()=>{let blob=await deviceMediaGet(key);if(!(blob instanceof Blob)||!blob.size)blob=await deviceMediaBlob("/api/video/result/"+id);if(S.user?.id!==owner||filmSequence!==q)return null;if(blob instanceof Blob&&blob.size){filmClipMemory.set(id,blob);return blob}return null})();filmClipFlights.set(id,flight);try{return await flight}finally{if(filmClipFlights.get(id)===flight)filmClipFlights.delete(id)}}
+function syncFilmShotViews(){
+ const q=filmSequence,owner=S.user?.id;
+ for(const row of $("filmShotList").querySelectorAll(".film-shot-split")){
+  const number=Number(row.dataset.shot),clip=q?.planId===row.dataset.plan?q.clips.find((x,i)=>(x.sourceNumber||i+1)===number):null,button=row.querySelector(".film-shot-generate"),preview=row.querySelector(".film-shot-preview"),status=row.querySelector(".film-shot-preview-status"),state=clip?.state||"waiting";
+  button.textContent=state==="complete"?"已生成":state==="running"?"生成中":state==="failed"?"重试":"生成视频";button.disabled=state==="complete"||filmSequenceRunning||filmSequenceStopRequested;button.classList.toggle("shot-complete",state==="complete");
+  const ratio=q?.planId===row.dataset.plan?q.ratio:$("filmQuickRatio").value;preview.dataset.ratio=ratio;
+  const key=(clip?.id||"none")+":"+state;if(preview.dataset.key===key)continue;preview.dataset.key=key;preview.replaceChildren();status.textContent=state==="complete"?"":state==="running"?"生成中…":state==="failed"?"待重试":"待生成";
+  if(state!=="complete"){preview.append(iconSlot("video"));renderIcons(preview);continue}
+  const showBlob=blob=>{if(!row.isConnected||preview.dataset.key!==key||S.user?.id!==owner||filmSequence!==q)return;if(!(blob instanceof Blob)||!blob.size){status.textContent="片段暂不可读取";return}let url=filmClipUrls.get(clip.id);if(!url){url=URL.createObjectURL(blob);filmClipUrls.set(clip.id,url)}const v=node("video");v.src=url;v.controls=true;v.playsInline=true;v.preload="metadata";preview.replaceChildren(v)};
+  if(filmClipMemory.has(clip.id))showBlob(filmClipMemory.get(clip.id));else{status.textContent="读取视频…";void readFilmClip(owner,clip).then(blob=>{status.textContent="";showBlob(blob)}).catch(()=>{if(row.isConnected)status.textContent="片段暂不可读取"})}
+ }
+}
 function filmSequenceKey(owner){return "aigzt:film-sequence:v1:"+owner}
 function filmSequenceSchedule(seconds){const clip=seconds<=60?5:8;return Array.from({length:Math.ceil(seconds/clip)},()=>clip)}
 function filmSequenceValid(x){return x&&typeof x.id==="string"&&typeof x.planId==="string"&&Number.isInteger(x.seconds)&&x.seconds>=5&&x.seconds<=120&&Array.isArray(x.clips)&&x.clips.length<=15&&["landscape","portrait","square"].includes(x.ratio)}
@@ -925,23 +956,29 @@ function filmSequenceDelay(ms){return new Promise(r=>setTimeout(r,ms))}
 function filmSequenceUI(message){
  const q=filmSequence,root=$("filmSequenceRows");$("filmSequenceProgress").hidden=!q;$("filmDirectVideo").disabled=filmSequenceRunning;$("filmSequenceStop").hidden=!q||q.phase==="complete"||q.phase==="stopped";$("filmSequenceStop").disabled=filmSequenceStopRequested;$("filmSequenceResume").hidden=!q||filmSequenceRunning||q.phase==="complete";
  $("filmSequenceStatus").textContent=message||q?.message||"";root.replaceChildren();
- if(!q)return;
+ if(!q){syncFilmShotViews();return}
  const finished=q.clips.filter(x=>x.state==="complete").length;$("filmSequenceBar").value=q.phase==="complete"?100:q.clips.length?Math.floor(10+80*finished/q.clips.length):0;
- for(let i=0;i<q.clips.length;i++){const shot=q.clips[i],line=node("div","film-sequence-row");line.append(node("span","",String(i+1).padStart(2,"0")+" · "+shot.title),node("small","",({waiting:"等待",running:"生成中",complete:"已完成",failed:"待重试"}[shot.state]||"等待")));root.append(line)}
+ syncFilmShotViews();
 }
 function resetFilmSequence(owner){
  if(filmSequenceOwner===owner)return;
  ++filmSequenceEpoch;filmSequenceOwner=owner;filmSequence=null;filmSequenceRunning=false;filmSequenceCreating=false;filmSequenceStopRequested=false;
  if(filmSequenceWorker){filmSequenceWorker.terminate();filmSequenceWorker=null}if(filmSequenceReject){filmSequenceReject(Error("任务已停止"));filmSequenceReject=null}
- if(filmSequenceUrl)URL.revokeObjectURL(filmSequenceUrl);filmSequenceUrl=null;$("filmFinalResult").replaceChildren();filmSequenceUI("");
+ clearFilmClipMemory();clearFilmFinal();filmSequenceUI("");
 }
 async function filmSequenceOutput(owner,epoch,q,blob){
  if(!filmSequenceCurrent(owner,epoch))return;
  if(!(blob instanceof Blob)||!blob.size)throw Error("成片文件未找到");
- if(filmSequenceUrl)URL.revokeObjectURL(filmSequenceUrl);filmSequenceUrl=URL.createObjectURL(blob);
+ if(filmSequenceUrl)URL.revokeObjectURL(filmSequenceUrl);filmFinalBlob=blob;filmSequenceUrl=URL.createObjectURL(blob);
  const root=$("filmFinalResult"),video=node("video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=filmSequenceUrl;
- const dl=node("a","chat-image-stop","下载 MP4");dl.href=filmSequenceUrl;dl.download="film-"+q.id.slice(0,8)+".mp4";root.replaceChildren(video,dl);
+ const dl=node("a","chat-image-stop","下载 MP4");dl.href=filmSequenceUrl;dl.download="film-"+q.id.slice(0,8)+".mp4";const heading=node("h3","","完整成片"),actions=node("div","film-final-actions"),edit=node("button","chat-image-stop","重新剪辑");edit.type="button";edit.onclick=()=>void editFilmAgain(q);actions.append(edit,dl);root.replaceChildren(heading,video,actions);renderFilmEditControls(root,q);
 }
+function renderFilmEditControls(root,q){
+ const details=node("details","film-edit-options"),summary=node("summary","","镜头顺序与时长"),list=node("div","film-edit-order");details.append(summary,list);
+ const order=q.clips.map((clip,i)=>({...clip,sourceNumber:clip.sourceNumber||i+1}));let seconds=q.seconds;
+ const render=()=>{list.replaceChildren();order.forEach((clip,i)=>{const row=node("div","film-edit-order-row"),up=node("button","chat-image-stop","↑"),down=node("button","chat-image-stop","↓");up.type=down.type="button";up.disabled=i===0;down.disabled=i===order.length-1;up.setAttribute("aria-label","上移镜头 "+(i+1));down.setAttribute("aria-label","下移镜头 "+(i+1));const move=j=>{[order[i],order[j]]=[order[j],order[i]];render()};up.onclick=()=>move(i-1);down.onclick=()=>move(i+1);row.append(node("span","",clip.title+" · "+clip.duration+"秒"),up,down);list.append(row)});const label=node("label","","成片时长（秒）"),input=node("input");input.type="number";input.min="5";input.max=String(Math.min(120,order.reduce((a,b)=>a+b.duration,0)));input.value=String(seconds);input.oninput=()=>{seconds=Number(input.value)};label.append(input);const apply=node("button","chat-image-stop","应用剪辑");apply.type="button";apply.onclick=()=>{if(!Number.isInteger(seconds)||seconds<5||seconds>Number(input.max)){input.reportValidity();return}if(filmSequence!==q||filmSequenceRunning)return;q.clips=order;q.seconds=seconds;void editFilmAgain(q)};list.append(label,apply)};render();root.append(details)
+}
+async function editFilmAgain(q){if(filmSequence!==q||filmSequenceRunning||!S.user)return;const owner=S.user.id,epoch=++filmSequenceEpoch;filmSequenceRunning=true;filmSequenceStopRequested=false;try{await sequenceEdit(owner,epoch,q)}catch(e){if(filmSequenceCurrent(owner,epoch)){q.phase=filmFinalBlob?"complete":"paused";q.message=humanError(e);try{saveFilmSequence()}catch{}}}finally{if(filmSequenceCurrent(owner,epoch)){filmSequenceRunning=false;filmSequenceUI()}}}
 async function restoreFilmSequence(){
  const owner=S.user?.id;if(!owner)return;resetFilmSequence(owner);if(filmSequenceRunning)return;
  if(!filmSequence){try{const q=JSON.parse(localStorage.getItem(filmSequenceKey(owner))||"null");if(filmSequenceValid(q))filmSequence=q}catch{}}
@@ -950,7 +987,7 @@ async function restoreFilmSequence(){
  const dur=$("filmQuickDuration");dur.value=[5,15,30,60,120].includes(filmSequence.seconds)?String(filmSequence.seconds):"custom";$("filmCustomDurationWrap").hidden=dur.value!=="custom";$("filmCustomDuration").value=String(filmSequence.seconds);
  const epoch=filmSequenceEpoch,q=filmSequence;
  if(q.planResult){filmDrafts.project={id:q.planId,kind:"project",result:q.planResult};renderFilmDraft()}
- if(q.phase==="complete"){const blob=await deviceMediaGet(owner+":film-final:"+q.id);if(!filmSequenceCurrent(owner,epoch))return;if(blob instanceof Blob&&blob.size)await filmSequenceOutput(owner,epoch,q,blob);else{q.phase="editing";q.message="本机成片已丢失，可使用已保存片段重新剪辑";saveFilmSequence()}}
+ if(q.phase==="complete"){const blob=filmFinalBlob||await deviceMediaGet(owner+":film-final:"+q.id);if(!filmSequenceCurrent(owner,epoch))return;if(blob instanceof Blob&&blob.size)await filmSequenceOutput(owner,epoch,q,blob);else{q.phase="editing";q.message="本机成片已丢失，可使用已保存片段重新剪辑";saveFilmSequence()}}
  filmSequenceUI();
 }
 async function startFilmSequence(){
@@ -963,7 +1000,7 @@ async function startFilmSequence(){
  if(filmSequence&&filmSequence.phase!=="complete"&&filmSequence.prompt===prompt&&filmSequence.seconds===seconds&&filmSequence.ratio===$("filmQuickRatio").value){void runFilmSequence();return}
  if(filmSequence&&filmSequence.phase!=="complete"){filmSequenceUI("已有未完成作品，请先继续或停止后再创作");if(filmSequence.phase!=="stopped")return}
  filmSequence={id:crypto.randomUUID(),planId:crypto.randomUUID(),prompt,ratio:$("filmQuickRatio").value,seconds,phase:"planning",clips:[],planResult:"",message:"",createdAt:Date.now()};
- if(filmSequenceUrl)URL.revokeObjectURL(filmSequenceUrl);filmSequenceUrl=null;$("filmFinalResult").replaceChildren();filmDrafts.project=null;filmDrafts.storyboard=null;filmDrafts.script=null;renderFilmDraft();
+ clearFilmClipMemory();clearFilmFinal();filmDrafts.project=null;filmDrafts.storyboard=null;filmDrafts.script=null;renderFilmDraft();
  try{saveFilmSequence();void runFilmSequence()}catch(e){filmSequenceUI(humanError(e))}
 }
 async function sequencePlan(owner,epoch,q){
@@ -983,14 +1020,14 @@ async function sequencePlan(owner,epoch,q){
  if(job?.status!=="complete"){if(["failed","cancelled"].includes(job?.status))q.planRetry=true;saveFilmSequence();throw Error(job?.error||"剧本与分镜尚未完成")}
  const data=filmProjectContent(job);
  if(data.shots.length!==schedule.length||job.incomplete){q.planRetry=true;saveFilmSequence();throw Error("分镜数量不完整，继续创作可重新生成分镜")}
- q.planResult=job.result;q.clips=data.shots.map((shot,i)=>({title:shot.title,prompt:shot.prompt,duration:schedule[i],id:crypto.randomUUID(),state:"waiting"}));q.phase="clips";q.planRetry=false;saveFilmSequence();
+ q.planResult=job.result;q.clips=data.shots.map((shot,i)=>({title:shot.title,prompt:shot.prompt,duration:schedule[i],sourceNumber:i+1,id:crypto.randomUUID(),state:"waiting"}));q.phase="clips";q.planRetry=false;saveFilmSequence();
  filmDrafts.project=job;renderFilmDraft();
 }
 async function sequenceClip(owner,epoch,q,clip,index){
  const key=owner+":film-clip:"+clip.id;
- let blob=await deviceMediaGet(key);
- if(blob instanceof Blob&&blob.size){clip.state="complete";saveFilmSequence();return}
- if(clip.state==="complete"){blob=await deviceMediaBlob("/api/video/result/"+clip.id);if(!(blob instanceof Blob)||!blob.size)throw Error("第"+(index+1)+"段原文件不可读取；不会自动重新生成");if(!await deviceMediaPut(key,blob))throw Error("本机存储空间不足");return}
+ let blob=filmClipMemory.get(clip.id)||await deviceMediaGet(key);
+ if(blob instanceof Blob&&blob.size){filmClipMemory.set(clip.id,blob);clip.state="complete";saveFilmSequence();filmSequenceUI();return}
+ if(clip.state==="complete"){blob=await readFilmClip(owner,clip);if(!(blob instanceof Blob)||!blob.size)throw Error("第"+(index+1)+"段原文件不可读取；不会自动重新生成");void deviceMediaPut(key,blob);return}
  if(clip.state==="failed"){clip.id=crypto.randomUUID();clip.state="waiting";saveFilmSequence();return sequenceClip(owner,epoch,q,clip,index)}
  clip.state="running";q.message="第 "+(index+1)+" / "+q.clips.length+" 段生成中";saveFilmSequence();filmSequenceUI();
  filmSequenceCreating=true;let result;
@@ -1010,11 +1047,11 @@ async function sequenceClip(owner,epoch,q,clip,index){
  blob=await deviceMediaBlob("/api/video/result/"+clip.id);
  if(!(blob instanceof Blob)||!blob.size)throw Error("第"+(index+1)+"段已生成，等待重新读取文件");
  if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;
- if(!await deviceMediaPut(key,blob))throw Error("本机存储空间不足，无法保存第"+(index+1)+"段");
+ filmClipMemory.set(clip.id,blob);void deviceMediaPut(key,blob);
  clip.state="complete";saveFilmSequence();filmSequenceUI();
 }
 async function sequenceEdit(owner,epoch,q){
- const blobs=[];let bytes=0;for(const clip of q.clips){const b=await deviceMediaGet(owner+":film-clip:"+clip.id);if(!(b instanceof Blob)||!b.size)throw Error("缺少片段，请继续恢复");bytes+=b.size;if(bytes>160*1024*1024)throw Error("本机剪辑文件超过160MB");blobs.push(b)}
+ const blobs=[];let bytes=0;for(const clip of q.clips){const b=await readFilmClip(owner,clip);if(!(b instanceof Blob)||!b.size)throw Error("缺少片段，请继续恢复");bytes+=b.size;if(bytes>160*1024*1024)throw Error("本机剪辑文件超过160MB");blobs.push(b)}
  if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;
  q.phase="editing";q.message="正在自动剪辑合成…";saveFilmSequence();filmSequenceUI();
  const blob=await new Promise((resolve,reject)=>{
@@ -1027,8 +1064,7 @@ async function sequenceEdit(owner,epoch,q){
   worker.postMessage({blobs,seconds:q.seconds});
  });
  if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;
- if(!await deviceMediaPut(owner+":film-final:"+q.id,blob))throw Error("成片已生成但本机空间不足，无法持久保存");
- q.phase="complete";q.message="成片已完成";saveFilmSequence();await filmSequenceOutput(owner,epoch,q,blob);
+ q.phase="complete";q.message="成片已完成";await filmSequenceOutput(owner,epoch,q,blob);saveFilmSequence();void deviceMediaPut(owner+":film-final:"+q.id,blob);
 }
 async function runFilmSequence(){
  if(filmSequenceRunning||filmSequenceStopRequested||!filmSequence||!S.user)return;
@@ -1038,7 +1074,7 @@ async function runFilmSequence(){
   if(!q.clips.length){if(q.planRetry){q.planId=crypto.randomUUID();q.planRetry=false}q.phase="planning";q.message="正在生成剧本与分镜…";saveFilmSequence();filmSequenceUI();await sequencePlan(owner,epoch,q)}
   if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;
   q.phase="clips";saveFilmSequence();
-  for(let i=0;i<q.clips.length;i++){if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;await sequenceClip(owner,epoch,q,q.clips[i],i)}
+  const order=q.clips.map((_,i)=>i).sort((a,b)=>Number(q.clips[b].state==="running")-Number(q.clips[a].state==="running"));for(const i of order){if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;await sequenceClip(owner,epoch,q,q.clips[i],i)}
   if(!filmSequenceCurrent(owner,epoch)||filmSequenceStopRequested)return;
   await sequenceEdit(owner,epoch,q);
  }catch(e){if(filmSequenceCurrent(owner,epoch)&&!filmSequenceStopRequested){q.message=humanError(e);q.phase=q.clips.length?"paused":"planning";try{saveFilmSequence()}catch{};filmSequenceUI()}}
