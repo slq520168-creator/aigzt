@@ -370,6 +370,22 @@ const KEY_SITES={
  yandex:{url:"https://aistudio.yandex.cloud/platform/",name:"获取 Yandex AI Studio 密钥"},
  gigachat:{url:"https://developers.sber.ru/studio/workspaces/",name:"打开 GigaChat 项目授权控制台"}
 };
+const MODEL_FIELD_LINKS=Object.freeze({openai:"https://platform.openai.com/docs/models",claude:"https://platform.claude.com/docs/en/about-claude/models/overview",groq:"https://console.groq.com/docs/models",openrouter:"https://openrouter.ai/models",deepseek:"https://api-docs.deepseek.com/quick_start/pricing",cerebras:"https://inference-docs.cerebras.ai/"});
+function refreshManualFieldLink(){
+ const provider=$("keyProvider").value,link=$("manualModelLink"),value=$("manualModel").value.trim();
+ if(provider==="yandex"){
+  const folder=value.match(/^gpt:\/\/([^/]+)\//)?.[1]||value;
+  const valid=/^b1g[a-z0-9]{8,61}$/i.test(folder);
+  const url=valid?"https://console.yandex.cloud/folders/"+encodeURIComponent(folder):"https://console.yandex.cloud/";
+  link.href=url;link.textContent="获取 Folder ID ↗";
+  $("yandexPermissionsLink").href=url;
+  $("yandexAccessLinks").hidden=false;
+ }else{
+  link.href=MODEL_FIELD_LINKS[provider]||KEY_SITES[provider].url;
+  link.textContent=MODEL_FIELD_LINKS[provider]?"查看模型 ↗":"服务商控制台 ↗";
+  $("yandexAccessLinks").hidden=true;
+ }
+}
 const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu","freetext","freewan","freeloop"]);
 const RETIRED_VIDEO_MODEL_IDS=new Set(["wan2.2-ti2v","wan2.2-i2v-fast","wan2.2-firstlast","grok-imagine-video-1.5","gen4.5","veo3.1_fast","seedance2_fast","ray-2","ray-flash-2","viduq3-turbo","viduq3-pro","viduq2"]);
 const retiredVideoModel=(provider,id)=>VIDEO_ONLY_PROVIDERS.has(provider)||RETIRED_VIDEO_MODEL_IDS.has(String(id||"").split("/").pop());
@@ -412,8 +428,8 @@ function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
 function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
  renderProviderPicker();
- const a=$("providerKeyLink");a.href=site.url;a.textContent=site.name;
- $("providerHelp").textContent=provider==="yandex"?"在 AI Studio 右上角创建 API Key（自动配置权限），粘贴密钥及 Folder ID；本站自动读取模型目录。需要已激活的计费账户，不能保证免费。":
+ const a=$("providerKeyLink");a.href=site.url;a.textContent=provider==="gigachat"?"获取授权密钥 ↗":"获取密钥 ↗";a.title=site.name;
+ $("providerHelp").textContent=provider==="yandex"?"使用 AI Studio 创建的密钥与同一文件夹 ID。需要有效计费账户；本站不自动开通付费。":
  provider==="gigachat"?"填写 GigaChat 项目的授权密钥（默认个人版 PERS；企业版可加 B2B: 前缀）。本站按需兑换短期令牌。":
  provider==="iflytek"?"使用官方 HTTP API Password；模型目录可能不支持，请按控制台填写实际模型 ID（例如 generalv3.5），未实测不会显示已验证。":
  provider==="sensetime"?"使用 TokenPlan 的 API Key，模型是否可调用以该账号目录和权限为准。":
@@ -435,7 +451,8 @@ function refreshKeyPanel(){
  if(manualInput.dataset.provider!==provider){
   manualInput.dataset.provider=provider;manualInput.value=provider==="yandex"?(String(rec?.model||"").match(/^gpt:\/\/([^/]+)\//)?.[1]||""):"";
  }
- if(manualWrap.firstChild?.nodeType===3)manualWrap.firstChild.nodeValue=provider==="yandex"?"Folder ID（文件夹 ID）":"模型 ID（仅在目录不可用时填写）";
+ $("manualModelLabel").textContent=provider==="yandex"?"Folder ID":"模型 ID（选填）";
+ manualInput.oninput=refreshManualFieldLink;refreshManualFieldLink();
  manualInput.placeholder=provider==="yandex"?"b1g…":provider==="gigachat"?"GigaChat":"官方模型 ID";
  $("allowPaid").checked=Boolean(rec?.consent);
  $("keyStatus").textContent=rec?(VIDEO_ONLY_PROVIDERS.has(provider)?"视频密钥已加密保存（未收费测试）":rec.verified?"密钥已加密保存 · 模型目录已验证":"密钥已加密保存 · 模型目录未验证"):"";

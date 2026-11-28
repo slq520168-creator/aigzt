@@ -10,7 +10,7 @@
  <meta name="description" content="IMAI 独立 AI 聚合工作台：真实免费模型、数百个模型目录、用户自带密钥、聊天记录和 AI 创作。">
  <title>IMAI · AI 聚合工作台</title>
  <script>(function(){var r=document.documentElement;if(!/iPhone|iPad|iPod/i.test(navigator.userAgent)||!(navigator.standalone===true||matchMedia("(display-mode: standalone)").matches))return;r.classList.add("aigzt-ios-pwa");var rainbow=true;try{rainbow=localStorage.getItem("aigzt:rainbow")!=="0"}catch(e){}if(rainbow)r.classList.add("pwa-boot-rainbow");var h=Math.round(Math.max(innerHeight,visualViewport?visualViewport.height:0)),sh=screen.height;if(sh>=h&&sh-h<=96)h=sh;if(h>0)r.style.setProperty("--aigzt-pwa-height",h+"px")})();</script>
- <link rel="stylesheet" href="/style.css?v=575-provider-connect"><script src="/app.js?v=575-provider-connect" defer></script>
+ <link rel="stylesheet" href="/style.css?v=576-key-field-links"><script src="/app.js?v=576-key-field-links" defer></script>
 </head>
 <body>
  <div class="shell" id="shell">
@@ -328,13 +328,13 @@
     <form id="keyForm">
   <label id="keyProviderNative">服务商<select id="keyProvider"><optgroup label="官方服务商直连"><option value="openai">OpenAI / GPT</option><option value="claude">Anthropic Claude</option><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option><option value="qwen">阿里千问</option><option value="grok">Grok / xAI</option><option value="zhipu">智谱 GLM</option><option value="kimi">Kimi</option><option value="minimax">MiniMax</option><option value="doubao">豆包 / 方舟</option><option value="qianfan">百度千帆</option><option value="hunyuan">腾讯混元</option><option value="stepfun">阶跃星辰</option><option value="xiaomi">小米 MiMo</option><option value="longcat">美团 LongCat</option><option value="baichuan">百川智能</option><option value="iflytek">讯飞星火</option><option value="sensetime">商汤 SenseNova</option><option value="yandex">Yandex AI Studio · 俄罗斯</option><option value="gigachat">GigaChat · 俄罗斯</option></optgroup><optgroup label="第三方聚合 / 推理平台"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="cerebras">Cerebras</option><option value="novai">Nova AI · 多模型（novai.su）</option><option value="novai_pro">NovAI · 中国模型（aiapi-pro.com）</option><option value="siliconflow">硅基流动</option></optgroup></select></label>
   <details id="providerPicker" class="provider-picker" hidden><summary id="providerPickerSummary"></summary><div id="providerPickerList"></div></details>
-  <div class="key-provider-guide"><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">官方密钥页面</a><span id="providerHelp">登录服务商账号获取密钥。</span></div>
+  <div class="key-provider-guide"><span id="providerHelp">登录服务商账号获取密钥。</span><div id="yandexAccessLinks" class="key-access-links" hidden><a id="yandexPermissionsLink" href="https://console.yandex.cloud/" target="_blank" rel="noopener noreferrer">权限管理</a><a href="https://console.yandex.cloud/billing" target="_blank" rel="noopener noreferrer">计费状态</a></div></div>
   <button id="openrouterLogin" type="button" class="outline full" hidden>使用 OpenRouter 官方授权</button>
   <div id="savedConnectionPanel" class="saved-connection-panel" hidden><strong>密钥已保存在此账号</strong><small>刷新或重新登录无需再次填写</small><button class="primary full" type="button" id="useSavedKey">使用已保存连接</button></div>
   <label class="check-row"><input type="checkbox" id="allowPaid"><span>允许使用我自己的服务商额度（可能产生费用）</span></label>
   <details id="keyAdvanced" class="key-advanced" open><summary id="keyAdvancedSummary">首次连接 · 输入 API Key</summary>
-   <label>API Key<input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴自己的 API Key"></label>
-   <label id="manualModelWrap" hidden>模型 ID（仅在目录不可用时填写）<input id="manualModel" type="text" autocomplete="off" spellcheck="false" placeholder="官方模型 ID"></label>
+   <div class="key-field"><div class="key-field-heading"><label for="personalKey">API Key</label><a id="providerKeyLink" href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer">获取密钥 ↗</a></div><input id="personalKey" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴自己的 API Key"></div>
+   <div id="manualModelWrap" class="key-field" hidden><div class="key-field-heading"><label id="manualModelLabel" for="manualModel">模型 ID（选填）</label><a id="manualModelLink" href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">查看模型 ↗</a></div><input id="manualModel" type="text" autocomplete="off" spellcheck="false" placeholder="官方模型 ID"></div>
    <button type="submit" class="primary full" id="keySaveLabel">加密保存密钥</button>
   </details>
   <p class="small-note">密钥由本网站服务端加密保存，调用所选服务商时由服务端解密；并非仅本人可解密。可随时更换或删除。</p>
