@@ -1437,6 +1437,7 @@ function hordeBase64(bytes){
  * rejects a submission. Never double-submit an uncertain generation request. */
 const QWEN_EDIT_HOST="https://multimodalart-qwen-image-edit-fast.hf.space";
 const QWEN_EDIT_OFFICIAL="https://huggingface.co/spaces/multimodalart/Qwen-Image-Edit-Fast";
+const QWEN_EDIT_WAIT_MS=180000,HORDE_EDIT_WAIT_MS=480000;
 async function submitQwenImageEdit(env,user,imageId,prompt){
  const attemptAt=Date.now();
  const obj=await env.MEDIA?.get(user.id+"/"+imageId);
@@ -1459,9 +1460,9 @@ async function submitQwenImageEdit(env,user,imageId,prompt){
  const args=[file,prompt.slice(0,1100),Math.floor(Math.random()*2147483647),false,1,8,false];
  let response;
  try{response=await fetch(QWEN_EDIT_HOST+"/gradio_api/call/infer",{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data:args}),redirect:"manual",signal:AbortSignal.timeout(13000)})}
- catch{throw Object.assign(Error("图生图来源提交超时"),{status:503,definite:true})}
+ catch{throw Object.assign(Error("图生图来源提交状态未确认"),{status:503,definite:false})}
  if(!response.ok||response.status>=300){
-  throw Object.assign(Error("Qwen 图生图来源拒绝生成请求"),{status:503,definite:[400,401,403,404,422,429].includes(response.status)});
+  throw Object.assign(Error("Qwen 图生图来源拒绝生成请求"),{status:503,definite:[401,404,429,503].includes(response.status)});
  }
  const data=await response.json().catch(()=>null),event=String(data?.event_id||"");
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(event))throw Object.assign(Error("图生图上游没有返回有效任务编号"),{status:502});
@@ -1484,21 +1485,22 @@ async function qwenFailoverToHorde(env,user,job,ref,now,reason){
   const next={v:7,p:"horde",id:eventId,startedAt};
   await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",JSON.stringify(next),job.id,user.id);
   return pending();
- }catch{
-  const problem="图生图快速来源未完成，免费社区备用也不可用";
+ }catch(error){
+  const detail=String(error?.message||"").replace(/[<>\r\n]/g," ").slice(0,160);
+  const problem="免费社区备用未接单"+(detail?"："+detail:"");
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",problem,Date.now(),job.id,user.id);
   return response({ok:true,done:true,failed:true,error:problem});
  }
 }
 async function qwenEditStatus(env,user,job,ref){
  const now=Date.now();
- const pending=()=>response({ok:true,done:false,pending:true,waitSeconds:Math.max(1,Math.min(8,Math.ceil(((Number(ref.startedAt)||job.created_at)+50000-Date.now())/1000))),startedAt:job.created_at});
+ const pending=()=>response({ok:true,done:false,pending:true,waitSeconds:5,startedAt:job.created_at});
  const failure=async reason=>{
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",reason,Date.now(),job.id,user.id);
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图生图失败："+reason,job.message_id,user.id).catch(()=>{});
   return response({ok:true,done:true,failed:true,error:reason,officialUrl:QWEN_EDIT_OFFICIAL});
  };
- if(now-job.created_at>110000)return failure("图生图任务已超过总等待上限");
+ if(now-job.created_at>QWEN_EDIT_WAIT_MS+60000)return failure("图生图任务已超过总等待上限");
  if(job.status==="recovering"){
   if(now-Number(job.checked_at||0)>45000){
    await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='图生图备用请求中断' WHERE id=? AND user_id=? AND status='recovering'",job.id,user.id);
@@ -1507,24 +1509,23 @@ async function qwenEditStatus(env,user,job,ref){
   return pending();
  }
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(ref.id||""))return failure("图生图任务编号无效");
- const deadline=(Number(ref.startedAt)||job.created_at)+50000;
- if(now>=deadline)
-  return qwenFailoverToHorde(env,user,job,ref,now,"Qwen 免费图生图超过50秒");
- if(now-Number(job.checked_at||0)<9000)return pending();
- const claim=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-8800);
+ const deadline=(Number(ref.startedAt)||job.created_at)+QWEN_EDIT_WAIT_MS;
+ if(now-Number(job.checked_at||0)<45000)return pending();
+ const claim=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",now,job.id,user.id,now-44800);
  if(!claim.meta?.changes)return pending();
- const state=ref.deliveryUrl?{status:"complete",url:ref.deliveryUrl}:await queryGradioImageEvent(env,"qwen",ref.id,Math.min(9000,Math.max(1000,deadline-Date.now())));
- if(Date.now()>=deadline)return qwenFailoverToHorde(env,user,job,ref,Date.now(),"Qwen 排队超过50秒");
- if(state.status==="pending")return pending();
+ const state=ref.deliveryUrl?{status:"complete",url:ref.deliveryUrl}:await queryGradioImageEvent(env,"qwen",ref.id,Math.min(40000,Math.max(1000,deadline-Date.now())));
+ // A result that arrived at the deadline still belongs to this task.
+ if(state.status==="pending")return Date.now()>=deadline?failure("图生图未在等待期限内返回结果"):pending();
  if(state.status==="failed"){
-  return qwenFailoverToHorde(env,user,job,ref,now,"免费图生图上游生成失败");
+  if(state.availability===true)return qwenFailoverToHorde(env,user,job,ref,now,"免费图生图来源暂不可用");
+  return failure("免费图生图上游未完成任务");
  }
  if(state.status!=="complete"||!state.url)return failure("图生图生成后没有返回图片");
  let image;
  try{image=await saveKreaImage(env,user.id,state.url,true)}
  catch{
   const tries=(Number(ref.tries)||0)+1;
-  if(tries>=3)return qwenFailoverToHorde(env,user,job,ref,now,"图片结果无法获取");
+  if(tries>=3)return failure("图片结果无法获取");
   await dbRun(env.DB,"UPDATE image_jobs SET external_id=? WHERE id=? AND user_id=? AND status='pending'",JSON.stringify({...ref,deliveryUrl:state.url,tries}),job.id,user.id);
   return pending();
  }
@@ -1542,8 +1543,8 @@ async function submitHordeGeneration(env,user,imageId,prompt){
  if(obj.size<200||obj.size>1600000)throw Object.assign(Error("参考图过大，请在作图模式重新上传以自动缩小图片"),{status:413});
  const bytes=new Uint8Array(await obj.arrayBuffer());
  if(detectImage(bytes)!==mime)throw Object.assign(Error("参考图片内容无效"),{status:415});
- const params={n:1,width:768,height:768,steps:24,cfg_scale:7,denoising_strength:0.58,sampler_name:"k_euler_a"};
- const payload={prompt:prompt.slice(0,1100),params,source_image:hordeBase64(bytes),source_processing:"img2img",r2:true,nsfw:false};
+ const params={n:1,width:512,height:512,steps:18,cfg_scale:7,denoising_strength:0.58,sampler_name:"k_euler_a"};
+ const payload={prompt:prompt.slice(0,1100),params,source_image:hordeBase64(bytes),source_processing:"img2img",r2:true,nsfw:false,allow_downgrade:true};
  let reply;
  try{reply=await fetch(HORDE_URL+"/generate/async",{method:"POST",headers:HORDE_HEADERS,body:JSON.stringify(payload),redirect:"manual",signal:AbortSignal.timeout(15000)})}
  catch{throw Object.assign(Error("免费来源提交状态不确定，请勿重复提交"),{status:503})}
@@ -1597,7 +1598,7 @@ function hordeImageResult(raw){
 async function hordeStatus(env,user,job,ref){
  const now=Date.now();
  if(!hordeUuid(ref.id))return response({ok:true,done:true,failed:true,error:"免费图生图任务号无效"});
- if(now-(Number(ref.startedAt)||job.created_at)>=120000){
+ if(now-(Number(ref.startedAt)||job.created_at)>=HORDE_EDIT_WAIT_MS){
   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=? WHERE id=? AND user_id=? AND status='pending'","免费社区排队超时",job.id,user.id);
   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=?","图生图排队超时",job.message_id,user.id).catch(()=>{});
   return response({ok:true,done:true,failed:true,error:"免费社区排队超时，请稍后再试"});
@@ -1839,7 +1840,7 @@ async function queryGradioImageEvent(env,provider,eid,timeoutMs=10500){
  let resp;
  try{resp=await fetch(host+"/gradio_api/call/"+endpoint+"/"+encodeURIComponent(eid),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(Math.max(1000,Math.min(45000,timeoutMs)))})}
  catch{return {status:"pending"}}
- if(!resp.ok)return [401,403,404,410,422,429].includes(resp.status)?{status:"failed",error:"上游 HTTP "+resp.status}:{status:"pending"};
+ if(!resp.ok)return [401,403,404,410,422,429].includes(resp.status)?{status:"failed",availability:[401,404,410,429].includes(resp.status),error:"上游 HTTP "+resp.status}:{status:"pending"};
  const reader=resp.body?.getReader();if(!reader)return{status:"pending"};
  const decoder=new TextDecoder();let buffer="",size=0,url="",error="";
  function consume(chunk){

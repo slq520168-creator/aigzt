@@ -1491,7 +1491,7 @@ function renderImageJob(bubble,id){
 function showImageRetry(bubble){
  delete bubble.dataset.imageTask;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");
  const row=bubble.closest(".message");
- const button=messageTool("refresh-cw","重新作图",()=>{if(row)retryMessage(row)});
+ const button=messageTool("refresh-cw","重新作图",()=>{if(row)void retryImageMessage(row)});
  bubble.replaceChildren(button);renderIcons(button);setPortraitState(row,"idle");
 }
 async function pollImageJob(bubble,id,manual){
@@ -1504,7 +1504,7 @@ async function pollImageJob(bubble,id,manual){
   const messageId=bubble.closest(".message")?.dataset.messageId||id;
   const key=deviceMediaKey(messageId),owner=S.user?.id;
   requestDeviceMediaPersistence();
-  const r=await api("/api/image/task/"+id);
+  const r=await api("/api/image/task/"+id,undefined,55000);
   let cached=false,blob=null,stickerFallback=false;
   if(r.done&&!r.failed&&r.image){
    try{blob=await deviceMediaBlob(r.image);if(bubble.closest(".message")?.dataset.mediaFormat==="sticker"){try{if(!blob)throw Error("没有图片数据");blob=await stickerPng(blob)}catch{stickerFallback=true}}cached=blob instanceof Blob&&blob.size>0&&blob.type.startsWith("image/")&&await deviceMediaPut(key,blob)}catch{cached=false}
@@ -1532,8 +1532,8 @@ async function pollImageJob(bubble,id,manual){
    img.onerror=()=>{if(bubble.dataset.imageFinalizing!==id)return;showImageRetry(bubble)};
    if(blob instanceof Blob){if(img.complete&&img.naturalWidth)img.onload()}else img.src=r.image;return;
   }
-  delay=Math.max(1000,Math.min(18000,Number(r.waitSeconds||12)*1000));
- }catch(e){/* 网络短暂故障仍保持秒数，后续继续查询 */}
+  delay=Math.max(1000,Math.min(45000,Number(r.waitSeconds||12)*1000));
+ }catch(e){/* Polling interruptions retain the original task; no new generation. */}
  finally{
   bubble.dataset.imageBusy="0";if(!bubble.dataset.imageStart)bubble.dataset.imageStart=String(Date.now());
   if(bubble.isConnected&&bubble.dataset.imageTask===id){if(Date.now()-Number(bubble.dataset.imageStart)<720000)window.setTimeout(()=>void pollImageJob(bubble,id,false),delay);else showImageRetry(bubble)}
@@ -2568,6 +2568,27 @@ function messageDraft(content,send=false,mode="text",continueFrom=null){
  input.value=text;setComposerMode(mode);settlePromptSize();
  if(send)void sendMessage(continueFrom);else input.focus();
  return true;
+}
+async function retryImageMessage(row){
+ if(S.busy||S.freeToolsMode||!row?.isConnected)return;
+ const original=messageQuestion(row);
+ const refs=[...original.matchAll(/\[文件：([^\]]+)\]\((\/api\/files\/([0-9a-f-]{36}))\)/gi)];
+ if(!refs.length){if(messageDraft(original,false,"image"))void sendMessage();return}
+ if(refs.length!==1)return;
+ const [full,name,url,id]=refs[0],prompt=original.replace(full,"").trim();
+ if(!prompt)return;
+ const owner=S.user?.id,chat=S.chatId,draft=$("prompt").value,attachments=S.attachments.slice();
+ if((draft.trim()||attachments.length)&&!confirm("重新作图会替换当前草稿和附件，继续吗？"))return;
+ try{
+  const response=await fetch(url,{credentials:"same-origin",cache:"no-store"});
+  if(!response.ok)throw Error("参考图不可读取");
+  const type=String(response.headers.get("content-type")||"").split(";")[0].toLowerCase();
+  void response.body?.cancel().catch(()=>{});
+  if(!["image/jpeg","image/png","image/webp"].includes(type))throw Error("参考图不可读取");
+  if(S.busy||S.user?.id!==owner||S.chatId!==chat||$("prompt").value!==draft||S.attachments.length!==attachments.length||S.attachments.some((a,i)=>a!==attachments[i]))return;
+  $("prompt").value=prompt;S.attachments=[{id,name,url,type}];setComposerMode("image");
+  S.miniToolChoice=row.dataset.mediaFormat==="sticker"?"sticker":"image-edit";syncMiniTools();renderAttachments();settlePromptSize();void sendMessage();
+ }catch{flashError("原参考图不可读取，请重新选择图片")}
 }
 function retryMessage(row){
  const text=messageQuestion(row);
