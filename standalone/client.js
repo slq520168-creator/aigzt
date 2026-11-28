@@ -99,7 +99,7 @@ function renderIcons(scope=document){
  if(scope.matches?.("[data-icon]"))icons.unshift(scope);
  for(const el of icons){
   const name=el.dataset.icon,path=ICONS[name]||ICONS.info;
-  if(el.closest(".model-mode-button,.composer-model-switch,.sidebar-projects,#projectDialog,#moveDialog,#videoProjectDialog")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
+  if(el.closest(".model-mode-button,.composer-model-switch,.sidebar-projects,.sidebar-mode-dock,#projectDialog,#moveDialog,#videoProjectDialog")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
   const [from,to]=(el.closest(".message-copy-btn")&&MESSAGE_ICON_COLORS[name])||ICON_GRADIENTS[ICON_TONES[name]||"blue"];
   const id="aigzt-icon-"+(++iconGradientSerial);
   el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#'+id+')" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+from+'"/><stop offset="100%" stop-color="'+to+'"/></linearGradient></defs>'+path+'</svg>';
@@ -768,7 +768,7 @@ function renderProjects(){
  if(!S.projects.length)box.append(node("div","hint","暂无个人项目"));
 }
 const VIDEO_PROJECT_SKILLS=Object.freeze([["视频规划 Skill","list-checks","免费策划","输出主题、受众、分段时长、镜头清单、素材需求和完整时间轴。","https://github.com/agentara/skills/blob/main/skills/aigc/video-plan/SKILL.md"],["Seedance 导演 Skill","clapperboard","免费策划","输出连续镜头脚本、人物一致性约束、镜头运动、转场及逐镜头中英文提示词。","https://github.com/liyue-aigc/seedance-2-5-video-director"],["AI 电影导演 Skills","film","免费策划","输出叙事结构、景别、构图、光线、运镜及逐镜头提示词。","https://github.com/smixs/visual-skills"],["可灵提示词 Skill","file-text","免费策划","输出可灵适用的主体、动作、环境、镜头、时长及负面约束的中英文提示词。","https://github.com/kevingao-ai/kling-ai-guide"],["TikTok 视频 Skill","video","免费策划","输出开场钩子、短视频脚本、镜头、口播、字幕与音乐节奏表。","https://github.com/Fangyuan025/tiktok-video-skill"],["UGC 视频 Skill","camera","免费策划","输出真实感用户原创视频的口播、场景、动作、镜头和字幕脚本，避免虚假体验。","https://github.com/Jarad-z/ugc-video-skill"],["即梦 Skills","image","生成需授权","输出即梦适用的素材与逐镜头中英文提示词；不声称已调用即梦。","https://github.com/full-aigc-skills/dreamina-skills"],["可灵 Skills","video","生成需授权","输出可灵视频镜头描述、动作与镜头约束；不声称已调用可灵。","https://github.com/full-aigc-skills/kling-skills"],["Remotion 视频 Skill","code-2","渲染环境待接入","输出可运行的 Remotion React 源码、素材清单、依赖和本地渲染命令；不声称已经渲染。","https://github.com/remotion-dev/skills"],["HeyGen Hyperframes","layers","渲染环境待接入","输出 HTML 动画视频场景、时间轴、素材清单及渲染步骤；不声称已经渲染。","https://github.com/heygen-com/hyperframes"]]);
-function openVideoProject(mode="video"){
+function openVideoProject(){
  const choice=$("videoSkillChoice"),list=$("videoSkillList");
  if(!choice.options.length){
   VIDEO_PROJECT_SKILLS.forEach(([name,icon,status,task,url],index)=>{
@@ -776,16 +776,9 @@ function openVideoProject(mode="video"){
    const row=node("div","video-skill-row"),button=node("button","video-skill-select"),label=node("span","video-skill-label");button.type="button";label.append(node("strong","",name),node("small","",status));button.append(iconSlot(icon),label);button.addEventListener("click",()=>{choice.value=String(index);choice.focus({preventScroll:true})});
    const source=node("a","video-skill-source","来源");source.href=url;source.target="_blank";source.rel="noopener noreferrer";source.setAttribute("aria-label",name+" 技能来源");row.append(button,source);list.append(row);renderIcons(row);
   });
+  choice.value="2";
  }
- const film=mode==="film";
- videoProjectMode=film?"film":"video";
- $("videoProjectPromptLabel").textContent=film?"电影镜头描述":"视频描述";
- $("videoProjectModeHint").textContent=film?"电影模式：生成单个电影镜头，长片请先做分镜，再逐镜头制作。":"视频模式：生成 3–8 秒短视频。";
- $("videoProjectPrompt").placeholder=film?"人物、场景、景别、运镜、光线、动作及视觉风格…":"描述人物、动作、场景及镜头运动…";
- $("videoProjectPlan").textContent=film?"生成剧本与分镜":"生成策划";
- $("videoProjectTitle").textContent=film?"电影模式":"视频模式";
- $("videoProjectDialog").setAttribute("aria-label",film?"电影模式":"视频模式");
- if(!videoProjectJob)choice.value=film?"2":"0";
+ // One shared creation page for short videos and cinematic shots. Preserve the user's selected skill.
  show("videoProjectDialog");
  void restoreVideoProject();
 }
@@ -798,7 +791,7 @@ function startVideoProjectPlan(e){
  settlePromptSize();void sendMessage(null,true,null,null,true);
 }
 let videoProjectJob=null,videoProjectEpoch=0,videoProjectFlight=false,videoProjectOwner=null,videoProjectObjectUrl=null,videoProjectTimer=null;
-let videoProjectMode="video",videoProjectSubmitting=false,videoProjectStopPending=false,videoProjectRestoreFlight=null;
+let videoProjectSubmitting=false,videoProjectStopPending=false,videoProjectRestoreFlight=null;
 function videoProjectUI(status,busy){
  $("videoProjectStatus").textContent=status;$("videoProjectStart").disabled=busy;
  $("videoProjectStop").hidden=!busy;$("videoProjectStop").disabled=!videoProjectJob||videoProjectStopPending;
@@ -813,7 +806,7 @@ async function showVideoProjectResult(owner,epoch,id){
  let blob=await deviceMediaGet(key);
  if(!(blob instanceof Blob)||!blob.type.startsWith("video/")){
   blob=await deviceMediaBlob("/api/video/result/"+id);
-  if(!(blob instanceof Blob)||!blob.size)throw Error("视频已生成，但原文件暂时不可下载；可重新打开视频模式恢复");
+  if(!(blob instanceof Blob)||!blob.size)throw Error("视频已生成，但原文件暂时不可下载；可重新打开电影模式恢复");
   await deviceMediaPut(key,blob);
  }
  if(!videoProjectCurrent(owner,epoch))return;
@@ -874,7 +867,7 @@ async function startVideoProject(e){
  const prompt=$("videoProjectPrompt").value.trim();if(!prompt)return;
  const owner=S.user.id,epoch=++videoProjectEpoch,id=crypto.randomUUID();
  videoProjectOwner=owner;videoProjectJob=id;videoProjectFlight=false;videoProjectSubmitting=true;videoProjectStopPending=false;clearTimeout(videoProjectTimer);clearVideoProjectOutput();videoProjectUI("正在创建视频任务…",true);
- const payload={requestId:id,prompt,ratio:$("videoProjectRatio").value,duration:Number($("videoProjectDuration").value),mode:videoProjectMode};
+ const payload={requestId:id,prompt,ratio:$("videoProjectRatio").value,duration:Number($("videoProjectDuration").value),mode:"film"};
  let job=null;
  try{
   const r=await api("/api/video/project/create",payload,15000);job=r.job;
@@ -4706,7 +4699,7 @@ function drawPrefs(){
  });
 }
 function setCreationMode(){
- $("createDialogTitle").textContent="免费作图";
+ $("createDialogTitle").textContent="作图模式";
  $("drawSettings").hidden=false;$("drawResultSection").hidden=false;
  $("drawCancel").hidden=!S.drawBatch;$("drawElapsed").hidden=!S.drawBatch&&$("drawElapsed").textContent==="00:00";
  $("createButton").textContent="生成免费图片";$("createPrompt").placeholder="描述你要生成的图片…";
@@ -4931,8 +4924,7 @@ function wire(){
  $("videoProjectForm").addEventListener("submit",e=>void startVideoProject(e));
  $("videoProjectPlan").addEventListener("click",startVideoProjectPlan);
  $("videoProjectStop").addEventListener("click",()=>void stopVideoProject());
- $("videoProjectOpen").addEventListener("click",()=>openVideoProject("video"));
- $("filmProjectOpen").addEventListener("click",()=>openVideoProject("film"));
+ $("filmProjectOpen").addEventListener("click",openVideoProject);
  $("deleteProject").addEventListener("click",()=>void deleteProject());
  $("searchForm").addEventListener("submit",searchChats);
  $("chatSearchInput").addEventListener("compositionstart",()=>{chatSearchComposing=true;clearTimeout(chatSearchTimer);++chatSearchSerial});
