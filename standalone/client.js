@@ -768,7 +768,7 @@ function renderProjects(){
  if(!S.projects.length)box.append(node("div","hint","暂无个人项目"));
 }
 const VIDEO_PROJECT_SKILLS=Object.freeze([["视频规划 Skill","list-checks","免费策划","输出主题、受众、分段时长、镜头清单、素材需求和完整时间轴。","https://github.com/agentara/skills/blob/main/skills/aigc/video-plan/SKILL.md"],["Seedance 导演 Skill","clapperboard","免费策划","输出连续镜头脚本、人物一致性约束、镜头运动、转场及逐镜头中英文提示词。","https://github.com/liyue-aigc/seedance-2-5-video-director"],["AI 电影导演 Skills","film","免费策划","输出叙事结构、景别、构图、光线、运镜及逐镜头提示词。","https://github.com/smixs/visual-skills"],["可灵提示词 Skill","file-text","免费策划","输出可灵适用的主体、动作、环境、镜头、时长及负面约束的中英文提示词。","https://github.com/kevingao-ai/kling-ai-guide"],["TikTok 视频 Skill","video","免费策划","输出开场钩子、短视频脚本、镜头、口播、字幕与音乐节奏表。","https://github.com/Fangyuan025/tiktok-video-skill"],["UGC 视频 Skill","camera","免费策划","输出真实感用户原创视频的口播、场景、动作、镜头和字幕脚本，避免虚假体验。","https://github.com/Jarad-z/ugc-video-skill"],["即梦 Skills","image","生成需授权","输出即梦适用的素材与逐镜头中英文提示词；不声称已调用即梦。","https://github.com/full-aigc-skills/dreamina-skills"],["可灵 Skills","video","生成需授权","输出可灵视频镜头描述、动作与镜头约束；不声称已调用可灵。","https://github.com/full-aigc-skills/kling-skills"],["Remotion 视频 Skill","code-2","渲染环境待接入","输出可运行的 Remotion React 源码、素材清单、依赖和本地渲染命令；不声称已经渲染。","https://github.com/remotion-dev/skills"],["HeyGen Hyperframes","layers","渲染环境待接入","输出 HTML 动画视频场景、时间轴、素材清单及渲染步骤；不声称已经渲染。","https://github.com/heygen-com/hyperframes"]]);
-let filmStage="script",filmPlanJob=null,filmPlanOwner=null,filmPlanEpoch=0,filmPlanBusy=false,filmPlanStopPending=false,filmPrefs=null,filmSettingsEpoch=0,filmHistoryEpoch=0;
+let filmStage="script",filmPlanJob=null,filmPlanOwner=null,filmPlanEpoch=0,filmPlanBusy=false,filmPlanStopPending=false,filmPlanCreating=false,filmPrefs=null,filmSettingsEpoch=0,filmHistoryEpoch=0;
 const filmDrafts={script:null,storyboard:null};
 function initFilmSkills(){
  const choice=$("videoSkillChoice"),list=$("videoSkillList");if(choice.options.length)return;
@@ -798,7 +798,7 @@ function openVideoProject(){
 function filmCurrent(owner,epoch){return S.user?.id===owner&&epoch===filmPlanEpoch;}
 function resetFilmOwner(owner){
  if(filmPlanOwner===owner)return;
- filmPlanOwner=owner;++filmPlanEpoch;++filmSettingsEpoch;++filmHistoryEpoch;filmPlanJob=null;filmPlanBusy=false;filmPlanStopPending=false;filmPrefs=null;filmDrafts.script=null;filmDrafts.storyboard=null;
+ filmPlanOwner=owner;++filmPlanEpoch;++filmSettingsEpoch;++filmHistoryEpoch;filmPlanJob=null;filmPlanBusy=false;filmPlanStopPending=false;filmPlanCreating=false;filmPrefs=null;filmDrafts.script=null;filmDrafts.storyboard=null;
  $("filmPlanPrompt").value="";$("filmPlanResult").value="";$("filmApiKey").value="";$("filmQuotaResults").replaceChildren();$("filmHistoryList").replaceChildren();filmPlanUI("",false);selectFilmStage("script");
 }
 async function restoreFilmPlans(){
@@ -815,18 +815,18 @@ async function startVideoProjectPlan(e){
  if(!S.user){show("authDialog");return}
  const topic=$("filmPlanPrompt").value.trim();if(!topic||filmStage==="video")return;
  const owner=S.user.id,epoch=++filmPlanEpoch,id=crypto.randomUUID(),kind=filmStage;
- filmPlanJob=id;filmPlanBusy=true;filmPlanStopPending=false;filmPlanUI("创作中…",true);
+ filmPlanJob=id;filmPlanBusy=true;filmPlanStopPending=false;filmPlanCreating=true;filmPlanUI("创作中…",true);
  try{
   const result=await api("/api/film/plan/create",{id,kind,prompt:topic,source:kind==="storyboard"?(filmDrafts.script?.result||""):""},15000);
-  if(!filmCurrent(owner,epoch))return;filmPlanJob=result.job.id;
+  if(!filmCurrent(owner,epoch))return;filmPlanCreating=false;filmPlanJob=result.job.id;
   if(filmPlanStopPending){filmPlanStopPending=false;await stopFilmPlan();return}
   await advanceFilmPlan(owner,epoch,result.job.id);
- }catch(e){if(!filmCurrent(owner,epoch))return;filmPlanBusy=false;filmPlanJob=null;filmPlanStopPending=false;filmPlanUI(humanError(e),false);if(e.code==="FILM_CONSENT_REQUIRED")openFilmSettings()}
+ }catch(e){if(!filmCurrent(owner,epoch))return;filmPlanBusy=false;filmPlanJob=null;filmPlanStopPending=false;filmPlanCreating=false;filmPlanUI(humanError(e),false);if(e.code==="FILM_CONSENT_REQUIRED")openFilmSettings()}
 }
 async function advanceFilmPlan(owner,epoch,id){
  try{
   let d=await api("/api/film/plan/"+id+"/advance",{},110000);
-  for(let i=0;i<8&&["pending","running"].includes(d.job?.status);i++){await new Promise(resolve=>setTimeout(resolve,5000));if(!filmCurrent(owner,epoch)||filmPlanStopPending)return;d=await api("/api/film/plan/"+id,undefined,10000)}
+  for(let i=0;i<8&&["pending","running"].includes(d.job?.status);i++){await new Promise(resolve=>setTimeout(resolve,5000));if(!filmCurrent(owner,epoch))return;if(filmPlanStopPending)continue;d=await api("/api/film/plan/"+id,undefined,10000)}
   if(!filmCurrent(owner,epoch))return;const job=d.job;
   if(job?.status==="complete"){filmDrafts[job.kind]=job;if(filmStage===job.kind)renderFilmDraft();filmPlanUI(job.incomplete?"已保存 · 回复未完整":"已保存",false)}
   else filmPlanUI(job?.status==="cancelled"?"已停止":job?.error||"原任务尚未确认，可从创作记录恢复",false);
@@ -836,6 +836,7 @@ async function advanceFilmPlan(owner,epoch,id){
 async function stopFilmPlan(){
  const id=filmPlanJob,owner=S.user?.id;if(!id||!owner||filmPlanStopPending)return;
  filmPlanStopPending=true;filmPlanUI("正在停止…",true);
+ if(filmPlanCreating)return;
  try{const r=await api("/api/film/plan/"+id+"/cancel",{},12000);if(S.user?.id!==owner)return;++filmPlanEpoch;filmPlanJob=null;filmPlanBusy=false;filmPlanStopPending=false;if(r.job?.status==="complete"){filmDrafts[r.job.kind]=r.job;if(filmStage===r.job.kind)renderFilmDraft();filmPlanUI("创作已完成",false)}else filmPlanUI("已停止",false)}
  catch(e){if(S.user?.id===owner){filmPlanStopPending=false;filmPlanUI("停止尚未确认，可重试停止",true)}}
 }
@@ -849,7 +850,14 @@ function nextFilmStage(){
  const field=$("filmPlanResult"),part=field.value.slice(field.selectionStart,field.selectionEnd).trim();
  selectFilmStage("video");$("videoProjectPrompt").value=(part||text).slice(0,1200);
 }
-function updateFilmPersonalFields(){$("filmPersonalFields").hidden=$("filmProvider").value==="auto";}
+function updateFilmPersonalFields(){
+ const provider=$("filmProvider").value;$("filmPersonalFields").hidden=provider==="auto";
+ if(provider!=="auto"&&filmPrefs?.provider!==provider){
+  const item=filmPrefs?.connections?.find(x=>x.provider===provider);
+  $("filmModel").value=item?.model||"";$("filmApiKey").value="";$("filmPaidConsent").checked=false;
+  $("filmApiKey").placeholder=item?.filmKey?"已保存电影专用密钥":item?"可使用已连接账号":"输入个人 API Key";
+ }
+}
 function fillFilmPreferences(p){
  filmPrefs=p;$("filmProvider").value=p.provider||"auto";$("filmModel").value=p.model||"";$("filmApiKey").value="";$("filmApiKey").placeholder=p.hasKey?"已加密保存 · 留空保留":p.linked?"使用账号现有连接 · 可另填":"输入个人 API Key";
  $("filmPaidConsent").checked=p.allowPaid===true;$("filmExternalConsent").checked=p.accepted===true;$("filmDefaultRatio").value=p.ratio||"landscape";$("filmDefaultDuration").value=String(p.duration||5);$("videoSkillChoice").value=String(p.skill||"auto");updateFilmPersonalFields();
@@ -866,6 +874,10 @@ async function saveFilmPreferences(e){
  try{const r=await api("/api/film/settings",{provider:$("filmProvider").value,model:$("filmModel").value.trim(),apiKey:$("filmApiKey").value.trim(),allowPaid:$("filmPaidConsent").checked,accepted:$("filmExternalConsent").checked,ratio:$("filmDefaultRatio").value,duration:Number($("filmDefaultDuration").value),skill:$("videoSkillChoice").value},20000);if(S.user?.id===owner){fillFilmPreferences(r.settings);$("filmSettingsStatus").textContent="已保存";void loadFilmQuota()}}
  catch(e){if(S.user?.id===owner)$("filmSettingsStatus").textContent=humanError(e)}
  finally{button.disabled=false}
+}
+async function saveFilmSkill(){
+ if(!S.user)return;const owner=S.user.id,skill=$("videoSkillChoice").value;
+ try{const r=await api("/api/film/settings/skill",{skill},10000);if(S.user?.id===owner){filmPrefs=r.settings;$("filmSettingsStatus").textContent="技能选择已保存";$("filmSkillSave").textContent="已保存";setTimeout(()=>{$("filmSkillSave").textContent="保存技能选择"},1500)}}catch(e){$("filmSettingsStatus").textContent=humanError(e)}
 }
 async function clearFilmKey(){if(!S.user)return;try{const r=await api("/api/film/settings/clear-key",{},10000);fillFilmPreferences(r.settings);$("filmSettingsStatus").textContent="已清除电影专用密钥";void loadFilmQuota()}catch(e){$("filmSettingsStatus").textContent=humanError(e)}}
 let filmQuotaEpoch=0;
@@ -5029,6 +5041,7 @@ function wire(){
  $("filmSettingsOpen").addEventListener("click",openFilmSettings);
  $("filmHistoryOpen").addEventListener("click",()=>void openFilmHistory());
  $("filmSettingsForm").addEventListener("submit",e=>void saveFilmPreferences(e));
+ $("filmSkillSave").addEventListener("click",()=>void saveFilmSkill());
  $("filmProvider").addEventListener("change",updateFilmPersonalFields);
  $("filmRemoveKey").addEventListener("click",()=>void clearFilmKey());
  $("filmQuotaRefresh").addEventListener("click",()=>void loadFilmQuota());
