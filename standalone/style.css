@@ -37,7 +37,7 @@ a{color:inherit}
 .side-caption-action{font-size:11px;color:#68777b;border-radius:6px;padding:2px 6px}
 .side-caption-action:hover{background:#eef1f2}
 .chat-count{display:none}
-.project-list{display:flex;flex-direction:column;gap:1px;flex:0 1 auto;max-height:min(17dvh,125px);overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.project-list{display:flex;flex-direction:column;gap:1px;flex:0 1 auto;max-height:min(25dvh,196px);overflow-y:auto;min-height:0;overscroll-behavior:contain}
 .project-list[hidden]{display:none}
 .sidebar-projects .project-list>.hint{min-height:31px;padding:6px 10px}
 .project-task-group{display:flex;flex-direction:column;gap:1px;margin-left:13px;padding-left:7px;border-left:1px solid #e4eaf0}
@@ -48,12 +48,14 @@ a{color:inherit}
 .project-task-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-task-status{flex:none;color:#82919a;font-size:10px}
 .project-task-section-title{padding:8px 10px 3px;color:#859098;font-size:11px;font-weight:600}
-.project-collapse-toggle{display:flex;align-items:center;gap:8px;text-align:left;color:inherit;font-size:12px;font-weight:650;padding:4px 0}
+.project-collapse-toggle{display:flex;align-items:center;gap:7px;text-align:left;color:#43536a;font-size:13px;font-weight:600;min-height:36px;padding:4px 0}
 .project-collapse-toggle .ui-icon{width:14px;height:14px;transition:transform .2s}
 .project-collapse-toggle .ui-icon svg{width:14px;height:14px}
 .project-collapse-toggle.expanded .ui-icon{transform:rotate(180deg)}
 .project-row,.history-row{display:flex;align-items:center;gap:3px;border-radius:9px;min-height:36px;padding:0 2px}
-.project-row.active,.history-row.active{background:#edf0f1}
+.project-row{min-height:44px;gap:2px;padding:0 2px;border-radius:8px}
+.history-row.active{background:#edf0f1}
+.project-row.active{background:#eaf0f8;color:#24538d}
 .project-select,.history-select{min-width:0;flex:1;display:flex;align-items:center;gap:10px;text-align:left;padding:8px 11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;border-radius:8px}
 .sidebar-chat-scroll{flex:1 1 0;min-height:96px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;overflow-anchor:none}
 .history{flex:none;min-height:0;max-height:none;overflow:visible;display:flex;flex-direction:column;gap:2px}
@@ -62,11 +64,17 @@ a{color:inherit}
 .history-select .ui-icon svg{width:18px;height:18px}
 .pinned-history{display:flex;flex-direction:column;max-height:none;overflow:visible;gap:2px}
 .pinned-history .history-row{min-height:37px}
-.project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.project-edit{width:28px;height:29px;display:grid;place-items:center;flex:none;opacity:.55;border-radius:8px}
+.project-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:450;line-height:1.5}
+.project-select{font-size:14px;gap:9px;padding:9px 8px;min-height:44px;color:#243247}
+.project-select .ui-icon,.project-select .ui-icon svg{width:20px;height:20px;color:#60728a}
+.project-row.active .project-select,.project-row.active .project-select .ui-icon{color:#24538d}
+.project-heading{padding:0 8px;color:#43536a}
+.project-heading #newProject{width:36px;height:36px;color:#53657b}
+.project-heading #newProject .ui-icon svg{width:19px;height:19px}
+.project-edit{width:36px;height:40px;display:grid;place-items:center;flex:none;color:#617187;opacity:1;border-radius:8px}
 .history-more{width:34px;height:34px;display:grid;place-items:center;flex:none;opacity:1;border-radius:8px;color:#263746}
 .project-edit:hover,.history-more:hover,.history-more[aria-expanded="true"]{opacity:1;background:#e5eaf0}
-.project-edit svg{width:17px;height:17px}
+.project-edit .ui-icon,.project-edit svg{width:20px;height:20px}
 .history-more .ui-icon,.history-more svg{display:block;width:21px;height:21px}
 .history-more svg{stroke:#263746;stroke-width:2.5}
 .hint{padding:10px;color:#879498;font-size:12px}
@@ -314,6 +322,13 @@ html.aigzt-keyboard-visible .conversation.empty-chat:not([hidden])~.composer-are
 .sidebar-top .brand-lockup{flex:1}
 .modal form{display:flex;flex-direction:column;gap:12px}
 .modal label{display:block;font-size:13px;font-weight:600}
+#projectForm{width:100%;max-width:680px;align-self:center;display:grid;gap:16px;padding:12px 0}
+#projectForm label{font-size:14px;font-weight:550;line-height:1.5;color:#344258}
+#projectForm input,#projectForm textarea{font-size:16px;line-height:1.5;margin-top:7px;border:1px solid #d8e0e9;border-radius:9px;background:#fff}
+#projectSave{min-height:44px;background:#28558a;color:#fff;font-size:14px;font-weight:600;border-radius:9px}
+#deleteProject{align-self:center;font-size:14px;min-height:44px}
+#moveProjectList .action-row{font-size:14px;min-height:44px;color:#344258}
+#moveProjectList .ui-icon{color:#60728a}
 .modal input:not([type=checkbox]),.modal textarea,.modal select,.model-tools input,.model-tools select{width:100%;margin-top:6px;border:1px solid #dce4e7;background:#fff;border-radius:12px;padding:10px 12px;font-size:16px;min-height:43px;outline:0}
 .modal input:focus,.modal textarea:focus,.modal select:focus{border-color:#8badbd}
 .modal textarea{resize:vertical;min-height:85px}
@@ -639,9 +654,11 @@ html.aigzt-ios-pwa.pwa-boot-rainbow body::before,html.aigzt-ios-pwa body.rainbow
  .sidebar .nav-row>.ui-icon{width:23px;height:23px;flex:0 0 23px}
  .sidebar .nav-row>.ui-icon svg{width:19px;height:19px}
  .sidebar .side-heading{padding:0 4px;font-size:11px}
- .sidebar .history-select,.sidebar .project-select{padding:6px 4px;gap:4px;font-size:11px}
+ .sidebar .history-select{padding:6px 4px;gap:4px;font-size:11px}
+ .sidebar .project-select{padding:8px 5px;gap:7px;font-size:14px}
+ .sidebar .project-heading{padding:0 5px}
  .sidebar .history-more{width:34px}
- .sidebar .project-edit{width:20px}
+ .sidebar .project-edit{width:34px}
  .sidebar .sidebar-lower .nav-row{font-size:12px;padding:6px 4px;min-height:40px;gap:5px}
  .sidebar .side-model-label{display:none}
  .sidebar .side-bottom{gap:1px}
