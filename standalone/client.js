@@ -4,7 +4,7 @@ const S={
  modelTitle:"免费自动",provider:"free",keys:{},connected:{},selectedFree:true,connectionsLoaded:false,connectionsLoading:false,
  allowPaid:false,savedProviders:{},freeToolsMode:false,freeToolsCategory:"全部",projectsExpanded:false,freeModels:[{id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true}],freePoolRoutes:[],remoteModels:[],freeTierModels:[],sharedFreeModels:[],loadedCatalog:false,
  modelPage:0,source:"all",filter:"all",query:"",busy:false,code:false,
- authRegister:false,createMode:"image",drawBatch:null,videoTask:null,videoProvider:"freetext",videoModel:"wan2.2-ti2v",videoTaskProvider:"freetext",videoImageId:null,videoEndImageId:null,videoRatio:"16:9",composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
+ authRegister:false,createMode:"image",drawBatch:null,composerMode:"text",creativeMode:null,attachments:[],projects:[],activeProjectId:null,actionChatId:null,editProjectId:null,archivedView:false,memoryEnabled:true,notes:[],currentTheme:"rainbow"
 };
 const $=id=>document.getElementById(id);
 const els=id=>document.querySelectorAll(id);
@@ -366,18 +366,9 @@ const KEY_SITES={
  yandex:{url:"https://console.yandex.cloud/",name:"打开 Yandex Cloud API 密钥设置"},
  gigachat:{url:"https://developers.sber.ru/",name:"获取 GigaChat 授权密钥"}
 };
-const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu"]);
-const VIDEO_OPTIONS=Object.freeze({
- freetext:["wan2.2-ti2v"],
- freewan:["wan2.2-i2v-fast"],
- freeloop:["wan2.2-firstlast"],
- grok:["grok-imagine-video-1.5"],
- runway:["gen4.5","veo3.1_fast","seedance2_fast"],
- luma:["ray-2","ray-flash-2"],
- vidu:["viduq3-turbo","viduq3-pro","viduq2"]
-});
-const VIDEO_PROVIDER_NAMES={freetext:"免费 LTX 文生视频",freewan:"免费 Wan 2.2 图生视频",freeloop:"免费 Wan 2.2 首尾帧",grok:"xAI Grok",runway:"Runway",luma:"Luma",vidu:"Vidu"};
-const BUILTIN_VIDEO_MODELS=[{"provider":"freetext","id":"wan2.2-ti2v","name":"LTX 文字生成视频","type":"video","free":true,"builtinVideo":true},{"provider":"freewan","id":"wan2.2-i2v-fast","name":"Wan 2.2 图生视频","type":"video","free":true,"builtinVideo":true},{"provider":"freeloop","id":"wan2.2-firstlast","name":"Wan 2.2 首尾帧","type":"video","free":true,"builtinVideo":true},{"provider":"grok","id":"grok-imagine-video-1.5","name":"Grok Imagine 1.5","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"gen4.5","name":"Runway Gen-4.5","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"veo3.1_fast","name":"Google Veo 3.1 Fast","type":"video","free":false,"builtinVideo":true},{"provider":"runway","id":"seedance2_fast","name":"Seedance 2 Fast","type":"video","free":false,"builtinVideo":true},{"provider":"luma","id":"ray-2","name":"Luma Ray 2","type":"video","free":false,"builtinVideo":true},{"provider":"luma","id":"ray-flash-2","name":"Luma Ray Flash 2","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq3-turbo","name":"Vidu Q3 Turbo","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq3-pro","name":"Vidu Q3 Pro","type":"video","free":false,"builtinVideo":true},{"provider":"vidu","id":"viduq2","name":"Vidu Q2","type":"video","free":false,"builtinVideo":true}];
+const VIDEO_ONLY_PROVIDERS=new Set(["runway","luma","vidu","freetext","freewan","freeloop"]);
+const RETIRED_VIDEO_MODEL_IDS=new Set(["wan2.2-ti2v","wan2.2-i2v-fast","wan2.2-firstlast","grok-imagine-video-1.5","gen4.5","veo3.1_fast","seedance2_fast","ray-2","ray-flash-2","viduq3-turbo","viduq3-pro","viduq2"]);
+const retiredVideoModel=(provider,id)=>VIDEO_ONLY_PROVIDERS.has(provider)||RETIRED_VIDEO_MODEL_IDS.has(String(id||"").split("/").pop());
 const THIRD_PARTY_PROVIDERS=new Set(["openrouter","groq","cerebras","novai","novai_pro","siliconflow"]);
 const PROVIDER_BRAND_DOMAINS={openai:"openai.com",claude:"anthropic.com",gemini:"google.com",grok:"x.ai",deepseek:"deepseek.com",qwen:"qwen.ai",zhipu:"bigmodel.cn",kimi:"kimi.com",minimax:"minimax.io",doubao:"doubao.com",qianfan:"baidu.com",hunyuan:"tencent.com",stepfun:"stepfun.com",xiaomi:"mi.com",longcat:"longcat.chat",baichuan:"baichuan-ai.com",iflytek:"xfyun.cn",sensetime:"sensetime.com",yandex:"yandex.com",gigachat:"giga.chat",runway:"runwayml.com",luma:"lumalabs.ai",vidu:"vidu.com",openrouter:"openrouter.ai",groq:"groq.com",cerebras:"cerebras.ai",novai:"novai.su",novai_pro:"aiapi-pro.com",siliconflow:"siliconflow.cn"};
 const providerRoute=p=>p==="free"||["freetext","freewan","freeloop"].includes(p)?"free":THIRD_PARTY_PROVIDERS.has(p)?"third":Object.hasOwn(KEY_SITES,p)?"official":"unknown";
@@ -594,7 +585,7 @@ async function useSavedConnection(){
  if(!entry){$("keyStatus").textContent="请先保存密钥";return}
  const button=$("useSavedKey");button.disabled=true;
  try{
-  if(VIDEO_ONLY_PROVIDERS.has(provider)||S.videoPendingKeyReturn){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;setComposerMode("video");$("prompt").focus({preventScroll:true})}return}
+  if(VIDEO_ONLY_PROVIDERS.has(provider)){hide("keyDialog");return}
   let model=S.provider===provider&&S.model?S.model:entry.model;
   if(provider==="openai"){
    const catalog=await api("/api/connections/openai/models",{});
@@ -1405,53 +1396,6 @@ async function deviceMediaBlob(src){
  if(!res.ok)return null;
  const blob=await res.blob();return /^(image\/|video\/)/.test(blob.type)?blob:null;
 }
-// Native GIF89a, 256-color palette; reset LZW dictionary before 9-bit overflow.
-function makeGif(width,height,frames,delay=25){
- if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>320||height>320||!frames.length||frames.length>24)throw Error("GIF尺寸或帧数超限");
- const out=[],word=n=>out.push(n&255,(n>>8)&255),ascii=t=>{for(const ch of t)out.push(ch.charCodeAt(0))};
- ascii("GIF89a");word(width);word(height);out.push(0xf7,0,0);
- for(let i=0;i<256;i++)out.push(Math.round((i>>5)*255/7),Math.round(((i>>2)&7)*255/7),Math.round((i&3)*255/3));
- out.push(0x21,0xff,11);ascii("NETSCAPE2.0");out.push(3,1,0,0,0);
- for(const rgba of frames){
-  if(rgba.length!==width*height*4)throw Error("GIF帧尺寸不一致");
-  out.push(0x21,0xf9,4,4);word(delay);out.push(0,0,0x2c);word(0);word(0);word(width);word(height);out.push(0,8);
-  let bits=0,buffer=0,block=[];const byte=b=>{block.push(b);if(block.length===255){out.push(255,...block);block=[]}};
-  const code=n=>{buffer|=n<<bits;bits+=9;while(bits>=8){byte(buffer&255);buffer>>>=8;bits-=8}};
-  code(256);let count=0;
-  for(let i=0;i<rgba.length;i+=4){if(count===250){code(256);count=0}code((rgba[i]&224)|((rgba[i+1]&224)>>3)|(rgba[i+2]>>6));count++}
-  code(257);if(bits)byte(buffer&255);if(block.length)out.push(block.length,...block);out.push(0);
- }
- out.push(0x3b);return new Blob([new Uint8Array(out)],{type:"image/gif"});
-}
-function mediaEvent(el,event,action,timeout=8000){
- return new Promise((resolve,reject)=>{let timer;const done=err=>{clearTimeout(timer);el.removeEventListener(event,ok);el.removeEventListener("error",bad);err?reject(err):resolve()};const ok=()=>done(),bad=()=>done(Error("媒体解码失败"));timer=setTimeout(()=>done(Error("媒体处理超时")),timeout);el.addEventListener(event,ok,{once:true});el.addEventListener("error",bad,{once:true});try{action()}catch(e){done(e)}});
-}
-async function videoToGif(blob){
- if(!blob?.type?.startsWith("video/")||blob.size>25000000)throw Error("视频格式或大小不支持GIF转换");
- const video=document.createElement("video"),url=URL.createObjectURL(blob);
- video.muted=true;video.playsInline=true;video.preload="auto";
- try{
-  await mediaEvent(video,"loadeddata",()=>{video.src=url},12000);
-  if(!Number.isFinite(video.duration)||video.duration<=0||!video.videoWidth)throw Error("无法读取视频帧");
-  const canvas=document.createElement("canvas"),ratio=Math.min(1,256/Math.max(video.videoWidth,video.videoHeight));canvas.width=Math.max(1,Math.round(video.videoWidth*ratio));canvas.height=Math.max(1,Math.round(video.videoHeight*ratio));
-  const ctx=canvas.getContext("2d",{willReadFrequently:true});if(!ctx)throw Error("浏览器无法读取视频帧");
-  const duration=Math.min(4,video.duration),n=Math.max(2,Math.min(16,Math.ceil(duration*4))),frames=[];
-  for(let i=0;i<n;i++){const at=i*duration/n;if(Math.abs(video.currentTime-at)>.015)await mediaEvent(video,"seeked",()=>{video.currentTime=at},4500);ctx.drawImage(video,0,0,canvas.width,canvas.height);frames.push(ctx.getImageData(0,0,canvas.width,canvas.height).data)}
-  return makeGif(canvas.width,canvas.height,frames,Math.max(5,Math.round(duration*100/n)));
- }finally{video.removeAttribute("src");video.load();URL.revokeObjectURL(url)}
-}
-async function stickerPng(blob){
- const img=new Image(),url=URL.createObjectURL(blob);
- try{await mediaEvent(img,"load",()=>{img.src=url},10000);
-  const canvas=document.createElement("canvas"),scale=Math.min(1,512/Math.max(img.naturalWidth,img.naturalHeight));canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));const ctx=canvas.getContext("2d",{willReadFrequently:true});if(!ctx)throw Error("贴纸处理不可用");
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);const im=ctx.getImageData(0,0,canvas.width,canvas.height),d=im.data,w=canvas.width,h=canvas.height,seen=new Uint8Array(w*h),queue=new Int32Array(w*h);let head=0,tail=0;
-  const add=p=>{if(p<0||p>=seen.length||seen[p])return;seen[p]=1;const k=p*4;if(d[k+3]<10||(d[k+1]>90&&d[k+1]>d[k]+35&&d[k+1]>d[k+2]+35)){queue[tail++]=p;d[k+3]=0}};
-  for(let x=0;x<w;x++){add(x);add((h-1)*w+x)}for(let y=0;y<h;y++){add(y*w);add(y*w+w-1)}
-  while(head<tail){const p=queue[head++];if(p%w)add(p-1);if(p%w<w-1)add(p+1);add(p-w);add(p+w)}
-  if(tail<w*h*.01)throw Error("未识别到可去除的背景");
-  ctx.putImageData(im,0,0);const result=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));if(!result)throw Error("贴纸PNG编码失败");return result;
- }finally{URL.revokeObjectURL(url)}
-}
 function localMediaNotice(bubble,kind){bubble.replaceChildren(node("span","video-job-hint",kind==="video"?"视频仅保留在原设备；不会自动重新生成":"图片仅保留在原设备；不会自动重新生成"))}
 function renderDeviceMedia(bubble,blob,kind){
  if(kind==="video"){
@@ -1477,7 +1421,7 @@ async function restoreDeviceMedia(bubble,id,kind,legacyUrl="",legacyJobId=""){
 
 function renderImageJob(bubble,id){
  bubble.dataset.imageTask=id;
- const mediaLabel=bubble.closest(".message")?.dataset.mediaFormat==="sticker"?"贴纸生成中":"作图中";
+ const mediaLabel="作图中";
  const label=node("span","image-job-label",mediaLabel+" 1秒");
  bubble.dataset.imageStart=String(Date.now());
  showChatImageWaiting(bubble,label);
@@ -1506,15 +1450,15 @@ async function pollImageJob(bubble,id,manual){
   const key=deviceMediaKey(messageId),owner=S.user?.id;
   requestDeviceMediaPersistence();
   const r=await api("/api/image/task/"+id,undefined,55000);
-  let cached=false,blob=null,stickerFallback=false;
+  let cached=false,blob=null;
   if(r.done&&!r.failed&&r.image){
-   try{blob=await deviceMediaBlob(r.image);if(bubble.closest(".message")?.dataset.mediaFormat==="sticker"){try{if(!blob)throw Error("没有图片数据");blob=await stickerPng(blob)}catch{stickerFallback=true}}cached=blob instanceof Blob&&blob.size>0&&blob.type.startsWith("image/")&&await deviceMediaPut(key,blob)}catch{cached=false}
+   try{blob=await deviceMediaBlob(r.image);cached=blob instanceof Blob&&blob.size>0&&blob.type.startsWith("image/")&&await deviceMediaPut(key,blob)}catch{cached=false}
   }
   if(!bubble.isConnected||bubble.dataset.imageTask!==id||S.user?.id!==owner)return;
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
-   if(r.retired){delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.textContent="图生图已下线";setPortraitState(bubble.closest(".message"),"idle");return}
+   if(r.retired){delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.textContent=r.error||"生成服务已下线";setPortraitState(bubble.closest(".message"),"idle");return}
    if(r.failed){showImageRetry(bubble);return}
    const img=blob instanceof Blob?localImageElement(blob):node("img","chat-generated-image");
    img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
@@ -1525,7 +1469,6 @@ async function pollImageJob(bubble,id,manual){
     bubble.classList.remove("chat-image-task");bubble.replaceChildren(img);
     const row=bubble.closest(".message");
     if(row){row.dataset.messageKind="image";appendMessageCopy(row,"")}
-    if(stickerFallback)bubble.append(node("span","video-job-hint","贴纸已生成；背景未能自动去除，保留原图。"));
     if(!cached)mediaCacheWarning(bubble);
     setPortraitState(row,"finished");
     // The final image can have a different height from the loading frame.
@@ -2572,7 +2515,7 @@ function messageDraft(content,send=false,mode="text",continueFrom=null){
  return true;
 }
 function retiredImageMessage(row){
- return /图生图/.test(String(row?.dataset.usedModel||""))||/^(?:图生图失败|图生图排队超时|图生图已下线)/.test(String(row?.textContent||"").trim())||/\[文件：参考图\]\(\/api\/files\//.test(messageQuestion(row));
+ return Boolean(row?.dataset.mediaFormat)||row?.dataset.messageKind==="video"||/图生图/.test(String(row?.dataset.usedModel||""))||/^(?:图生图失败|图生图排队超时|图生图已下线)/.test(String(row?.textContent||"").trim())||/\[文件：参考图\]\(\/api\/files\//.test(messageQuestion(row));
 }
 function retryImageMessage(row){
  if(S.busy||S.freeToolsMode||!row?.isConnected||retiredImageMessage(row))return;
@@ -2585,7 +2528,6 @@ function retryMessage(row){
  const text=messageQuestion(row);
  if(!text){flashError("找不到当前回复对应的问题");return}
  const image=row.dataset.messageKind==="image"||!!row.querySelector("img.chat-generated-image");
- if(row.dataset.mediaFormat){if(/\[文件：/.test(text)){flashError("原消息包含参考图，请重新选择图片后发送");return}if(messageDraft(text,false,row.dataset.mediaFormat==="gif"?"video":"image")){S.miniToolChoice=row.dataset.mediaFormat;void sendMessage()}return}
  messageDraft(text,true,image?"image":"text");
 }
 /* File content is created on this device; image bytes are not stored online. */
@@ -2810,133 +2752,6 @@ function appendMessageCopy(row,content){
 
 
 
-function renderPaidVideo(bubble,provider,id){
- const label=node("span","video-job-hint","视频任务已提交"),button=node("button","chat-video-save","查询视频");
- button.type="button";bubble.replaceChildren(label,button);
- button.addEventListener("click",async()=>{
-  if(button.disabled)return;button.disabled=true;
-  try{
-   const r=await api("/api/video/status",{provider,requestId:id});
-   if(!bubble.isConnected)return;
-   if(r.status==="completed"&&/^https:\/\//i.test(r.url||"")){
-    const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=r.url;
-    const link=node("a","chat-video-save","下载原视频");link.href=r.url;link.target="_blank";link.rel="noopener noreferrer";link.download="aigzt-video.mp4";
-    bubble.replaceChildren(video,link);
-   }else label.textContent=r.status==="failed"?"视频生成失败":r.status==="completed"?"视频链接已失效或不可用":"视频仍在生成";
-  }catch(e){label.textContent=humanError(e)}finally{button.disabled=false}
- });
-}
-function inlineVideo(bubble,id){
- const url="/api/video/media/"+id,video=node("video","chat-generated-video");
- video.controls=true;video.playsInline=true;video.preload="metadata";video.src=url;
- const actions=node("div","chat-video-actions"),link=node("a","chat-video-save","下载");
- link.href=url;link.download="aigzt-"+id+".mp4";actions.append(link);
- bubble.replaceChildren(video,actions);
-}
-/* Local elapsed clock with bounded automatic server status checks.
- * Only the existing free job is queried; this never resubmits generation. */
-function inlineVideoJob(bubble,id,retry=false){
- const gif=bubble.closest(".message")?.dataset.mediaFormat==="gif";
- bubble.dataset.videoTask=id;
- bubble.dataset.videoStarted=String(Date.now());
- const label=node("span","video-job-label",(gif?"GIF生成中":"视频生成中")+" · 0:00");
- const frame=createImageWaitingFrame();
- frame.classList.add("video-loading-card");
- frame.setAttribute("aria-label","视频生成中");
- const mark=node("div","video-loading-mark");
- mark.append(iconSlot("video"));renderIcons(mark);frame.append(mark);
- const hint=node("span","video-job-hint","正在等待免费来源生成视频");
- bubble.classList.add("chat-video-task");
- bubble.replaceChildren(label,frame,hint);
- if(S.busy)followLatestImage(bubble);
- const active=()=>bubble.isConnected&&bubble.dataset.videoTask===id;
- let taskTimer=0,errors=0,polling=false;
- const clock=window.setInterval(()=>{
-  if(!active()){cleanup();return}
-  if(!document.hidden){
-   const elapsed=Math.max(0,Math.floor((Date.now()-Number(bubble.dataset.videoStarted||Date.now()))/1000));
-   label.textContent=(gif?"GIF生成中 · ":"视频生成中 · ")+Math.floor(elapsed/60)+":"+String(elapsed%60).padStart(2,"0");
-  }
- },1000);
- function cleanup(){
-  window.clearInterval(clock);window.clearTimeout(taskTimer);taskTimer=0;
-  document.removeEventListener("visibilitychange",onReturn);
-  window.removeEventListener("online",onReturn);
-  delete bubble.dataset.videoTask;delete bubble.dataset.videoStarted;
-  bubble.classList.remove("chat-video-task");
- }
- function schedule(delay){
-  if(!active()||document.hidden)return;
-  if(taskTimer)window.clearTimeout(taskTimer);
-  taskTimer=window.setTimeout(()=>{taskTimer=0;void poll()},delay);
- }
- function onReturn(){
-  if(!active()){cleanup();return}
-  if(document.hidden){hint.textContent="已暂停查询，返回页面后继续";window.clearTimeout(taskTimer);taskTimer=0;return}
-  if(!polling)schedule(800);
- }
- async function poll(){
-  if(!active()||polling)return;
-  if(document.hidden){hint.textContent="已暂停查询，返回页面后继续";return}
-  polling=true;hint.textContent="正在确认视频状态…";
-  let delay=17000;
-  try{
-   const path=retry?"/api/video/retry":"/api/video/status";
-   retry=false;
-   const r=await api(path,{provider:"free",requestId:id});
-   if(!active())return;
-   errors=0;
-   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.videoStarted=String(r.startedAt);
-   if(r.status==="completed"){
-    if(gif){const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);hint.textContent="正在编码 GIF 动图…";try{const source=await deviceMediaBlob(r.url);if(!source)throw Error("视频源不可读取");const blob=await videoToGif(source);const saved=await deviceMediaPut(key,blob);if(!active())return;cleanup();const row=bubble.closest(".message");if(row)row.dataset.messageKind="image";renderDeviceMedia(bubble,blob,"image");if(!saved)mediaCacheWarning(bubble);setPortraitState(row,"finished");}catch(e){if(!active())return;cleanup();bubble.replaceChildren(node("span","video-job-hint","GIF转换失败："+humanError(e)));const retry=node("button","chat-video-save","重试转换");retry.type="button";retry.onclick=()=>inlineVideoJob(bubble,id);bubble.append(retry)}return;}
-    const local=/^\/api\/video\/media\/[0-9a-f-]{36}$/i.test(r.url||"");
-    const external=r.temporaryUrl===true&&/^https:\/\/[a-z0-9-]+\.hf\.space\/gradio_api\/file=/i.test(r.url||"");
-    if(local){
-     const row=bubble.closest(".message"),mediaId=r.url.split("/").pop();
-     cleanup();
-     if(row){appendMessage("assistant","[[aigzt:video:"+mediaId+"]]","免费视频",row,false,row.dataset.messageId);setPortraitState(row,"finished")}
-     else inlineVideo(bubble,mediaId);
-     if(r.recovered){const target=row?.querySelector(".bubble")||bubble;target.append(node("span","video-job-hint","已恢复同一请求生成的视频"));}
-     return;
-    }
-    if(r.status==="completed"&&r.temporaryUrl===true&&String(r.url||"").startsWith("/api/video/result/")){
-     const key=deviceMediaKey(bubble.closest(".message")?.dataset.messageId||id);cleanup();
-     try{const blob=await deviceMediaBlob(r.url);if(!blob)throw Error("视频下载失败");const saved=await deviceMediaPut(key,blob);if(bubble.isConnected){renderDeviceMedia(bubble,blob,"video");if(!saved)mediaCacheWarning(bubble);setPortraitState(bubble.closest(".message"),"finished")}}
-     catch{if(bubble.isConnected){localMediaNotice(bubble,"video");const link=node("a","chat-video-save","下载原视频");link.href=r.url;link.download="aigzt-video.mp4";bubble.append(link)}}return;
-    }
-    if(external){
-     const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=r.url;
-     const link=node("a","chat-video-save","下载临时视频");link.href=r.url;link.target="_blank";link.rel="noopener noreferrer";
-     cleanup();bubble.replaceChildren(video,link);setPortraitState(bubble.closest(".message"),"finished");return;
-    }
-   }
-   if(r.status==="failed"){
-    cleanup();frame.remove();
-    const automatic=bubble.closest(".message")?.dataset.automaticTurn==="1";
-    label.textContent=automatic?"视频任务已保留":"视频生成失败";hint.textContent=automatic?(r.retryable?"可继续生成":"本次未生成视频"):(r.error||"免费来源暂不可用");
-    if(r.retryable){
-     const button=node("button","chat-video-save",automatic?"继续":"重新生成");button.type="button";
-     button.addEventListener("click",()=>{button.disabled=true;inlineVideoJob(bubble,id,true)});
-     bubble.append(button);
-    }
-    setPortraitState(bubble.closest(".message"),automatic?"idle":"error");
-    return;
-   }
-   hint.textContent=r.stage===1?"正在等待备用视频来源…":"等待免费来源返回视频…";
-   delay=Math.max(1000,Math.min(15000,Number(r.waitSeconds||8)*1000));
-  }catch(error){
-   if(!active())return;
-   errors++;delay=Math.min(60000,17000*2**Math.min(errors,2));
-   hint.textContent=navigator.onLine===false?"网络离线，连接恢复后继续":"查询遇到网络问题，将自动重试";
-  }finally{
-   polling=false;
-   if(active())schedule(delay);
-  }
- }
- document.addEventListener("visibilitychange",onReturn);
- window.addEventListener("online",onReturn);
- schedule(0);
-}
 
 // Fold presentation only; sourceText and message actions keep the full message.
 const USER_MESSAGE_PREVIEW_LINES=5;
@@ -2995,14 +2810,14 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   else if(!row.querySelector(":scope > .avatar-ai"))row.prepend(makeAssistantPortrait());
   if(model==="GIF动图")row.dataset.mediaFormat="gif";else if(model==="贴纸")row.dataset.mediaFormat="sticker";
   const pending=String(content||"").match(/^\[\[aigzt:image-job:([0-9a-f-]{36})\]\]$/i);
-  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image","",pending[1]).then(found=>{if(!found&&bubble.isConnected)renderImageJob(bubble,pending[1])})}
+  if(pending){row.dataset.messageKind="image";bubble.replaceChildren();if(model==="贴纸")void restoreDeviceMedia(bubble,messageId||pending[1],"image","",pending[1]).then(found=>{if(!found&&bubble.isConnected)bubble.textContent="贴纸生成已下线，原有记录保留"});else if(existingRow)renderImageJob(bubble,pending[1]);else void restoreDeviceMedia(bubble,messageId||pending[1],"image","",pending[1]).then(found=>{if(!found&&bubble.isConnected)renderImageJob(bubble,pending[1])})}
   const picture=String(content||"").match(/^!\[生成图片\]\((\/api\/files\/[0-9a-f-]{36})\)$/);
   if(picture){row.dataset.messageKind="image";void restoreDeviceMedia(bubble,messageId,"image",picture[1])}
   const videoPending=String(content||"").match(/^\[\[aigzt:video-job:([0-9a-f-]{36})\]\]$/i);
   const paidVideo=String(content||"").match(/^\[\[aigzt:paid-video:(grok|runway|luma|vidu):([A-Za-z0-9_-]{4,160})\]\]$/);
-  if(paidVideo){row.dataset.messageKind="video";renderPaidVideo(bubble,paidVideo[1],paidVideo[2])}
+  if(paidVideo){row.dataset.messageKind="video";void restoreDeviceMedia(bubble,messageId,"video").then(found=>{if(!found&&bubble.isConnected)bubble.textContent="视频生成已下线，原有记录保留"});}
   const videoDone=String(content||"").match(/^\[\[aigzt:video:([0-9a-f-]{36})\]\]$/i);
-  if(videoPending){const gif=row.dataset.mediaFormat==="gif";row.dataset.messageKind=gif?"image":"video";if(existingRow)inlineVideoJob(bubble,videoPending[1]);else void restoreDeviceMedia(bubble,messageId||videoPending[1],gif?"image":"video").then(found=>{if(!found&&bubble.isConnected)inlineVideoJob(bubble,videoPending[1])});}
+  if(videoPending){const kind=model==="GIF动图"?"image":"video";row.dataset.messageKind=kind;void restoreDeviceMedia(bubble,messageId||videoPending[1],kind).then(found=>{if(!found&&bubble.isConnected)bubble.textContent="生成服务已下线，原有记录保留"});}
   if(videoDone){row.dataset.messageKind="video";void restoreDeviceMedia(bubble,messageId||videoDone[1],"video","/api/video/media/"+videoDone[1]);}
   const localDone=/^(图片已生成[（(]|图生图已生成[（(]|视频已生成[（(])/.test(String(content||""));
   if(localDone){const kind=String(content).startsWith("视频")?"video":"image";row.dataset.messageKind=kind;void restoreDeviceMedia(bubble,messageId,kind)}
@@ -3014,7 +2829,7 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
   }
   if(Array.isArray(replyImages)&&replyImages.length){for(const src of replyImages)appendReplyImage(bubble,src)}
   else if(!existingRow&&messageId&&!pending&&!picture&&!localDone&&!videoPending&&!videoDone&&!paidVideo)void restoreReplyImages(bubble,messageId);
-   if(!pending&&!videoPending&&!videoDone&&!picture&&!localDone)appendMessageCopy(row,content);
+   if(!pending&&!videoPending&&!videoDone&&!paidVideo&&!picture&&!localDone)appendMessageCopy(row,content);
  }else{
   const lines=String(content||"").split(/\n(?=\[文件：)/);
    bubble.replaceChildren();
@@ -3100,7 +2915,7 @@ function pickModeModel(mode,records,allowed,freeChoice=()=>false){
  return candidates.sort((a,b)=>b.at-a.at)[0]||null;
 }
 function modeModelAllowed(provider,model){
- if(!provider||provider==="free"||!model||!connected(provider)||VIDEO_ONLY_PROVIDERS.has(provider)||unavailableChatModel(provider,model))return false;
+ if(!provider||provider==="free"||!model||!connected(provider)||retiredVideoModel(provider,model)||unavailableChatModel(provider,model))return false;
  const known=allModels().find(m=>modelRoute(m)===provider&&m.id===model);
  return !known||known.type==="text";
 }
@@ -3167,8 +2982,7 @@ function chatSelectedName(){
 function updateComposerModel(){
  const line=$("composerModelLine"),name=$("composerModelName"),switcher=$("composerSwitchModel");
  if(!line||!name||!switcher)return;
- const imageMode=S.composerMode==="image",videoMode=S.composerMode==="video";
- line.hidden=(!imageMode&&!videoMode&&S.composerMode!=="text")||S.freeToolsMode;
+ line.hidden=S.freeToolsMode;
  const active=selectedChatMode==="auto"?"":String(S.modelTitle||S.model||"").replace(/^free:or\//,"").replace(new RegExp("^"+String(S.provider||"").replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+" · "),"");
  name.textContent=active;name.title=active;
  name.hidden=!active;
@@ -3180,13 +2994,13 @@ function updateModelTitle(){
  updateComposerModel();refreshChatModeUI();
 }
 function setModel(row){
+ if(row.type==="video"||retiredVideoModel(row.provider,row.id))return;
  const route=row.availableWith==="openrouter-key"?"openrouter":row.provider;
  if(unavailableChatModel(route,row.id)){flashError("此模型当前不可调用，请选择其他模型");return}
  if(row.type!=="text"&&!(row.type==="image"&&row.availableWith==="openrouter-key"&&row.outputImages)){
   if(row.type==="audio")return;
   freeModeChoosing=false;hide("modelDialog");
   if(row.type==="image"){setComposerMode("image");$("prompt").focus({preventScroll:true})}
-  else if(row.type==="video"){if(VIDEO_OPTIONS[row.provider]?.includes(row.id))chooseChatVideo(row.provider,row.id);else flashError("此视频模型暂无本站生成接口，请选择已接入的视频模型。")}
   
   return;
  }
@@ -3282,48 +3096,19 @@ function syncMobileHeight(){
  });
 }
 
-/* Tool selections live exclusively in the + menu. */
-function syncMiniTools(){
- const active={
-  miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan"&&S.miniToolChoice!=="gif",
-  miniFrameVideo:S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.miniToolChoice!=="gif",
-  miniSticker:S.miniToolChoice==="sticker",miniGif:S.miniToolChoice==="gif"
- };
- for(const [id,yes] of Object.entries(active)){
-  const btn=$(id);if(!btn)continue;
-  btn.classList.toggle("active",yes);btn.setAttribute("aria-pressed",String(yes));
- }
-}
-/* The selected mode is shown in the model line. Native file pickers remain in the + menu. */
-function chooseMiniTool(action){
- if(S.busy)return;
- hideAttachMenu();
- const isImageVideo=action==="image-video";
- const isFrameVideo=action==="frame-video";
- if(!isImageVideo&&!isFrameVideo)return;
- const provider=isImageVideo?"freewan":"freeloop";
- selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
- setComposerMode("video");
- $("prompt").placeholder=isFrameVideo?"添加首帧和尾帧两张图，描述过渡动作…":"添加参考图，描述画面需要的动作…";
- syncMiniTools();updateComposerModel();
- $("prompt").focus({preventScroll:true});
-}
 
 function restoreChatInputMode(){
- S.code=false;S.miniToolChoice=null;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
+ S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false");
  setComposerMode("text");hideAttachMenu();$("toolTray").hidden=true;$("toolsAction").setAttribute("aria-expanded","false");
 }
 function setComposerMode(mode){
- S.miniToolChoice=null;
- S.composerMode=mode;
+ mode=mode==="image"?"image":"text";S.composerMode=mode;
  
  if(mode!=="text"&&S.code){S.code=false;$("codeToggle").classList.remove("active");$("codeToggle").setAttribute("aria-pressed","false")}
  $("imageMode").classList.toggle("active",mode==="image");
- $("videoMode").classList.toggle("active",mode==="video");
  $("imageMode").setAttribute("aria-pressed",String(mode==="image"));
- $("videoMode").setAttribute("aria-pressed",String(mode==="video"));
- $("prompt").placeholder=mode==="image"?"描述想画的内容…":mode==="video"?"描述想生成的视频…":S.code?"描述编程任务…":"向 AI 提问…";
- resizePrompt();updateComposerModel();syncMiniTools();
+ $("prompt").placeholder=mode==="image"?"描述想画的内容…":S.code?"描述编程任务…":"向 AI 提问…";
+ resizePrompt();updateComposerModel();
 }
 function renderAttachments(){
  const el=$("attachmentPreview");if(!el)return;el.replaceChildren();
@@ -3353,7 +3138,7 @@ function renderAttachments(){
  * actual MIME and filename, never label PNG bytes as WebP or block uploading.
  * This runs only for image mode; text/chat/video attachments remain untouched. */
 async function optimizeImageReference(file){
- if(S.composerMode!=="image"&&!(S.composerMode==="video"&&S.videoProvider!=="freetext")&&arguments[1]!==true)return file;
+ if(S.composerMode!=="image"&&arguments[1]!==true)return file;
  const type=String(file.type||"").toLowerCase();
  const supported=["image/jpeg","image/png","image/webp"].includes(type);
  const heic=["image/heic","image/heif"].includes(type)||/\.(heic|heif)$/i.test(file.name||"");
@@ -3406,7 +3191,6 @@ async function uploadSelected(files){
  if(S.uploading)return;
  if(!files.length)return;
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
- if(S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.attachments.length+files.length>2){flashError("首尾帧需要两张图片，请先移除多余附件");return}
  S.uploading=true;$("attachButton").disabled=true;flashError("");
  try{
  for(const file of files){
@@ -3444,7 +3228,7 @@ function initDomesticProviderLinks(){
 
 
 
-const CURATED_FREE_TOOLS=[{"provider":"PromptHero","name":"PromptHero · 提示词库","category":"作图","categories":["作图","视频","搜索","写作"],"url":"https://prompthero.com/","features":["图片提示词","视频提示词","创作灵感"],"access":"free","note":"免费浏览公开提示词；高级功能按原站收费。","verified":true,"aliases":["Prompt Hero","提示词"]},{"provider":"Unlimited AI","name":"Unlimited AI · 中文聊天","category":"聊天","categories":["聊天","综合","写作"],"url":"https://app.unlimitedai.chat/zh","features":["中文对话","故事创作"],"access":"free","guest":true,"login":"原站标注免登录","note":"标准模型有免费入口，VIP 功能及实际额度以原站为准。","verified":true,"aliases":["Unlimited AI Chat","无限AI"]},{"provider":"Venice AI","name":"Venice Agent · 智能体","category":"聊天","categories":["聊天","智能体","角色"],"url":"https://venice.ai/chat/agent/B2AcOHq","features":["智能体对话"],"access":"daily","login":"以原站为准","note":"用户提供的专属智能体直达链接，智能体访问权限及免费额度以原站为准。","aliases":["Venice","B2AcOHq"]},{"provider":"Venice AI","name":"Venice · 自由聊天","category":"聊天","categories":["聊天","角色","综合"],"url":"https://venice.ai/ai-tools/ai-chat","features":["私密聊天","开放创作","多模型"],"access":"daily","login":"需登录","note":"免费档约10次文本提问/天，部分模型功能收费。","featured":true,"verified":true,"policy":"开放创作"},{"provider":"Venice AI","name":"Venice · AI 作图","category":"作图","categories":["作图","综合"],"url":"https://venice.ai/ai-tools/ai-image-generator","features":["文生图","私密作图","开放创作"],"access":"daily","login":"需登录","note":"免费档约15次图片提示/天，高级功能可能收费。","featured":true,"verified":true,"policy":"开放创作"},{"provider":"Venice AI","name":"Venice · 图片编辑","category":"图生图","categories":["图生图","修图"],"url":"https://venice.ai/ai-tools/ai-photo-editor","features":["图生图","提示词修图","开放创作"],"access":"daily","login":"需登录","note":"共用免费图片额度，部分图片编辑能力需要订阅。","featured":false,"verified":true,"policy":"开放创作"},{"provider":"Mage","name":"Mage · 多模型作图","category":"作图","categories":["作图","综合"],"url":"https://www.mage.space/ai-image-generator","features":["多模型","文生图","写实与动漫"],"access":"trial","login":"按官网要求","note":"可使用初始免费Gems，不同模型费用不同。","featured":true,"verified":true},{"provider":"Mage","name":"Mage · 图生图","category":"图生图","categories":["图生图","修图"],"url":"https://www.mage.space/ai-image-to-image-generator","features":["图像变体","上传参考图","图片重绘"],"access":"trial","login":"按官网要求","note":"免费开始，后续按模型消耗Gems。","featured":false,"verified":true},{"provider":"Viggle","name":"Viggle · 图片转视频","category":"视频","categories":["视频","图生图","角色"],"url":"https://viggle.ai/tools/image-to-video-ai/","features":["图生视频","动作迁移","角色动画"],"access":"daily","login":"需登录","note":"官网说明免费账号约5条视频/天，免费导出带水印。","featured":true,"verified":true},{"provider":"Viggle","name":"Viggle · 图片动画","category":"视频","categories":["视频","角色"],"url":"https://viggle.ai/tools/ai-image-animator/","features":["人物动效","动作模板","照片动画"],"access":"daily","login":"需登录","note":"免费额度每日刷新；高质量导出有限制。","featured":false,"verified":true},{"provider":"PixVerse","name":"PixVerse · AI 视频","category":"视频","categories":["视频","综合"],"url":"https://pixverse.ai/en/product/ai-video-generator","features":["文生视频","镜头控制","视频效果"],"access":"daily","login":"需登录","note":"有免费积分，复杂视频和部分模型可能需要付费。","featured":false,"verified":true},{"provider":"PixVerse","name":"PixVerse · 图生视频","category":"视频","categories":["视频","图生图"],"url":"https://pixverse.ai/en/product/image-to-video","features":["图生视频","照片运动","镜头动画"],"access":"daily","login":"需登录","note":"每天免费积分，生成门槛随模型变化。","featured":false,"verified":true},{"provider":"Recraft","name":"Recraft · 图片设计","category":"作图","categories":["作图","修图"],"url":"https://www.recraft.ai/ai-image-generator","features":["文生图","文字海报","创意设计"],"access":"daily","login":"需登录","note":"免费账户有每日积分，部分作品限非商业用途。","featured":false,"verified":true},{"provider":"Recraft","name":"Recraft · 图片编辑","category":"图生图","categories":["图生图","修图"],"url":"https://www.recraft.ai/ai-photo-editor","features":["上传照片","自然语言修图","局部编辑"],"access":"daily","login":"需登录","note":"免费图像编辑与生成共用每日积分。","featured":false,"verified":true},{"provider":"Recraft","name":"Recraft · SVG 矢量图","category":"作图","categories":["作图","修图"],"url":"https://www.recraft.ai/vector-editor","features":["矢量图","SVG","设计素材"],"access":"daily","login":"需登录","note":"免费每日积分，商用权限和导出限制以套餐为准。","featured":false,"verified":true},{"provider":"Leonardo AI","name":"Leonardo · 创意生图","category":"作图","categories":["作图","图生图"],"url":"https://leonardo.ai/","features":["艺术作图","图像变体","风格生成"],"access":"daily","login":"需登录","note":"官方免费档有每日Token，高级模型付费。","featured":false,"verified":true},{"provider":"Ideogram","name":"Ideogram · 文字海报","category":"作图","categories":["作图","修图"],"url":"https://ideogram.ai/","features":["文字入图","海报","LOGO"],"access":"daily","login":"需登录","note":"符合条件的账号可获每周免费积分，注册渠道可能影响资格。","featured":false,"verified":true},{"provider":"SeaArt","name":"SeaArt · 图片视频创作","category":"综合","categories":["综合","作图","图生图","视频","修图"],"url":"https://www.seaart.ai/","features":["AI作图","图生视频","图片处理"],"access":"daily","login":"需登录","note":"免费每日体力或积分，具体模型各有消耗。","featured":false,"verified":true},{"provider":"Tensor.Art","name":"Tensor.Art · 模型画廊","category":"作图","categories":["作图","图生图","视频"],"url":"https://tensor.art/","features":["LoRA","模型作图","图生图"],"access":"daily","login":"需登录","note":"每日免费Energy，视频免费活动可能临时变化。","featured":false,"verified":true},{"provider":"Qwen Studio","name":"千问 · 聊天与作图","category":"聊天","categories":["聊天","作图","综合"],"url":"https://chat.qwen.ai/","features":["中文聊天","图片生成","多模态"],"access":"free","login":"按官网要求","note":"提供基础免费体验，模型和地区可能设限。","featured":false,"verified":true},{"provider":"Qwen Studio","name":"千问 · 图片编辑","category":"图生图","categories":["图生图","修图"],"url":"https://chat.qwen.ai/?inputFeature=image_edit","features":["中文修图","图像编辑","上传图片"],"access":"free","login":"按官网要求","note":"千问官方图像编辑入口，登录要求按网页提示。","featured":false,"verified":true},{"provider":"Character.AI","name":"Character.AI · 角色聊天","category":"聊天","categories":["聊天","角色"],"url":"https://character.ai/","features":["角色扮演","人物互动","故事对话"],"access":"free","login":"需登录","note":"基础消息聊天免费，并非无审核服务。","featured":false,"verified":true},{"provider":"Janitor","name":"Janitor · 角色互动","category":"角色","categories":["角色","聊天"],"url":"https://jani.com/","features":["社区角色","情景对话","自建人物"],"access":"free","login":"需登录","note":"Janitor 官方站点，模型和付费条件依使用方式决定。","featured":false,"verified":true},{"provider":"KoboldAI","name":"KoboldAI Lite · 社区聊天","category":"聊天","categories":["聊天","角色","写作"],"url":"https://lite.koboldai.net/","features":["AI Horde","自由聊天","故事写作"],"access":"community","login":"可直接体验","note":"社区志愿者模型可能排队，私密内容不要直接提交。","featured":false,"verified":true},{"provider":"Marvis AI","name":"Marvis · 免费视频体验","category":"视频","categories":["视频"],"url":"https://ai.jxzhihi.com/","features":["文生视频","短视频","免注册"],"access":"trial","login":"可直接体验","note":"官方说明无需注册即可免费尝试，但个人GPU可能排队。","featured":false,"verified":true},{"provider":"Hugging Face","name":"Qwen · 图像编辑演示","category":"图生图","categories":["图生图","修图"],"url":"https://huggingface.co/spaces/Qwen/Qwen-Image-Edit","features":["Qwen修图","图像编辑","社区演示"],"access":"community","login":"按官网要求","note":"第三方Space可能休眠排队或要求登录。","featured":false,"verified":true},{"provider":"Hugging Face","name":"Real-ESRGAN · 图片增强","category":"修图","categories":["修图"],"url":"https://huggingface.co/spaces/akhaliq/Real-ESRGAN","features":["高清放大","照片增强","清晰化"],"access":"community","login":"按官网要求","note":"社区Space可能休眠或暂停推理。","featured":false,"verified":true},{"provider":"Runway","name":"Runway · 视频试用","category":"视频","categories":["视频","图生图"],"url":"https://app.runwayml.com/","features":["文生视频","图生视频","视频编辑"],"access":"trial","login":"需登录","note":"免费计划主要为一次性试用积分，很多模型不在免费档。","featured":false,"verified":true},{"provider":"Luma","name":"Luma · Dream Machine","category":"视频","categories":["视频","图生图"],"url":"https://lumalabs.ai/dream-machine","features":["图转视频","镜头运动","短片生成"],"access":"trial","login":"需登录","note":"免费档有严格限制，功能和商用授权按官网规则。","featured":false,"verified":true}];
+const CURATED_FREE_TOOLS=[{"provider":"PromptHero","name":"PromptHero · 提示词库","category":"作图","categories":["作图","视频","搜索","写作"],"url":"https://prompthero.com/","features":["图片提示词","视频提示词","创作灵感"],"access":"free","note":"免费浏览公开提示词；高级功能按原站收费。","verified":true,"aliases":["Prompt Hero","提示词"]},{"provider":"Unlimited AI","name":"Unlimited AI · 中文聊天","category":"聊天","categories":["聊天","综合","写作"],"url":"https://app.unlimitedai.chat/zh","features":["中文对话","故事创作"],"access":"free","guest":true,"login":"原站标注免登录","note":"标准模型有免费入口，VIP 功能及实际额度以原站为准。","verified":true,"aliases":["Unlimited AI Chat","无限AI"]},{"provider":"Venice AI","name":"Venice Agent · 智能体","category":"聊天","categories":["聊天","智能体","角色"],"url":"https://venice.ai/chat/agent/B2AcOHq","features":["智能体对话"],"access":"daily","login":"以原站为准","note":"用户提供的专属智能体直达链接，智能体访问权限及免费额度以原站为准。","aliases":["Venice","B2AcOHq"]},{"provider":"Venice AI","name":"Venice · 自由聊天","category":"聊天","categories":["聊天","角色","综合"],"url":"https://venice.ai/ai-tools/ai-chat","features":["私密聊天","开放创作","多模型"],"access":"daily","login":"需登录","note":"免费档约10次文本提问/天，部分模型功能收费。","featured":true,"verified":true,"policy":"开放创作"},{"provider":"Venice AI","name":"Venice · AI 作图","category":"作图","categories":["作图","综合"],"url":"https://venice.ai/ai-tools/ai-image-generator","features":["文生图","私密作图","开放创作"],"access":"daily","login":"需登录","note":"免费档约15次图片提示/天，高级功能可能收费。","featured":true,"verified":true,"policy":"开放创作"},{"provider":"Venice AI","name":"Venice · 图片编辑","category":"图生图","categories":["图生图","修图"],"url":"https://venice.ai/ai-tools/ai-photo-editor","features":["图生图","提示词修图","开放创作"],"access":"daily","login":"需登录","note":"共用免费图片额度，部分图片编辑能力需要订阅。","featured":false,"verified":true,"policy":"开放创作"},{"provider":"Mage","name":"Mage · 多模型作图","category":"作图","categories":["作图","综合"],"url":"https://www.mage.space/ai-image-generator","features":["多模型","文生图","写实与动漫"],"access":"trial","login":"按官网要求","note":"可使用初始免费Gems，不同模型费用不同。","featured":true,"verified":true},{"provider":"Mage","name":"Mage · 图生图","category":"图生图","categories":["图生图","修图"],"url":"https://www.mage.space/ai-image-to-image-generator","features":["图像变体","上传参考图","图片重绘"],"access":"trial","login":"按官网要求","note":"免费开始，后续按模型消耗Gems。","featured":false,"verified":true},{"provider":"Viggle","name":"Viggle · 图片转视频","category":"视频","categories":["视频","图生图","角色"],"url":"https://viggle.ai/tools/image-to-video-ai/","features":["图生视频","动作迁移","角色动画"],"access":"daily","login":"需登录","note":"官网说明免费账号约5条视频/天，免费导出带水印。","featured":true,"verified":true},{"provider":"Viggle","name":"Viggle · 图片动画","category":"视频","categories":["视频","角色"],"url":"https://viggle.ai/tools/ai-image-animator/","features":["人物动效","动作模板","照片动画"],"access":"daily","login":"需登录","note":"免费额度每日刷新；高质量导出有限制。","featured":false,"verified":true},{"provider":"PixVerse","name":"PixVerse · AI 视频","category":"视频","categories":["视频","综合"],"url":"https://pixverse.ai/en/product/ai-video-generator","features":["文生视频","镜头控制","视频效果"],"access":"daily","login":"需登录","note":"有免费积分，复杂视频和部分模型可能需要付费。","featured":false,"verified":true},{"provider":"PixVerse","name":"PixVerse · 图生视频","category":"视频","categories":["视频","图生图"],"url":"https://pixverse.ai/en/product/image-to-video","features":["图生视频","照片运动","镜头动画"],"access":"daily","login":"需登录","note":"每天免费积分，生成门槛随模型变化。","featured":false,"verified":true},{"provider":"Recraft","name":"Recraft · 图片设计","category":"作图","categories":["作图","修图"],"url":"https://www.recraft.ai/ai-image-generator","features":["文生图","文字海报","创意设计"],"access":"daily","login":"需登录","note":"免费账户有每日积分，部分作品限非商业用途。","featured":false,"verified":true},{"provider":"Recraft","name":"Recraft · 图片编辑","category":"图生图","categories":["图生图","修图"],"url":"https://www.recraft.ai/ai-photo-editor","features":["上传照片","自然语言修图","局部编辑"],"access":"daily","login":"需登录","note":"免费图像编辑与生成共用每日积分。","featured":false,"verified":true},{"provider":"Recraft","name":"Recraft · SVG 矢量图","category":"作图","categories":["作图","修图"],"url":"https://www.recraft.ai/vector-editor","features":["矢量图","SVG","设计素材"],"access":"daily","login":"需登录","note":"免费每日积分，商用权限和导出限制以套餐为准。","featured":false,"verified":true},{"provider":"Leonardo AI","name":"Leonardo · 创意生图","category":"作图","categories":["作图","图生图"],"url":"https://leonardo.ai/","features":["艺术作图","图像变体","风格生成"],"access":"daily","login":"需登录","note":"官方免费档有每日Token，高级模型付费。","featured":false,"verified":true},{"provider":"Ideogram","name":"Ideogram · 文字海报","category":"作图","categories":["作图","修图"],"url":"https://ideogram.ai/","features":["文字入图","海报","LOGO"],"access":"daily","login":"需登录","note":"符合条件的账号可获每周免费积分，注册渠道可能影响资格。","featured":false,"verified":true},{"provider":"SeaArt","name":"SeaArt · 图片视频创作","category":"综合","categories":["综合" ,"作图","修图"],"url":"https://www.seaart.ai/","features":["AI作图","图生视频","图片处理"],"access":"daily","login":"需登录","note":"免费每日体力或积分，具体模型各有消耗。","featured":false,"verified":true},{"provider":"Tensor.Art","name":"Tensor.Art · 模型画廊","category":"作图","categories":["作图","图生图","视频"],"url":"https://tensor.art/","features":["LoRA","模型作图","图生图"],"access":"daily","login":"需登录","note":"每日免费Energy，视频免费活动可能临时变化。","featured":false,"verified":true},{"provider":"Qwen Studio","name":"千问 · 聊天与作图","category":"聊天","categories":["聊天","作图","综合"],"url":"https://chat.qwen.ai/","features":["中文聊天","图片生成","多模态"],"access":"free","login":"按官网要求","note":"提供基础免费体验，模型和地区可能设限。","featured":false,"verified":true},{"provider":"Qwen Studio","name":"千问 · 图片编辑","category":"图生图","categories":["图生图","修图"],"url":"https://chat.qwen.ai/?inputFeature=image_edit","features":["中文修图","图像编辑","上传图片"],"access":"free","login":"按官网要求","note":"千问官方图像编辑入口，登录要求按网页提示。","featured":false,"verified":true},{"provider":"Character.AI","name":"Character.AI · 角色聊天","category":"聊天","categories":["聊天","角色"],"url":"https://character.ai/","features":["角色扮演","人物互动","故事对话"],"access":"free","login":"需登录","note":"基础消息聊天免费，并非无审核服务。","featured":false,"verified":true},{"provider":"Janitor","name":"Janitor · 角色互动","category":"角色","categories":["角色","聊天"],"url":"https://jani.com/","features":["社区角色","情景对话","自建人物"],"access":"free","login":"需登录","note":"Janitor 官方站点，模型和付费条件依使用方式决定。","featured":false,"verified":true},{"provider":"KoboldAI","name":"KoboldAI Lite · 社区聊天","category":"聊天","categories":["聊天","角色","写作"],"url":"https://lite.koboldai.net/","features":["AI Horde","自由聊天","故事写作"],"access":"community","login":"可直接体验","note":"社区志愿者模型可能排队，私密内容不要直接提交。","featured":false,"verified":true},{"provider":"Marvis AI","name":"Marvis · 免费视频体验","category":"视频","categories":["视频"],"url":"https://ai.jxzhihi.com/","features":["文生视频","短视频","免注册"],"access":"trial","login":"可直接体验","note":"官方说明无需注册即可免费尝试，但个人GPU可能排队。","featured":false,"verified":true},{"provider":"Hugging Face","name":"Qwen · 图像编辑演示","category":"图生图","categories":["图生图","修图"],"url":"https://huggingface.co/spaces/Qwen/Qwen-Image-Edit","features":["Qwen修图","图像编辑","社区演示"],"access":"community","login":"按官网要求","note":"第三方Space可能休眠排队或要求登录。","featured":false,"verified":true},{"provider":"Hugging Face","name":"Real-ESRGAN · 图片增强","category":"修图","categories":["修图"],"url":"https://huggingface.co/spaces/akhaliq/Real-ESRGAN","features":["高清放大","照片增强","清晰化"],"access":"community","login":"按官网要求","note":"社区Space可能休眠或暂停推理。","featured":false,"verified":true},{"provider":"Runway","name":"Runway · 视频试用","category":"视频","categories":["视频","图生图"],"url":"https://app.runwayml.com/","features":["文生视频","图生视频","视频编辑"],"access":"trial","login":"需登录","note":"免费计划主要为一次性试用积分，很多模型不在免费档。","featured":false,"verified":true},{"provider":"Luma","name":"Luma · Dream Machine","category":"视频","categories":["视频","图生图"],"url":"https://lumalabs.ai/dream-machine","features":["图转视频","镜头运动","短片生成"],"access":"trial","login":"需登录","note":"免费档有严格限制，功能和商用授权按官网规则。","featured":false,"verified":true}];
 const VERIFIED_ADDITIONAL_FREE_TOOLS=[{"name":"ChatGPT · AI 对话","provider":"OpenAI","category":"聊天","categories":["聊天"],"url":"https://chatgpt.com/","features":["AI 对话"],"access":"free","note":"支持地区可免登录基础对话；有额度限制，历史及高级功能需登录。","verified":true,"guest":true,"login":"部分地区免登录","source":"https://help.openai.com/en/articles/9125172-the-chatgpt-home-page"},{"name":"Claude · AI 写作与分析","provider":"Anthropic","category":"聊天","categories":["聊天"],"url":"https://claude.ai/","features":["AI 写作与分析"],"access":"free","note":"免费版有额度及地区限制","verified":true},{"name":"Gemini · Google AI 助手","provider":"Google","category":"聊天","categories":["聊天"],"url":"https://gemini.google.com/app","features":["Google AI 助手"],"access":"free","note":"支持地区及设备可使用基础访客聊天；部分功能需账号。","verified":true,"guest":true,"login":"部分地区免登录","source":"https://support.google.com/gemini/answer/13275745"},{"name":"DeepSeek · 免费 AI 对话","provider":"DeepSeek","category":"聊天","categories":["聊天"],"url":"https://chat.deepseek.com/","features":["免费 AI 对话"],"access":"free","note":"提供免费网页聊天","verified":true},{"name":"Mistral Vibe · AI 聊天与工作","provider":"Mistral AI","category":"聊天","categories":["聊天"],"url":"https://chat.mistral.ai/","features":["AI 聊天与工作"],"access":"free","note":"原 Le Chat；免费版有限额","verified":true},{"name":"Perplexity · AI 搜索问答","provider":"Perplexity","category":"综合","categories":["综合","聊天"],"url":"https://www.perplexity.ai/","features":["AI 搜索问答"],"access":"free","note":"免费基础搜索，访客可用性因地区及版本变化，可能需要登录。","verified":true,"login":"访客待核实"},{"name":"Microsoft Copilot · AI 搜索与聊天","provider":"Microsoft","category":"聊天","categories":["聊天"],"url":"https://copilot.microsoft.com/","features":["AI 搜索与聊天"],"access":"free","note":"部分功能需登录","verified":true},{"name":"Gemini Notebook · 资料研究助手","provider":"Google","category":"写作","categories":["写作"],"url":"https://notebooklm.google.com/","features":["资料研究助手"],"access":"free","note":"原 NotebookLM，额度有限","verified":true},{"name":"Hugging Face · AI 工具演示馆","provider":"Hugging Face","category":"目录","categories":["目录"],"url":"https://huggingface.co/spaces","features":["AI 工具演示馆"],"access":"community","note":"社区演示各有使用规则","verified":true},{"name":"Bing Image Creator · 免费 AI 生图","provider":"Microsoft","category":"作图","categories":["作图"],"url":"https://www.bing.com/images/create","features":["免费 AI 生图"],"access":"free","note":"登录微软账号，额度与速度受限","verified":true},{"name":"Canva · AI 设计与海报","provider":"Canva","category":"作图","categories":["作图"],"url":"https://www.canva.com/","features":["AI 设计与海报"],"access":"free","note":"免费设计与有限 AI 额度","verified":true},{"name":"Adobe Firefly · AI 图像创作","provider":"Adobe","category":"作图","categories":["作图"],"url":"https://firefly.adobe.com/","features":["AI 图像创作"],"access":"trial","note":"免费试用额度有限","verified":true},{"name":"Photopea · 在线 PSD 修图","provider":"Photopea","category":"修图","categories":["修图"],"url":"https://www.photopea.com/","features":["在线 PSD 修图"],"access":"free","note":"在线免费编辑","verified":true},{"name":"Pixlr Editor · 高级图片编辑","provider":"Pixlr","category":"修图","categories":["修图"],"url":"https://pixlr.com/editor/","features":["高级图片编辑"],"access":"free","note":"免费基础功能","verified":true},{"name":"Pixlr Express · 快捷 AI 修图","provider":"Pixlr","category":"修图","categories":["修图"],"url":"https://pixlr.com/express/","features":["快捷 AI 修图"],"access":"free","note":"免费基础功能","verified":true},{"name":"remove.bg · 智能图片抠图","provider":"remove.bg","category":"修图","categories":["修图"],"url":"https://www.remove.bg/","features":["智能图片抠图"],"access":"free","note":"低清免费，高清需付费","verified":true},{"name":"Cleanup.pictures · 图片物体消除","provider":"Cleanup.pictures","category":"修图","categories":["修图"],"url":"https://cleanup.pictures/","features":["图片物体消除"],"access":"free","note":"免费版有分辨率限制","verified":true},{"name":"Upscale.media · AI 照片增强","provider":"Upscale.media","category":"修图","categories":["修图"],"url":"https://www.upscale.media/","features":["AI 照片增强"],"access":"free","note":"免费使用有次数限制","verified":true},{"name":"Pixelcut · AI 图片放大","provider":"Pixelcut","category":"修图","categories":["修图"],"url":"https://www.pixelcut.ai/image-upscaler","features":["AI 图片放大"],"access":"free","note":"提供免费放大","verified":true},{"name":"Pixelcut · AI 扩图","provider":"Pixelcut","category":"图生图","categories":["图生图"],"url":"https://www.pixelcut.ai/uncrop","features":["AI 扩图"],"access":"free","note":"每日免费额度有限","verified":true},{"name":"Pika · AI 视频创作","provider":"Pika","category":"视频","categories":["视频"],"url":"https://pika.art/","features":["AI 视频创作"],"access":"free","note":"每月免费积分有限","verified":true},{"name":"Clipchamp · 在线视频剪辑","provider":"Microsoft","category":"视频","categories":["视频"],"url":"https://clipchamp.com/en/video-editor/","features":["在线视频剪辑"],"access":"free","note":"基本视频编辑与1080p导出免费","verified":true},{"name":"CapCut · AI 视频剪辑","provider":"CapCut","category":"视频","categories":["视频"],"url":"https://www.capcut.com/features/free-ai-video-editor","features":["AI 视频剪辑"],"access":"free","note":"免费编辑，部分素材收费","verified":true},{"name":"Suno · AI 音乐生成","provider":"Suno","category":"音频","categories":["音频"],"url":"https://suno.com/","features":["AI 音乐生成"],"access":"free","note":"免费额度有限，不含商业使用权","verified":true},{"name":"ElevenLabs · AI 语音朗读","provider":"ElevenLabs","category":"音频","categories":["音频"],"url":"https://elevenlabs.io/text-to-speech","features":["AI 语音朗读"],"access":"free","note":"免费额度有限，商用需付费","verified":true},{"name":"TTSMaker · 免费文字转语音","provider":"TTSMaker","category":"音频","categories":["音频"],"url":"https://ttsmaker.com/","features":["免费文字转语音"],"access":"free","note":"有字数限制","verified":true},{"name":"ttsMP3 · 文字朗读 MP3","provider":"ttsMP3","category":"音频","categories":["音频"],"url":"https://ttsmp3.com/","features":["文字朗读 MP3"],"access":"free","note":"有每日字符限制","verified":true},{"name":"Gamma · AI 幻灯片","provider":"Gamma","category":"写作","categories":["写作"],"url":"https://gamma.app/","features":["AI 幻灯片"],"access":"free","note":"免费生成额度有限","verified":true},{"name":"Napkin AI · 文字转信息图","provider":"Napkin AI","category":"作图","categories":["作图"],"url":"https://www.napkin.ai/","features":["文字转信息图"],"access":"free","note":"免费额度有限","verified":true},{"name":"DeepL Write · AI 润色改写","provider":"DeepL","category":"写作","categories":["写作"],"url":"https://www.deepl.com/write","features":["AI 润色改写"],"access":"free","note":"免费版有功能限制","verified":true},{"name":"LanguageTool · 语法纠错","provider":"LanguageTool","category":"写作","categories":["写作"],"url":"https://languagetool.org/","features":["语法纠错"],"access":"free","note":"免费基础纠错","verified":true},{"name":"QuillBot · 文章改写","provider":"QuillBot","category":"写作","categories":["写作"],"url":"https://quillbot.com/paraphrasing-tool","features":["文章改写"],"access":"free","note":"免费基础改写","verified":true},{"name":"GitHub Copilot · AI 编程助手","provider":"GitHub","category":"编程","categories":["编程"],"url":"https://github.com/features/copilot","features":["AI 编程助手"],"access":"free","note":"免费版有月度额度限制","verified":true},{"name":"Google AI Studio · AI 模型试验","provider":"Google","category":"编程","categories":["编程"],"url":"https://aistudio.google.com/","features":["AI 模型试验"],"access":"free","note":"免费使用与地区限额","verified":true},{"name":"Excalidraw · 免费白板绘图","provider":"Excalidraw","category":"作图","categories":["作图"],"url":"https://excalidraw.com/","features":["免费白板绘图"],"access":"free","note":"无AI生成功能的免费白板","verified":true},{"name":"Figma · 在线 UI 设计","provider":"Figma","category":"作图","categories":["作图"],"url":"https://www.figma.com/","features":["在线 UI 设计"],"access":"free","note":"Starter 免费版有限制","verified":true},{"name":"Pixelcut · 免费 AI 文生图","provider":"Pixelcut","category":"作图","categories":["作图"],"url":"https://www.pixelcut.ai/ai-image-generator","features":["免费 AI 文生图"],"access":"free","note":"免费额度有限","verified":true}];
 const ROLEPLAY_MEDIA_TOOLS=[{"provider":"Yollo AI","name":"Yollo · 角色聊天","category":"角色","categories":["角色","聊天","作图","视频"],"url":"https://www.yollo.ai/","features":["角色扮演","AI 图片","AI 视频"],"roleLabel":"聊天·图片·视频","access":"free","verified":true,"note":"官方宣称聊天、图片和视频有基础免费使用量，具体额度以网站显示为准。"},{"provider":"Bubio","name":"Bubio · 场景角色聊天","category":"角色","categories":["角色","聊天","作图","视频"],"url":"https://bubio.ai/roleplay-chat","features":["角色扮演","AI 图片","视频生成"],"roleLabel":"聊天·图视频积分","access":"trial","verified":true,"note":"注册可领取免费积分；图片、视频生成使用相应积分，免费额度有限。"},{"provider":"PolyBuzz","name":"PolyBuzz · 动态角色互动","category":"角色","categories":["角色","聊天","作图","视频"],"url":"https://www.polybuzz.ai/","features":["角色聊天","Live Photo","Live Video"],"roleLabel":"聊天·图片·视频","access":"trial","verified":true,"note":"官方活动称首张 Live Photo 和首个 Live Video 可免费；后续生成消耗 Coins，且需角色支持。"},{"provider":"DomoAI / Elymi","name":"Elymi · 场景角色互动","category":"角色","categories":["角色","聊天","作图","视频"],"url":"https://www.domoai.app/en/ai-tools/ai-character-chat","features":["角色聊天","角色生图","视频制作"],"roleLabel":"聊天免费·图视频积分","access":"free","verified":true,"note":"文字角色聊天免费；图片和视频消耗 Stars，可通过签到获得部分免费 Stars。"},{"provider":"Rabu AI","name":"Rabu · 故事角色聊天","category":"角色","categories":["角色","聊天","作图","视频"],"url":"https://rabu.ai/roleplay/ai-roleplay-chat","features":["角色聊天","角色图片","短视频"],"roleLabel":"聊天免费·媒体代币","access":"free","verified":true,"note":"广告支持的免费聊天每天约20条；生成图片和短视频消耗代币，不承诺媒体无限免费。"},{"provider":"Anione","name":"Anione · 动漫角色聊天","category":"角色","categories":["角色","聊天","作图","视频"],"url":"https://www.anione.me/","features":["动漫角色聊天","对话生图","图片动画"],"roleLabel":"聊天·图片·视频试用","access":"trial","verified":true,"note":"官网说明新账号有免费聊天和图片试用额度；视频动画可能需要额外积分或付费。"},{"provider":"Talkie","name":"Talkie · 角色语音聊天","category":"角色","categories":["角色","聊天","作图"],"url":"https://www.talkie-ai.com/","features":["角色聊天","角色图像","语音"],"roleLabel":"角色·图片·语音","access":"free","verified":true,"note":"提供免费角色聊天和人物创建；图片生成、视频功能的实际可用次数以账户权益为准。"},{"provider":"Joyland","name":"Joyland · 剧情角色聊天","category":"角色","categories":["角色","聊天","作图"],"url":"https://www.joyland.ai/","features":["角色剧情聊天","聊天中生图"],"roleLabel":"聊天·免费角色图片","access":"free","verified":true,"note":"官方文档支持聊天中生成角色图片；不标称免费角色视频。"},{"provider":"SpicyChat","name":"SpicyChat · 自由角色聊天","category":"角色","categories":["角色","聊天","作图"],"url":"https://spicychat.ai/","features":["剧情角色聊天","有限图片生成"],"roleLabel":"角色聊天·有限图片","access":"free","verified":true,"note":"未登录用户可以有限文本和图片生成；部分内容面向成年人，视频不属于已证实的免费功能。"},{"provider":"Nomi","name":"Nomi · 记忆角色聊天","category":"角色","categories":["角色","聊天","作图"],"url":"https://nomi.ai/","features":["长期角色记忆","每日自拍"],"roleLabel":"聊天·每日免费图片","access":"free","verified":true,"note":"官网说明免费账号可获每日有限图片；视频生成属于付费功能。"}];
 /* External destinations remain links; no unverified API integration or paywall bypass. */
@@ -3479,7 +3263,7 @@ const PERCHANCE_ADDITIONS=[{"provider":"Perchance","name":"Astra AI","category":
 const PERCHANCE_COMMUNITY_TOOLS=[{"provider":"Perchance","name":"R.M Photo Generator","category":"作图","url":"https://perchance.org/rm-photo-generator","features":["写实摄影"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"专业摄影 2","category":"作图","url":"https://perchance.org/prpg2","features":["写实摄影","图片放大"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"专业摄影 1","category":"作图","url":"https://perchance.org/prpg","features":["写实摄影","风格控制"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"AI Image Studio","category":"作图","url":"https://perchance.org/w07bbo48qj","features":["图像工作室"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"BadGrampy 绘图","category":"作图","url":"https://perchance.org/badgrampy-simple-ai-image-generator","features":["简洁作图"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"想象王国","category":"作图","url":"https://perchance.org/tkoi","features":["多风格绘图"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"You Are THE BEST","category":"作图","url":"https://perchance.org/you-are-the-best","features":["多风格摄影"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"批量提示词测试","category":"作图","url":"https://perchance.org/mspt","features":["多提示词对比"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"图片提示词优化","category":"作图","url":"https://perchance.org/image-prompt-optimizer","features":["提示词优化","图像生成"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"Daveed 图片提示词","category":"作图","url":"https://perchance.org/daveeds-image-prompt-generator","features":["图片提示词"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"Multi-Flux 绘图","category":"作图","url":"https://perchance.org/ufo-flux1s-flux-upscaled","features":["图像生成"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"Real Image Editor","category":"修图","url":"https://perchance.org/ried","features":["图片编辑"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"互动拼图制作","category":"修图","url":"https://perchance.org/icollage","features":["拼图"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"Story AI","category":"写作","url":"https://perchance.org/story-ai","features":["故事创作"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"Burg 故事生成","category":"写作","url":"https://perchance.org/burgs-take-ai-story-generator","features":["故事创作"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"},{"provider":"Perchance","name":"代码项目生成","category":"编程","url":"https://perchance.org/code-project-generator-public-use","features":["项目代码"],"note":"独立社区工具；已核对页面入口，实际生成、额度及服务可用性以原站为准。"}];
 const VERIFIED_PRODUCTIVITY_TOOLS=[{"name":"Fizzdoc · OCR 图片转文字","provider":"Fizzdoc","category":"识图","url":"https://fizzdoc.com/image-to-text/","categories":["识图","办公","修图","本地"],"features":["OCR","截图文字","扫描件"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Fizzdoc · 视频转文字","provider":"Fizzdoc","category":"视频","url":"https://fizzdoc.com/video-to-text/","categories":["视频","音频","办公","本地"],"features":["视频转录","字幕","Whisper"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Fizzdoc · Office 文件阅读","provider":"Fizzdoc","category":"办公","url":"https://fizzdoc.com/view/","categories":["办公","本地"],"features":["Word","Excel","PDF","CSV","文件查看"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Fizzdoc · 办公与音视频工具","provider":"Fizzdoc","category":"办公","url":"https://fizzdoc.com/","categories":["办公","本地","音频","视频","修图","识图"],"features":["Word","Excel","PPT","OCR","去背景","音频转文字"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"WaveSpeed · AI 高清放大","provider":"WaveSpeed","category":"修图","url":"https://wavespeed.ai/free-tools/image-upscaler","categories":["修图","本地"],"features":["超分辨率","2倍","4倍","高清修复"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"WaveSpeed · 图片尺寸转换","provider":"WaveSpeed","category":"修图","url":"https://wavespeed.ai/free-tools/image-resizer","categories":["修图","本地"],"features":["图片缩放","批量图片处理"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"WaveSpeed · 本地免费工具箱","provider":"WaveSpeed","category":"综合","url":"https://wavespeed.ai/free-tools","categories":["综合","办公","识图","音频","视频","修图","本地"],"features":["背景移除","语音转文字","PDF转Word","图片增强"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"WaveSpeed · 本地音乐生成","provider":"WaveSpeed","category":"音频","url":"https://wavespeed.ai/free-tools/ai-music-generator","categories":["音频","音乐","本地"],"features":["文字生成伴奏","原创器乐"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Mermaid · 流程图和思维导图","provider":"Mermaid","category":"办公","url":"https://mermaid.live/edit","categories":["办公","编程","思维导图"],"features":["流程图","思维导图","时序图","SVG"],"access":"free","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"draw.io · 免费图表编辑","provider":"draw.io","category":"办公","url":"https://app.diagrams.net/","categories":["办公","思维导图"],"features":["流程图","架构图","组织图"],"access":"free","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Ezgif · 多图合成GIF","provider":"Ezgif","category":"动图","url":"https://ezgif.com/maker","categories":["动图","视频","修图"],"features":["GIF","多图合成","动态表情包"],"access":"free","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Ezgif · GIF缩放与处理","provider":"Ezgif","category":"动图","url":"https://ezgif.com/resize","categories":["动图","修图","视频"],"features":["GIF缩放","动图压缩","批量处理"],"access":"free","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"DuckDuckGo · 网页搜索","provider":"DuckDuckGo","category":"搜索","url":"https://duckduckgo.com/","categories":["搜索"],"features":["网页搜索","实时检索"],"access":"free","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"MusicGen · 社区音乐演示","provider":"Meta","category":"音频","url":"https://huggingface.co/spaces/facebook/MusicGen","categories":["音频","音乐"],"features":["文字生成音乐","开源模型演示"],"access":"community","verified":true,"guest":false,"login":"社区演示或下载模型；可能需登录和算力","note":"模型演示或本地模型；不代表可直接调用的免费API。"},{"name":"AudioGen · 开源音效模型","provider":"Meta","category":"音频","url":"https://huggingface.co/facebook/audiogen-medium","categories":["音频","音乐","本地"],"features":["文字生成音效","本地GPU模型"],"access":"local","verified":true,"guest":false,"login":"社区演示或下载模型；可能需登录和算力","note":"模型演示或本地模型；不代表可直接调用的免费API。"},{"name":"Wasm Tools · 本地文件工具","provider":"Wasm Tools","category":"综合","url":"https://wasmtools.dev/","categories":["综合","本地","办公","音频","视频","修图","识图"],"features":["OCR","Word","Excel","PPT","背景移除","转录"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"BrowseryTools · 本地AI工具","provider":"BrowseryTools","category":"综合","url":"https://browserytools.com/","categories":["综合","本地","办公","翻译","音频","视频","修图","识图"],"features":["语音转文字","字幕","图片增强","翻译","OCR"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"PixelTools · 批量媒体和文件处理","provider":"PixelTools","category":"综合","url":"https://pixeltools.io/","categories":["综合","修图","音频","视频","办公","识图"],"features":["图片批量处理","文件转换","OCR","音频处理"],"access":"free","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"name":"Toolvy · 音视频字幕编辑","provider":"Toolvy","category":"视频","url":"https://toolvy.net/","categories":["视频","音频","本地","修图"],"features":["字幕","视频处理","音频处理"],"access":"local","verified":true,"guest":true,"login":"公开网页基础工具","note":"已核对公开功能说明；打开外部工具，是否需登录、限制和输出能力以实际页面为准。"},{"provider":"Thinkfree","name":"Thinkfree · Office 在线制作","category":"办公","categories":["办公"],"url":"https://onlineoffice.thinkfree.com/","features":["Word","Excel","PowerPoint","在线编辑"],"access":"free","verified":true,"note":"官方免费编辑器，登录及使用条件以页面为准。"},{"provider":"Chaxus","name":"Chaxus · 本地 Office 编辑","category":"办公","categories":["办公","本地"],"url":"https://edit.chaxus.com/","features":["创建文档","DOCX","XLSX","PPTX","本地编辑"],"access":"local","verified":true,"guest":true,"login":"无需账号","note":"公开说明为浏览器本地编辑，可创建空白文件；兼容性取决于设备。"},{"provider":"jsfxr","name":"jsfxr · 游戏音效生成","category":"音频","categories":["音频","音乐","本地"],"url":"https://sfxr.me/","features":["复古游戏音效","音效合成","WAV"],"access":"local","verified":true,"guest":true,"login":"无需账号","note":"浏览器音效合成，不是大模型文字生成音效。"}];
 const EXTERNAL_FREE_TOOLS=[...VERIFIED_PRODUCTIVITY_TOOLS,...MAINSTREAM_TOOL_ADDITIONS,...ORIGINAL_GENERATION_SITES,...GUEST_CHAT_TOOLS,...VERIFIED_FREE_MEDIA_TOOLS,...CURATED_FREE_TOOLS,...ROLEPLAY_MEDIA_TOOLS,...VERIFIED_ADDITIONAL_FREE_TOOLS,...PERCHANCE_ADDITIONS,...PERCHANCE_COMMUNITY_TOOLS,{"provider":"FurAI · Perchance.org","name":"FurAI 综合创作助手","category":"综合","categories":["综合","聊天","角色","作图","修图","视频","写作"],"url":"https://perchance.org/fur-ai","featured":true,"features":["多角色聊天","AI 作图","提示词优化","图生图编辑","图片增强","去除背景","图片转视频","图片压缩","图片工作室","角色记忆"],"note":"进入 FurAI 后选择其内部工具。部分图像与视频功能使用第三方服务，可能需要排队、授权或受额度限制。"},{"provider":"Duck.ai","name":"Duck.ai · 多模型聊天","category":"聊天","url":"https://duck.ai/","guest":true,"login":"免注册","features":["多模型聊天","隐私"],"access":"free","note":"官方免费匿名聊天；有使用额度。","source":"https://duckduckgo.com/duckduckgo-help-pages/duckai","verified":true},{"provider":"Duck.ai","name":"免费 AI 作图与修改","category":"作图","url":"https://duck.ai/"},{"provider":"Perchance","name":"Perchance · 角色聊天","category":"聊天","url":"https://perchance.org/ai-character-chat","categories":["聊天","角色"],"guest":true,"login":"免注册","note":"官方页面标示免注册角色聊天。"},{"provider":"Perchance","name":"AI 文生图","category":"作图","url":"https://perchance.org/ai-text-to-image-generator"},{"provider":"Perchance","name":"写实照片","category":"作图","url":"https://perchance.org/ai-photo-generator"},{"provider":"Perchance","name":"角色形象","category":"角色","url":"https://perchance.org/ai-character-generator"},{"provider":"Perchance","name":"动漫作图","category":"作图","url":"https://perchance.org/ai-anime-generator"},{"provider":"Perchance","name":"人像生成","category":"作图","url":"https://perchance.org/ai-portrait-generator"},{"provider":"Perchance","name":"剧情场景","category":"写作","url":"https://perchance.org/ai-scenario-generator"},{"provider":"Perchance","name":"图片提示词","category":"作图","url":"https://perchance.org/ai-image-prompt"},{"provider":"Perchance","name":"Flux 提示词","category":"作图","url":"https://perchance.org/ai-image-prompt-generator"},{"provider":"Perchance","name":"Perchance · AI 聊天","category":"聊天","url":"https://perchance.org/ai-chat","guest":true,"login":"免注册","note":"官方页面标示免注册免费聊天。"},{"provider":"Perchance","name":"故事生成","category":"写作","url":"https://perchance.org/ai-story-generator"},{"provider":"Perchance","name":"文字冒险 RPG","category":"互动","url":"https://perchance.org/ai-rpg"},{"provider":"Perchance","name":"社区视频生成","category":"视频","url":"https://perchance.org/ai-video-generator"},{"provider":"PerchanceAI","name":"文生图","category":"作图","url":"https://perchanceai.com/t/text-to-image"},{"provider":"PerchanceAI","name":"图生图","category":"修图","url":"https://perchanceai.com/t/img2img"},{"provider":"PerchanceAI","name":"照片编辑","category":"修图","url":"https://perchanceai.com/t/photo-editor"},{"provider":"PerchanceAI","name":"照片增强","category":"修图","url":"https://perchanceai.com/t/ai-photo-enhancer"},{"provider":"PerchanceAI","name":"图片转文字","category":"修图","url":"https://perchanceai.com/t/photo-to-text"},{"provider":"PerchanceAI","name":"故事写作","category":"写作","url":"https://perchanceai.com/t/story"},{"provider":"PerchanceAI","name":"AI 助手","category":"聊天","url":"https://perchanceai.com/c/askbuddy"},{"provider":"PerchanceAI","name":"角色扮演聊天","category":"聊天","url":"https://perchanceai.com/c/ai-roleplay-chat","categories":["聊天","角色"]},{"provider":"PerchanceAI","name":"对话训练","category":"聊天","url":"https://perchanceai.com/c/crush-chat","categories":["聊天","角色"]},{"provider":"PerchanceAI","name":"专业图片生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-image-professional"},{"provider":"PerchanceAI","name":"摄影图片生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-photo"},{"provider":"PerchanceAI","name":"像素画生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-pixel-art-generator"},{"provider":"PerchanceAI","name":"无缝纹理生成","category":"作图","url":"https://perchanceai.com/ai/en/generate/texture-generator"},{"provider":"PerchanceAI","name":"角色参考图","category":"角色","url":"https://perchanceai.com/ai/en/generate/character-reference-sheet"},{"provider":"PerchanceAI","name":"产品创意","category":"写作","url":"https://perchanceai.com/t/product-idea-generator"},{"provider":"PerchanceAI","name":"简笔人物画","category":"作图","url":"https://perchanceai.com/t/stick-figure-generator"},{"provider":"PerchanceAI","name":"角色姓名","category":"写作","url":"https://perchanceai.com/t/1920s-name-generator"},{"provider":"PerchanceAI","name":"角色创建","category":"角色","url":"https://perchanceai.com/c/character-creator"},{"provider":"PerchanceAI","name":"故事协作","category":"写作","url":"https://perchanceai.com/c/story-weaver"},{"provider":"PerchanceAI","name":"剧情互动","category":"互动","url":"https://perchanceai.com/c/dating-sim-text-game"},{"provider":"PerchanceAI","name":"图片变换","category":"修图","url":"https://perchanceai.com/t/image-transform-with-seed"},{"provider":"PerchanceAI","name":"艺术图像","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-art-generator"},{"provider":"PerchanceAI","name":"图像变体","category":"作图","url":"https://perchanceai.com/ai/en/generate/image-to-image"},{"provider":"PerchanceAI","name":"AI 绘图","category":"作图","url":"https://perchanceai.com/ai/en/generate/ai-drawing-generator"},{"provider":"PerchanceAI","name":"真假 AI 游戏","category":"互动","url":"https://perchanceai.com/c/bot-or-human"},{"provider":"PerchanceAI","name":"魔法灯互动","category":"互动","url":"https://perchanceai.com/c/ask-a-genie"},{"provider":"PerchanceAI","name":"照片工具库","category":"修图","url":"https://perchanceai.com/ai/en/image"},{"provider":"PerchanceAI","name":"所有免费工具","category":"目录","url":"https://perchanceai.com/explore?focus=1"},{"provider":"PerchanceAI","name":"热门工具","category":"目录","url":"https://perchanceai.com/explore/list/top"},{"provider":"PerchanceAI","name":"图像生成目录","category":"目录","url":"https://perchanceai.com/explore?category=image-generators"},{"provider":"PerchanceAI","name":"照片编辑目录","category":"目录","url":"https://perchanceai.com/explore?category=photo-editing"},{"provider":"PerchanceAI","name":"肖像工具目录","category":"目录","url":"https://perchanceai.com/explore?category=portrait"},{"provider":"PerchanceAI","name":"动漫工具目录","category":"目录","url":"https://perchanceai.com/explore?category=anime"},{"provider":"PerchanceAI","name":"长篇写作目录","category":"目录","url":"https://perchanceai.com/explore?category=prose_writing"},{"provider":"PerchanceAI","name":"写作工具目录","category":"目录","url":"https://perchanceai.com/explore?category=writing"},{"provider":"PerchanceAI","name":"角色互动目录","category":"目录","url":"https://perchanceai.com/explore?category=roleplay"},{"provider":"PerchanceAI","name":"AI 助手目录","category":"目录","url":"https://perchanceai.com/explore?type=assistants"},{"provider":"PerchanceAI","name":"命名工具目录","category":"目录","url":"https://perchanceai.com/explore?category=name_generator"},{"provider":"Perchance","name":"更多社区生成器","category":"目录","url":"https://perchance.org/generators"},{"provider":"FURAI","name":"Velorum 世界观","category":"互动","url":"https://furai.space/"},{"provider":"Perchance","name":"角色聊天扩展版","category":"聊天","url":"https://perchance.org/ai-character-chat-extended","categories":["聊天","角色"]},{"provider":"Perchance","name":"AI 现代聊天","category":"聊天","url":"https://perchance.org/ai-chat-modern"},{"provider":"Perchance","name":"AI 群组聊天","category":"聊天","url":"https://perchance.org/ai-group-chat","categories":["聊天","角色"]},{"provider":"Perchance","name":"角色扮演聊天 V2","category":"聊天","url":"https://perchance.org/ai-chat-roleplay-v2","categories":["聊天","角色"]},{"provider":"Perchance","name":"自由提问 AI","category":"聊天","url":"https://perchance.org/ask-ai"},{"provider":"Perchance","name":"人物性格与背景","category":"角色","url":"https://perchance.org/ai-character-description"},{"provider":"Perchance","name":"AI 人物照片","category":"作图","url":"https://perchance.org/ai-human-generator"},{"provider":"Perchance","name":"世界观生成","category":"写作","url":"https://perchance.org/ai-generated-hierarchical-world"},{"provider":"Perchance","name":"故事大纲","category":"写作","url":"https://perchance.org/ai-story-outline"},{"provider":"Perchance","name":"剧情情节生成","category":"写作","url":"https://perchance.org/ai-plot-generator"},{"provider":"Perchance","name":"文章改写","category":"写作","url":"https://perchance.org/ai-text-rewriter"},{"provider":"Perchance","name":"AI 文本生成","category":"写作","url":"https://perchance.org/ai-text-generator"},{"provider":"Perchance","name":"睡前故事","category":"写作","url":"https://perchance.org/ai-bedtime-story"},{"provider":"Perchance","name":"同人故事","category":"写作","url":"https://perchance.org/ai-fanfic-generator"},{"provider":"Perchance","name":"电影剧本","category":"写作","url":"https://perchance.org/ai-script-generator"},{"provider":"Perchance","name":"标题创作","category":"写作","url":"https://perchance.org/ai-title-generator"},{"provider":"Perchance","name":"诗歌创作","category":"写作","url":"https://perchance.org/ai-poem-generator"},{"provider":"Perchance","name":"歌词创作","category":"写作","url":"https://perchance.org/ai-lyrics-generator"},{"provider":"Perchance","name":"说唱歌词","category":"写作","url":"https://perchance.org/ai-rap-lyrics-generator"},{"provider":"Perchance","name":"AI 代码生成","category":"编程","url":"https://perchance.org/ai-code-generator"},{"provider":"Perchance","name":"AI 文字冒险","category":"互动","url":"https://perchance.org/ai-text-adventure"},{"provider":"Perchance","name":"高级 AI 绘图","category":"作图","url":"https://perchance.org/ai-art-generator-advanced"},{"provider":"Perchance","name":"多风格对比","category":"作图","url":"https://perchance.org/multiple-style-tester"},{"provider":"Perchance","name":"图片构图工具","category":"作图","url":"https://perchance.org/imageconstructor"},{"provider":"Perchance","name":"文本转音频","category":"音频","url":"https://perchance.org/ai-text-to-audio"},{"provider":"Perchance","name":"图片重绘","category":"修图","url":"https://perchance.org/urvillain-imagine"},{"provider":"Perchance","name":"兽人角色生成","category":"角色","url":"https://perchance.org/ai-furry-generator"},{"provider":"Perchance","name":"AI 互动问答","category":"互动","url":"https://perchance.org/question-this"},{"provider":"Perchance","name":"Story Forge 创作","category":"写作","url":"https://perchance.org/c0d3-story-forge"},{"provider":"Perchance","name":"最近更新工具","category":"目录","url":"https://perchance.org/recently-updated-generators-megalist"},{"provider":"Perchance","name":"Perchance 完整精选目录","category":"目录","url":"https://perchance.org/perlist"},{"provider":"Perchance AI","name":"智能更换背景","category":"修图","url":"https://perchanceai.com/t/background-changer"},{"provider":"Perchance AI","name":"车辆外观重设计","category":"修图","url":"https://perchanceai.com/t/car-redesigner"},{"provider":"Perchance AI","name":"AI 提示词生成","category":"写作","url":"https://perchanceai.com/t/prompt"},{"provider":"Perchance AI","name":"照片动漫化","category":"修图","url":"https://perchanceai.com/t/anime-me"},{"provider":"Perchance AI","name":"照片雪景效果","category":"修图","url":"https://perchanceai.com/t/snow-effect-photo-editor"},{"provider":"Perchance AI","name":"虚拟陪伴对话","category":"聊天","url":"https://perchanceai.com/c/virtual-mom","categories":["聊天","角色"]},{"provider":"Perchance AI","name":"Mean Girl 角色对话","category":"聊天","url":"https://perchanceai.com/c/mean-girl","categories":["聊天","角色"]},{"provider":"Perchance AI","name":"Kayla 角色对话","category":"聊天","url":"https://perchanceai.com/c/kayla","categories":["聊天","角色"]},{"provider":"Perchance AI","name":"Verity 角色对话","category":"聊天","url":"https://perchanceai.com/c/verity","categories":["聊天","角色"]},{"provider":"Perchance AI","name":"互动语言老师","category":"互动","url":"https://perchanceai.com/c/unhinged-language-teacher"},{"provider":"Perchance AI","name":"毛利文化 AI 聊天","category":"互动","url":"https://perchanceai.com/c/maori-culture-chat"},{"provider":"Perchance AI","name":"Nico 角色对话","category":"聊天","url":"https://perchanceai.com/c/nico","categories":["聊天","角色"]}];
-const FREE_TOOL_CATEGORIES=["全部","最近使用","Perchance","P作图","P修图","角色创建","P编程","P写作","聊天","免注册","免费API","翻译","搜索","编程","作图","图生图","视频","修图","写作","办公","智能体","营销","API/开发","试用/付费","本地","综合","角色","互动","音频","识图","动图","音乐","思维导图","目录"];
+const FREE_TOOL_CATEGORIES=["全部","最近使用","Perchance","P作图","P修图","角色创建","P编程","P写作","聊天","免注册","免费API","翻译","搜索","编程","作图","图生图","视频","修图","写作","办公","智能体","营销","API/开发","试用/付费","本地","综合","角色","互动","音频","识图","音乐","思维导图","目录"];
 const FREE_ACCESS_LABELS={free:"基础免费",daily:"限额免费",trial:"试用/评估",community:"社区共享",paid:"付费/待核",local:"本地运行",api:"免费API额度"};
 
 // Account-scoped durable launch history; 24 most recently used, newest first.
@@ -3583,6 +3367,7 @@ function renderFreeTools(){
  const search=$("freeToolsSearch").value.trim().toLowerCase(),category=S.freeToolsCategory,seen=new Set(),list=$("freeToolsList");
  const desired=[],recent=category==="最近使用",recentRank=new Map(recent?freeToolRecentRead().map((key,index)=>[key,index]):[]);
  const hits=EXTERNAL_FREE_TOOLS.map(item=>MAINSTREAM_TOOL_META[item.url]?{...item,...MAINSTREAM_TOOL_META[item.url]}:item).filter(item=>{
+  if(["视频","动图","贴纸","图生图"].includes(item.category))return false;
   const categories=Array.isArray(item.categories)?[...item.categories]:[item.category];
   if(isPerchanceTool(item)){
    categories.push("Perchance","骰子");
@@ -3623,19 +3408,8 @@ function renderFreeTools(){
    :Number(Boolean(b.verified))-Number(Boolean(a.verified));
  });
  let nativeCount=0;
- const builtin=[{id:"ocr",name:"图片文字识别",category:"识图",categories:["识图","办公"],prompt:"提取图片中的全部文字，保留原文与顺序。",tool:"ocr"},{id:"search",name:"百科联网查询",category:"搜索",categories:["搜索"],prompt:"联网查询：",tool:"search"},{id:"sticker",name:"AI贴纸",category:"动图",categories:["动图","作图"],tool:"sticker"},{id:"gif",name:"GIF 动图",category:"动图",categories:["动图","视频"],tool:"gif"},{id:"translate",name:"多语种翻译",category:"翻译",categories:["翻译"],prompt:"翻译成中文：",tool:"translate"}];
- for(const item of builtin){const key="model:tool:"+item.id;if(recent?!recentRank.has(key):category!=="全部"&&!item.categories.includes(category))continue;if(search&&![item.name,item.category,...item.categories].some(x=>x.toLowerCase().includes(search)))continue;if(freeToolCards.has(key)){desired.push(freeToolCards.get(key));nativeCount++;continue}const card=node("button","free-tool-card");card.type="button";card.dataset.freeToolKey=key;card.append(freeToolGraphic(item),node("strong","free-tool-name",item.name),node("small","free-tool-function","本站 · 自动模式可用"));card.onclick=()=>{if(S.busy)return;freeToolRemember(key);setFreeToolsMode(false);restoreChatInputMode();if(item.tool==="sticker"||item.tool==="gif"){setComposerMode(item.tool==="gif"?"video":"image");S.miniToolChoice=item.tool;syncMiniTools();updateComposerModel()}else{$("prompt").value=item.prompt;settlePromptSize()}$("prompt").focus({preventScroll:true});if(item.tool==="ocr")showAttachMenu()};freeToolCards.set(key,card);desired.push(card);nativeCount++}
- if(recent||category==="全部"||category==="视频")for(const model of BUILTIN_VIDEO_MODELS){
-  if(search&&![model.name,model.id,model.provider,"视频",model.free?"免费":"个人 API"].some(x=>String(x).toLowerCase().includes(search)))continue;
-  const key="model:"+model.provider+":"+model.id;
-  if(recent&&!recentRank.has(key))continue;
-  if(freeToolCards.has(key)){desired.push(freeToolCards.get(key));nativeCount++;continue}
-  const card=node("button","free-tool-card");card.type="button";
-  const graphic=freeToolGraphic({category:"视频"});
-  card.append(graphic,node("strong","free-tool-name",model.name),node("small","free-tool-function",model.free?"本站 · 共享免费":"个人 API · 可能收费"));
-  card.dataset.freeToolKey=key;
-  card.addEventListener("click",()=>{if(S.busy||!VIDEO_OPTIONS[model.provider]?.includes(model.id))return;freeToolRemember(key);chooseChatVideo(model.provider,model.id)});freeToolCards.set(key,card);desired.push(card);nativeCount++;
- }
+ const builtin=[{id:"ocr",name:"图片文字识别",category:"识图",categories:["识图","办公"],prompt:"提取图片中的全部文字，保留原文与顺序。",tool:"ocr"},{id:"search",name:"百科联网查询",category:"搜索",categories:["搜索"],prompt:"联网查询：",tool:"search"},{id:"translate",name:"多语种翻译",category:"翻译",categories:["翻译"],prompt:"翻译成中文：",tool:"translate"}];
+ for(const item of builtin){const key="model:tool:"+item.id;if(recent?!recentRank.has(key):category!=="全部"&&!item.categories.includes(category))continue;if(search&&![item.name,item.category,...item.categories].some(x=>x.toLowerCase().includes(search)))continue;if(freeToolCards.has(key)){desired.push(freeToolCards.get(key));nativeCount++;continue}const card=node("button","free-tool-card");card.type="button";card.dataset.freeToolKey=key;card.append(freeToolGraphic(item),node("strong","free-tool-name",item.name),node("small","free-tool-function","本站 · 自动模式可用"));card.onclick=()=>{if(S.busy)return;freeToolRemember(key);setFreeToolsMode(false);restoreChatInputMode();$("prompt").value=item.prompt;settlePromptSize();$("prompt").focus({preventScroll:true});if(item.tool==="ocr")showAttachMenu()};freeToolCards.set(key,card);desired.push(card);nativeCount++}
  for(const item of hits){
   const key="site:"+item.url;
   if(freeToolCards.has(key)){desired.push(freeToolCards.get(key));continue}
@@ -3768,20 +3542,14 @@ function isReferenceImageEditRequest(value){
  if(/(?:提示词|教程|脚本|代码|文案|方案|步骤)(?:[。！!？?]|$)|(?:分析|识别|比较|评价|描述|检查|解读|看看|看一下).{0,18}(?:图片|照片|参考图|这张图|有什么|哪里)/.test(p))return false;
  return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:修图|改图|图生图|重绘|重新绘制|重新生成|重新画|去水印|去背景|抠图|扩图|补图|上色|美化|调色|换(?:个|一个|成)?(?:背景|发型|衣服|服装|颜色|姿势|动作|场景|表情|风格)|(?:把|将|让).{1,50}(?:改成|换成|变成|去掉|移除|替换|增加|添加|变白|变亮|变暗|变清晰|瘦一点|调整|保留|换个)|(?:修改|编辑|调整|替换|移除|删除|去掉|添加|增加|更换|保持|保留|参考|按照|根据|用|使用).{0,50}(?:图|照|背景|发型|衣服|服装|人物|姿势|动作|颜色|风格|场景|构图|表情|光线|一致|不变|生成|重绘|再画))/.test(p)||/^(?:please\s+)?(?:edit|modify|retouch|remove|replace|change|enhance|redraw|recreate|inpaint|outpaint)\b/i.test(p);
 }
-function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel,tool}){
+function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments}){
  const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
- const format=tool==="sticker"||tool==="gif"?tool:mode==="text"&&provider==="free"&&!code&&!continueFrom?requestedMediaFormat(prompt):"";
- if(format){if(format==="sticker"&&attachments.length)return {error:"贴纸仅支持文字生成"};if(!compatible||attachments.length>2)return {error:"GIF最多使用两张图片"};if(format==="sticker")return {mode:"image",format,videoProvider,videoModel};const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";return {mode:"video",format,videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};}
- if(mode==="text"&&!continueFrom&&compatible){
-  if(provider==="free"&&isDirectVideoRequest(prompt)){
-   if(attachments.length>2)return {error:"自动视频最多使用两张首尾帧图片"};
-   const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
-   return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
-  }
-  if(!code&&attachments.length&&(isDirectImageRequest(prompt)||isReferenceImageEditRequest(prompt)))return {error:"图生图已下线，仍可识别图片或生成视频"};
-  if(!code&&!attachments.length&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image",videoProvider,videoModel};
+ if(mode==="video"||(!code&&!continueFrom&&(isDirectVideoRequest(prompt)||requestedMediaFormat(prompt))))return {error:"视频、GIF 和贴纸生成已下线"};
+ if(mode==="text"&&!continueFrom&&compatible&&!code){
+  if(attachments.length&&(isDirectImageRequest(prompt)||isReferenceImageEditRequest(prompt)))return {error:"图生图已下线，仍可识别图片"};
+  if(!attachments.length&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image"};
  }
- return {mode,videoProvider,videoModel};
+ return {mode:mode==="image"?"image":"text"};
 }
 async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,retryContext=null){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
@@ -3790,30 +3558,12 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  if(!S.model&&!forceFreeOnce)return;
  if(freeModeChoosing){openModels();return}
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
- const submittedCode=S.code,submittedTool=S.miniToolChoice;
- const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments,videoProvider:S.videoProvider,videoModel:S.videoModel,tool:submittedTool});
+ const submittedCode=S.code;
+ const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments});
  if(turn.error){flashError(turn.error);return}
- const submittedMode=turn.mode,mediaFormat=turn.format||"";
- const submittedVideoProvider=turn.videoProvider,submittedVideoModel=turn.videoModel,submittedVideoRatio=S.videoRatio;
+ const submittedMode=turn.mode;
  if(!S.user){show("authDialog");return}
- const freeVideo=submittedMode==="video"&&["freetext","freewan","freeloop"].includes(submittedVideoProvider);
- const videoImages=S.attachments.filter(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
- if(submittedMode==="video"&&!freeVideo){
-  if(!prompt){flashError("请输入视频描述");return}
-  if(S.attachments.length){flashError("当前个人 API 视频接口仅支持文字描述，请选择图生视频处理附件");return}
-  if(!videoKeyPermitted(submittedVideoProvider)){S.videoPendingKeyReturn=true;openKeyPanel(submittedVideoProvider);return}
-  if(!confirm("确认使用 "+VIDEO_PROVIDER_NAMES[submittedVideoProvider]+" 个人 API 额度生成视频？可能产生费用。"))return;
- }
- if(freeVideo&&!prompt){flashError("请输入视频描述");return}
- if(freeVideo&&submittedVideoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
  if(submittedMode==="image"&&!prompt){flashError("请输入图片生成描述");return}
- if(freeVideo&&submittedVideoProvider!=="freetext"&&videoImages.length<(submittedVideoProvider==="freeloop"?2:1)){
-  flashError(submittedVideoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
-  showAttachMenu();return
- }
- if(freeVideo&&submittedVideoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
-  flashError("首尾帧需要两张不同的图片附件");return
- }
  if(submittedMode==="image"&&S.attachments.length){flashError("普通作图仅支持文字描述");return}
  // Request routing is independent of the selected model preference.
  let requestProvider=S.provider,requestModel=S.model;
@@ -3835,7 +3585,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  hideWelcome();flashError("");
  const mediaOwner=S.user?.id;
  const isNew=!S.chatId;
- const automaticTurn=(forceFreeOnce||requestProvider==="free"&&requestModel==="free:auto")&&(submittedMode!=="video"||freeVideo);
+ const automaticTurn=forceFreeOnce||requestProvider==="free"&&requestModel==="free:auto";
  const isFreeMessage=submittedMode==="text"&&requestProvider==="free";
  const isImageMessage=submittedMode==="image";
  const attached=S.attachments.slice();
@@ -3851,7 +3601,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
   let receivedStreamingText=false,streamedContent="";
  const loadingBubble=loading.querySelector(".bubble");const status=node("span","thinking-status");
  const nativeAnalysis=submittedMode==="text"&&attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf");
- const waitLabel=node("span","",mediaFormat==="gif"?"正在创建GIF…":mediaFormat==="sticker"?"正在创建贴纸…":isImageMessage?"作图中 1秒":submittedMode==="video"?"正在创建视频…":nativeAnalysis?"正在识别附件…":"正在思考");
+ const waitLabel=node("span","",isImageMessage?"作图中 1秒":nativeAnalysis?"正在识别附件…":"正在思考");
  const dots=node("span","thinking-dots");
  for(let i=0;i<3;i++)dots.append(node("i"));
  dots.setAttribute("aria-hidden","true");status.append(dots,waitLabel);
@@ -3893,15 +3643,8 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",format:mediaFormat,prompt});
-  }
-  else if(freeVideo){
-   const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",format:mediaFormat,provider:submittedVideoProvider,model:submittedVideoModel,imageId:img?.id,endImageId:submittedVideoProvider==="freeloop"?videoImages[1]?.id:undefined,ratio:submittedVideoRatio,prompt});
-  }
-  else{
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"video",provider:submittedVideoProvider,model:submittedVideoModel,ratio:submittedVideoRatio,prompt,confirmed:true});
-  }
+    result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",prompt});
+   }
   // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");updateAssistantText(loadingBubble,result.reply,true)}
   if(loading.isConnected){
@@ -3944,10 +3687,8 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    if(S.busy||S.freeToolsMode||!sentRow.isConnected)return;
    const input=$("prompt");
    if((input.value.trim()||S.attachments.length)&&!confirm("重新发送会替换当前未发送的草稿和附件，继续吗？"))return;
-   if(isImageMessage){setComposerMode("image");S.miniToolChoice=submittedTool;syncMiniTools()}
-   else if(submittedMode==="video"){selectVideoModel(submittedVideoProvider,submittedVideoModel);S.videoRatio=submittedVideoRatio;setComposerMode("video")}
+   if(isImageMessage)setComposerMode("image");
    else{restoreChatInputMode();if(submittedCode){S.code=true;$("codeToggle").classList.add("active");$("codeToggle").setAttribute("aria-pressed","true");setComposerMode("text")}}
-   if(mediaFormat){S.miniToolChoice=mediaFormat;syncMiniTools();updateComposerModel()}
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading});
   });
@@ -4169,7 +3910,7 @@ function allModels(){
  const index=new Map(),key=m=>m.provider+"\0"+m.id;
  const shared=S.sharedFreeModels||[],sharedIds=new Set(shared.map(m=>m.sharedModel));
  const remote=S.remoteModels.filter(m=>!sharedIds.has(m.id)||Boolean(S.savedProviders?.openrouter));
- for(const m of [...BUILTIN_VIDEO_MODELS,...S.freeModels,...shared,...remote,...S.freeTierModels])if(!index.has(key(m)))index.set(key(m),m);
+ for(const m of [...S.freeModels,...shared,...remote,...S.freeTierModels])if(!index.has(key(m)))index.set(key(m),m);
  for(const [provider,items] of Object.entries(S.connected)){
   for(const x of items){
    if(!x.id)continue;const k=provider+"\0"+x.id,old=index.get(k);
@@ -4177,10 +3918,11 @@ function allModels(){
    if(!old)index.set(k,{...x,id:x.id,name:x.name||x.id,provider,type:x.type||"text",free:!!x.free,ownKey:true,availableWith:undefined});
   }
  }
- return [...index.values()];
+ return [...index.values()].filter(m=>m.type!=="video"&&!retiredVideoModel(m.provider,m.id));
 }
 function hasFreeAccess(m){return m.free===true||m.freeTier===true}
 function modelMatches(m){
+ if(m.type==="video"||retiredVideoModel(m.provider,m.id))return false;
  const route=modelRoute(m);
  if(composerCatalogMode==="auto"&&route!=="free")return false;
  if(composerCatalogMode==="free"&&(!connected(route)||!personalFreeChoice(route,m.id)))return false;
@@ -4210,13 +3952,13 @@ function modelMatches(m){
  if(S.filter==="free"&&!hasFreeAccess(m))return false;
  if(S.filter==="text"&&m.type!=="text")return false;
  if(S.filter==="image"&&m.type!=="image"&&!m.outputImages)return false;
- if(S.filter==="video"&&m.type!=="video")return false;
+ 
  if(S.filter==="code"&&!/cod(e|er|ing)|deepseek|qwen|gpt|claude|gemini|glm|devstral|starcoder/i.test(t))return false;
  return true;
 }
 function modelIsSelected(m){
  const via=m.availableWith==="openrouter-key"?"openrouter":m.provider;
- if(m.type==="video")return S.composerMode==="video"&&S.videoProvider===m.provider&&S.videoModel===m.id;
+ if(m.type==="video")return false;
  return !freeModeChoosing&&S.composerMode==="text"&&(m.type==="text"||m.outputImages)&&S.provider===via&&S.model===m.id;
 }
 function renderModels(){
@@ -4224,7 +3966,7 @@ function renderModels(){
  const models=allModels();ensureModelHistory();
  const history=Object.entries(modelHistoryRecords).filter(([,v])=>v.success).sort((a,b)=>b[1].success-a[1].success).slice(0,40);
  const recentChip=$("sourceChips").querySelector('[data-source="recent"]');if(recentChip)recentChip.textContent="常用成功"+(history.length?" "+history.length:"");
- if(S.source==="recent"){const known=new Set(models.map(m=>modelHistoryKey(modelRoute(m),m.id)));for(const [key] of history){const [provider,id]=key.split("\0");if(!provider||!id||known.has(key))continue;models.push({id,name:id,provider,type:"text",free:provider==="free",unlisted:true});known.add(key)}}
+ if(S.source==="recent"){const known=new Set(models.map(m=>modelHistoryKey(modelRoute(m),m.id)));for(const [key] of history){const [provider,id]=key.split("\0");if(!provider||!id||known.has(key)||retiredVideoModel(provider,id))continue;models.push({id,name:id,provider,type:"text",free:provider==="free",unlisted:true});known.add(key)}}
  renderChinaBrands(models);
  const visible=models.filter(m=>modelMatches(m)&&(!freeModeChoosing||m.id!=="free:auto"));
  if(S.provider&&S.model&&S.provider!=="free"&&!visible.some(modelIsSelected)){
@@ -4240,7 +3982,7 @@ function renderModels(){
  const retry=$("modelCatalogRetry");retry.hidden=!catalogError;retry.title=catalogError;retry.textContent=S.loadedCatalog?"更新目录":"重试目录";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
- const signature=viewKey+"|"+chatModeLabel()+":"+freeModeChoosing+"|"+S.composerMode+":"+S.videoProvider+":"+S.videoModel+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
+ const signature=viewKey+"|"+chatModeLabel()+":"+freeModeChoosing+"|"+S.composerMode+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
  if(shown.length&&list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
@@ -4258,7 +4000,7 @@ function renderModels(){
   if(rank.tier.label)title.append(node("span","price-tag",rank.tier.label));title.append(tag);
   const owner=domesticGroupFor(item);
   info.append(title,node("small","",via==="free"?(item.shared?"本站共享零价文字模型 · 无需个人密钥 · ID："+item.sharedModel:"免费自动路由 · 实际上游模型可能变化"):(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.freeTier?" · 需要本人免费计划/API Key，额度及计费由服务商决定":"")+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
-  const actionable=["text","image"].includes(item.type)||(item.type==="video"&&VIDEO_OPTIONS[item.provider]?.includes(item.id));
+  const actionable=["text","image"].includes(item.type);
   const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!!blocked||!actionable||selected;
   if(actionable&&!blocked)button.addEventListener("click",()=>setModel(item));
@@ -4300,6 +4042,7 @@ function refreshSourceChips(){
  const container=$("sourceChips");
  initDomesticProviderLinks();
  for(const [p,items] of Object.entries(S.connected)){
+  if(VIDEO_ONLY_PROVIDERS.has(p))continue;
   if(container.querySelector('[data-source="'+p+'"]'))continue;
   const btn=node("button","chip",p+" · "+items.length);
   btn.dataset.source=p;btn.addEventListener("click",()=>activateSource(p));
@@ -4620,22 +4363,6 @@ function openCreate(){
  setCreationMode("image");show("createDialog");closeMenu();
  if(!$("drawResults").children.length&&!S.drawBatch){const owner=S.user.id;void (async()=>{let record;try{record=JSON.parse(localStorage.getItem(deviceMediaKey("draw-latest"))||"null")}catch{};if(!record||![1,2,4].includes(record.count))return;for(let i=0;i<record.count;i++){const blob=await deviceMediaGet(owner+":draw:"+record.id+":"+i);if(!blob||S.user?.id!==owner||S.drawBatch||S.createMode!=="image")continue;const tile=drawTile(i+1,"本机图片",record.shape);await drawResult(tile,URL.createObjectURL(blob))}})().catch(()=>{})}
 }
-function videoKeyPermitted(provider){
- if(provider==="freetext"||provider==="freewan"||provider==="freeloop")return true;
- const record=S.savedProviders[provider];return Boolean(record&&record.consent);
-}
-function selectVideoModel(provider,model){
- if(!VIDEO_OPTIONS[provider]?.includes(model))return;
- S.videoProvider=provider;S.videoModel=model;if(provider==="grok")S.videoRatio="16:9";
- updateComposerModel();syncMiniTools();
-}
-function chooseChatVideo(provider,model){
- if(S.busy||!VIDEO_OPTIONS[provider]?.includes(model))return;
- if(S.freeToolsMode)setFreeToolsMode(false);
- 
- hideAttachMenu();closeMenu();selectVideoModel(provider,model);setComposerMode("video");
- $("prompt").focus({preventScroll:true});
-}
 async function generateMedia(){if(!S.user){show("authDialog");return}await runFreeDraw()}
 const oauthBase64=(b)=>btoa(Array.from(b,x=>String.fromCharCode(x)).join("")).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"");
 async function beginOpenRouterOAuth(){
@@ -4719,19 +4446,16 @@ async function verifyKey(event){
    else $("keyStatus").textContent=data.warning||"密钥已保存，模型目录待验证";
    return;
   }
-  if(rec.model&&!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn){
+  if(rec.model&&!retiredVideoModel(p,rec.model)){
    S.provider=p;S.model=rec.model;
    S.modelTitle=p+" · "+(S.connected[p].find(m=>m.id===rec.model)?.name||rec.model);
    S.selectedFree=isFreeModel(p,rec.model);
    rememberChatModelSelection();
   }
-  if(!VIDEO_ONLY_PROVIDERS.has(p)&&!S.videoPendingKeyReturn)S.allowPaid=!!rec.consent;
+  if(!VIDEO_ONLY_PROVIDERS.has(p))S.allowPaid=!!rec.consent;
   updateModelTitle();refreshSourceChips();
   refreshKeyPanel();$("keyStatus").textContent=data.warning||(rec.verified?"密钥已保存，下次打开直接使用":"密钥已保存，请选择官方模型 ID");
-  if(VIDEO_ONLY_PROVIDERS.has(p)||S.videoPendingKeyReturn){
-   $("keyStatus").textContent=rec.consent?"视频密钥已加密保存并授权，可以在聊天中生成视频。":"视频密钥已保存，但尚未授权收费调用。";
-   if(rec.consent){hide("keyDialog");if(S.videoPendingKeyReturn){S.videoPendingKeyReturn=false;setComposerMode("video");$("prompt").focus({preventScroll:true})}}
-  }else if(rec.consent&&rec.verified&&rec.model){hide("keyDialog");$("prompt").focus()}
+  if(rec.consent&&rec.verified&&rec.model){hide("keyDialog");$("prompt").focus()}
  }catch(e){$("keyStatus").textContent="连接失败："+humanError(e)}
  finally{if(submit)submit.disabled=false}
 }
@@ -4878,12 +4602,6 @@ function wire(){
   hideAttachMenu();setComposerMode(S.composerMode==="image"?"text":"image");
   $("prompt").focus({preventScroll:true});
  });
- $("videoMode").addEventListener("click",()=>{
-  hideAttachMenu();
-  if(S.composerMode==="video")setComposerMode("text");
-  else{selectVideoModel("freetext",VIDEO_OPTIONS.freetext[0]);setComposerMode("video")}
-  $("prompt").focus({preventScroll:true});
- });
  $("codeToggle").addEventListener("click",()=>{
   hideAttachMenu();
   if(S.composerMode!=="text")setComposerMode("text");
@@ -4894,10 +4612,6 @@ function wire(){
   updateComposerModel();
   $("prompt").focus({preventScroll:true});
  });
- for(const [id,action] of [["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
-  $(id).addEventListener("click",()=>chooseMiniTool(action));
- }
- for(const [id,format] of [["miniSticker","sticker"],["miniGif","gif"]])$(id).addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode(format==="gif"?"video":"image");S.miniToolChoice=format;syncMiniTools();updateComposerModel();$("prompt").placeholder=format==="gif"?"描述动图内容和动作…":"描述贴纸内容…";$("prompt").focus({preventScroll:true})});
  for(const [id,mode] of [["chatAutoChoice","auto"],["chatBoundChoice","free"],["chatPersonalChoice","personal"]])$(id).addEventListener("click",()=>{$("chatModeMenu").open=false;switchChatMode(mode);composerCatalogMode=mode;renderModels()});
  $("modelCatalogRetry").addEventListener("click",()=>{void loadCatalog(true)});
  $("modelDialog").addEventListener("click",e=>{const menu=$("chatModeMenu");if(menu.open&&!menu.contains(e.target))menu.open=false});
@@ -4953,7 +4667,7 @@ function wire(){
  $("drawCancel").addEventListener("click",stopDrawBatch);
  drawPrefs();wireImageViewer();
  // Closing the page must not cancel a task or delete images; cancellation is explicit via drawCancel.
- $("keyDialog").addEventListener("close",()=>{if(!$("keyDialog").open){S.videoPendingKeyReturn=false;keyBackPage=null;homeBrandBinding=null}});
+ $("keyDialog").addEventListener("close",()=>{if(!$("keyDialog").open){keyBackPage=null;homeBrandBinding=null}});
  if(VOICE_CHAT_ENABLED)voiceWire();
  wireDictation();wireReplyLevel();wireChatScrollArrows();
 }

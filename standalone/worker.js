@@ -13,7 +13,7 @@ const ICON_MASKABLE_BASE64="iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAMAAADDpiTIAAAAM1BM
 const IMAI_ROBOT_IDLE="R0lGODlhJAAwAIIAAOTg+nXI9Y6M2kNluB4TTwACeAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQJFAAHACwAAAAAJAAwAAAI/wAPCBxIsKDBgwgTHgwQAIDChxAZCnAIsaLBAAMGULTI8UDGiR07ChggQEBIiABSAiA5cePJgg1VylT5kmBMlSVz0qx5UwABAgZ+EmCZ8mVKhkCFCmXZMiTDlAKCThwgtGVJACYtMtS40kBJjVRJEvgKIADHrVOHKl2bsexZjF/HUh068ufHlR0lfh1QwK7PpSVP6h2ZMSNdq1lP5mQY86ZLnnAxfhxZc6AAxhKTEjjAOHFHrJcxB6jLeEDDkDqhZhQtuWjIwhrrDt1KF+vLuXKHmh4Nu6bh3FaxhjXqswDnoSmpNpwLkiPOgSSx8k7O9XHCmQJzlmyovaVrhaChCracvPvjgas5H36kK1DyT9qxfbJ82JJke6iHCRQASbjpdaxDCSTTAOON5VpY3x20l3Hn/RTYeXsJpJt9CfWWHWEEEVbUUAUQqJ6HB5TFnWXRMTTeSSKOtpF2pxkl3WiJLcYYcYNBx5JEKL6YXntM7eQcVFAlBpd31im0l3YbwdidZxBpR1VzEP7l3WcyjZTYb9hZNJNq0HUYnUwVXbbbViaOx9JqpVXEWkYFnTlmmRGlGVFldB4QEAA7";
 const IMAI_ROBOT_MOTION="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";
 const IMAI_ROBOT_ATLAS="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";
-const VERSION="aigzt-cf-5.38-chat-creative";
+const VERSION="aigzt-cf-5.40-text-image-only";
 const FREE_MODELS=[
  {id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true,isRoute:true}
 ];
@@ -48,7 +48,6 @@ const HOSTS={
  gigachat:{host:"api.giga.chat",path:"/v1/chat/completions",models:"/v1/models"}
 };
 const VIDEO_PROVIDERS=Object.freeze({runway:["gen4.5","veo3.1_fast","seedance2_fast"],luma:["ray-2","ray-flash-2"],vidu:["viduq3-turbo","viduq3-pro","viduq2"]});
-const VIDEO_MODELS=Object.freeze({grok:["grok-imagine-video-1.5"],...VIDEO_PROVIDERS});
 const isVideoOnlyProvider=p=>Object.hasOwn(VIDEO_PROVIDERS,p);
 const utf=s=>new TextEncoder().encode(s);
 const hex=a=>Array.from(new Uint8Array(a),x=>x.toString(16).padStart(2,"0")).join("");
@@ -554,7 +553,8 @@ async function keyForProvider(env,user,provider,provided){
 async function saveUserProvider(env,user,body){
  requireUser(user);
  const provider=String(body?.provider||""),plain=String(body?.apiKey||"").trim();
- if(!HOSTS[provider]&&!isVideoOnlyProvider(provider))throw Object.assign(new Error("服务商不支持"),{status:400});
+ if(isVideoOnlyProvider(provider))throw Object.assign(Error("视频生成服务已下线"),{status:410});
+ if(!HOSTS[provider])throw Object.assign(new Error("服务商不支持"),{status:400});
  if(plain.length<12||plain.length>1500||/[\r\n\0]/.test(plain))
   throw Object.assign(new Error("请输入有效格式的 API Key"),{status:400});
  const older=await loadUserProvider(env,user.id,provider);
@@ -1090,12 +1090,12 @@ function isDirectVideoRequest(value){
  return /^(?:(?:请|麻烦|帮我|给我|直接|现在|再|继续|请你|为我|你|来)\s*){0,5}(?:(?:生成|制作|创建|做|拍|渲染|合成|输出)(?:一段|一个|一条|一部|一支|短)?[^，。！？\n]{0,20}视频|(?:文生视频|图生视频|首尾帧视频)|(?:让|把).{1,35}(?:动起来|变成视频|做成视频))/.test(p)||/^(?:please\s+)?(?:generate|create|make|animate|render)\b.{0,40}\b(?:video|clip|animation)\b/i.test(p);
 }
 
-function automaticVideoRequest(body){
- if(body.provider!=="free"||body.continueFrom||body.outputImages||body.imageOnly||!isDirectVideoRequest(body.message))return null;
- const files=Array.isArray(body.attachments)?body.attachments:[];
- if(files.length>2||files.some(id=>!fvId(id)))throw Object.assign(Error("视频任务最多支持两张有效参考图"),{status:400});
- const provider=files.length===2?"freeloop":files.length===1?"freewan":"freetext";
- return {mode:"video",provider,model:FREE_VIDEO[provider].model,prompt:body.message,chatId:body.chatId,projectId:body.projectId,imageId:files[0],endImageId:files[1],ratio:/9\s*[:：]\s*16|竖屏/.test(body.message)?"9:16":"16:9"};
+function requestedMediaFormat(value){
+ const p=String(value||"").trim();
+ if(!p||/(?:不要|不用|禁止|无需|不需要).{0,12}(?:制作|生成|做|画|转换|GIF|动图|贴纸|表情包)|^(?:如何|怎么|为什么|是否|什么是)|(?:识别|分析|解释|下载|查找|搜索|查看|提示词|教程|脚本|代码).{0,18}(?:GIF|动图|贴纸|表情包)/i.test(p))return "";
+ const explicit=/(?:生成|制作|创建|设计|画|做|转成|转换|变成|generate|create|make|convert|animate)/i.test(p)||/^(?:GIF|动图|贴纸|表情包)(?:[:：]|$)/i.test(p);
+ if(!explicit||/(?:提示词|教程|脚本|代码|格式说明)/.test(p))return "";
+ return /(?:GIF|动图|动态表情包|动态贴纸|animated sticker)/i.test(p)?"gif":/(?:贴纸|表情包|sticker)/i.test(p)?"sticker":"";
 }
 
 async function chat(req,env,user,onDelta=null){
@@ -1103,13 +1103,7 @@ async function chat(req,env,user,onDelta=null){
  const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
  const typed=typeof body.message==="string"?body.message.trim():"";
  if(body.chatMode==="auto"&&(provider!=="free"||body.model!=="free:auto")||body.chatMode==="free"&&!isPersonalFreeChoice(provider,body.model)||body.chatMode==="personal"&&provider==="free")throw Object.assign(Error("所选模式与模型不匹配"),{status:400,code:"MODE_MODEL_MISMATCH"});
- const video=automaticVideoRequest(body);
- if(video){
-  for(const id of [video.imageId,video.endImageId].filter(Boolean)){const obj=await env.MEDIA?.head(user.id+"/"+id);if(!obj||!["image/jpeg","image/png","image/webp"].includes(obj.httpMetadata?.contentType))throw Object.assign(Error("视频参考图必须为有效图片"),{status:400});}
-  const mediaReq=new Request(req.url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(video)});
-  const result=await mediaChat(mediaReq,env,user);
-  return {...result,provider:"free",usedModel:result.model,mediaMode:"video",primarySucceeded:true};
- }
+ if(body.mode!=="code"&&!body.continueFrom&&(isDirectVideoRequest(typed)||requestedMediaFormat(typed)))throw Object.assign(Error("视频、GIF 和贴纸生成已下线"),{status:410});
  const lookupQuery=provider==="free"&&!body.continueFrom?publicLookupQuery(typed):"";
  const lookup=lookupQuery?publicLookup(lookupQuery):null;
  const promptBatch=/(?:提示词|image\s*prompts?)/i.test(typed)&&/(?:[2-9]|[1-9]\d|[二三四五六七八九十]+)\s*(?:套|组|个|条|sets?|prompts?)/i.test(typed);
@@ -1359,34 +1353,13 @@ async function readFile(env,user,id){
 async function mediaChat(req,env,user){
  requireUser(user);
  const b=await parseJSON(req),mode=String(b.mode||""),prompt=truncate(b.prompt,1400).trim();
- const gif=b.format==="gif"&&mode==="video",sticker=b.format==="sticker"&&mode==="image";
- if(mode!=="image"&&mode!=="video")throw Error("创作模式无效");
+ if(mode!=="image"||b.format||b.imageId||b.endImageId||isDirectVideoRequest(prompt)||requestedMediaFormat(prompt))throw Object.assign(Error("仅支持文字生成普通图片"),{status:410});
  if(!prompt)throw Error("请输入创作描述");
- if(mode==="image"&&b.imageId)throw Object.assign(Error("图生图已下线"),{status:410});
  const exists=b.chatId?await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",b.chatId,user.id):null;
  if(b.chatId&&!exists)throw Error("会话不存在或没有权限");
 
- if(mode==="video"&&Object.hasOwn(FREE_VIDEO,String(b.provider||""))){
-  const provider=String(b.provider),model=String(b.model||"");
-  const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
-  if(!exists&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Object.assign(Error("项目不存在"),{status:404});
-  const task=await fvCreate(env,user,{imageId:b.imageId,endImageId:b.endImageId,ratio:b.ratio},provider,model,gif?truncate(prompt,480)+"; short seamless looping motion, stable framing":prompt);
-  const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),userMessageId=crypto.randomUUID(),assistantMessageId=crypto.randomUUID();
-  const reply="[[aigzt:video-job:"+task.requestId+"]]";
-  const pic=typeof b.imageId==="string"&&fvId(b.imageId)?b.imageId:null;
-  const endPic=provider==="freeloop"&&typeof b.endImageId==="string"&&fvId(b.endImageId)?b.endImageId:null;
-  const message=prompt+(pic?"\n[文件：首帧或参考图](/api/files/"+pic+")":"")+(endPic?"\n[文件：尾帧](/api/files/"+endPic+")":"");
-  const writes=[];
-  if(!exists)writes.push(env.DB.prepare("INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)").bind(chatId,user.id,prompt.slice(0,36),"free",model,now,now,projectId));
-  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(userMessageId,chatId,user.id,"user",message,"免费视频",now));
-  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(assistantMessageId,chatId,user.id,"assistant",reply,gif?"GIF动图":"免费视频",now+1));
-  writes.push(env.DB.prepare("UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=? AND charged_day='video-free'").bind(chatId,assistantMessageId,task.requestId,user.id));
-  writes.push(env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id));
-  await env.DB.batch(writes);
-  return {ok:true,chatId,userMessageId,assistantMessageId,reply,model:gif?"GIF动图":"免费视频",pending:true,requestId:task.requestId};
- }
- const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(mode==="image"?{prompt:sticker?truncate(prompt,850)+", single expressive sticker, clean outline, isolated centered subject, solid bright green chroma key background, no green on subject, no shadow":prompt,style:sticker?"none":b.style,shape:sticker?"square":b.shape}:{prompt,provider:b.provider||"grok",model:b.model||"grok-imagine-video-1.5",ratio:b.ratio,apiKey:b.apiKey,confirmed:b.confirmed})});
- if(mode==="image"){
+ const mediaReq=new Request("https://internal.aigzt.invalid",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt,style:b.style,shape:b.shape})});
+ {
   // A chat image has its own task and messages. Never route it through the text-chat API.
   // Persist only task metadata and text; generated image bytes remain session-only.
   const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
@@ -1397,25 +1370,12 @@ async function mediaChat(req,env,user){
   const writes=[];
   if(!exists)writes.push(env.DB.prepare("INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)").bind(chatId,user.id,prompt.slice(0,36),"free","free:auto",now,now,projectId));
   writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(userMessageId,chatId,user.id,"user",prompt,"免费作图",now));
-  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(messageId,chatId,user.id,"assistant",reply,sticker?"贴纸":result.model||"免费作图",now+1));
+  writes.push(env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(messageId,chatId,user.id,"assistant",reply,result.model||"免费作图",now+1));
   writes.push(env.DB.prepare("UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=?").bind(chatId,messageId,result.jobId,user.id));
   writes.push(env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id));
   await env.DB.batch(writes);
-  return {ok:true,chatId,userMessageId,assistantMessageId:messageId,reply,model:sticker?"贴纸":result.model||"免费作图",pending:true,jobId:result.jobId};
+  return {ok:true,chatId,userMessageId,assistantMessageId:messageId,reply,model:result.model||"免费作图",pending:true,jobId:result.jobId};
  }
- const result=await createVideo(mediaReq,env,user);
- const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),reply="[[aigzt:paid-video:"+result.provider+":"+result.requestId+"]]";
- if(!exists){const pid=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/.test(b.projectId)?b.projectId:null;
-  if(pid&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",pid,user.id))throw Error("项目不存在");
-  await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,prompt.slice(0,36),mode,mode,now,now,pid);}
- const userMessageId=crypto.randomUUID(),assistantMessageId=crypto.randomUUID();
- await env.DB.batch([
-  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(userMessageId,chatId,user.id,"user",prompt,mode,now),
-  env.DB.prepare("INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)").bind(assistantMessageId,chatId,user.id,"assistant",reply,result.model||mode,now+1),
-  env.DB.prepare("UPDATE chats SET updated_at=? WHERE id=? AND user_id=?").bind(now+1,chatId,user.id)
- ]);
- if(result.pending)await dbRun(env.DB,"UPDATE image_jobs SET chat_id=?,message_id=? WHERE id=? AND user_id=?",chatId,assistantMessageId,result.jobId,user.id);
- return {ok:true,chatId,userMessageId,assistantMessageId,reply,model:result.model||mode,...(result.pending?{pending:true,jobId:result.jobId}:{}),...(result.requestId?{requestId:result.requestId}:{})};
 }
 
 
@@ -1586,6 +1546,7 @@ async function submitZImageFast(env,ref){
 async function submitKrea(req,env,user){
  requireUser(user);
  const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
+ if(input.imageId||input.format||isDirectVideoRequest(prompt)||requestedMediaFormat(prompt))throw Object.assign(Error("仅支持文字生成普通图片"),{status:410});
  if(!prompt)throw Error("请输入图片描述");
  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?input.shape:"portrait",style=Object.hasOwn(KREA_STYLES,input.style)?input.style:"portrait-master";
  // Persist first, then schedule exactly one upstream submission on status read.
@@ -1860,15 +1821,15 @@ async function imageV4Status(env,user,job,ref){
 
 async function imageJobStatus(env,user,id){
  requireUser(user);
- const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
+ const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day,(SELECT model FROM messages WHERE id=image_jobs.message_id AND user_id=image_jobs.user_id) AS message_model FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
  if(!job)return fail("作图任务不存在",404);
  if(job.status==="complete")return response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"免费作图"});
- if(job.charged_day==="image-edit-free"){
+ if(job.charged_day==="image-edit-free"||job.charged_day==="video-free"||job.message_model==="贴纸"){
+  const reason=job.charged_day==="image-edit-free"?"图生图已下线":job.message_model==="贴纸"?"贴纸生成已下线":"视频生成已下线";
   if(job.status==="pending"||job.status==="recovering"){
-   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')","图生图已下线",Date.now(),job.id,user.id);
-   if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=? AND body=?","图生图已下线",job.message_id,user.id,"[[aigzt:image-job:"+job.id+"]]");
+   await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status IN ('pending','recovering')",reason,Date.now(),job.id,user.id);
   }
-  return response({ok:true,done:true,failed:true,retired:true,error:"图生图已下线"});
+  return response({ok:true,done:true,failed:true,retired:true,error:reason});
  }
  if(job.status==="failed")return response({ok:true,done:true,failed:true,error:job.error||"作图失败"});
  if(typeof job.external_id==="string"&&job.external_id.startsWith("{")){
@@ -1922,36 +1883,7 @@ async function imageJobStatus(env,user,id){
   return response({ok:true,done:true,image,temporary:true,model:"免费作图"});
  }catch{return response({ok:true,done:false,pending:true,waitSeconds:12,startedAt:job.created_at})}
 }
-async function authorizedVideoKey(env,user,provider){
- if(!Object.hasOwn(VIDEO_MODELS,provider))throw Object.assign(new Error("不支持此视频服务商"),{status:400});
- const entry=await keyForProvider(env,user,provider,null);
- if(!entry.consent)throw Object.assign(new Error("请先为 "+provider+" 绑定密钥并授权使用个人额度"),{status:403});
- return entry.key;
-}
-async function requestVideoApi(url,options,provider,submitting){
- let r;
- try{r=await fetch(url,{...options,redirect:"manual",signal:AbortSignal.timeout(submitting?19000:15000)})}
- catch(e){
-  const possiblySent=submitting?"；可能已创建收费任务，请到服务商后台确认，切勿直接重复提交":"";
-  throw Object.assign(new Error(provider+" 网络请求未确定完成"+possiblySent),{status:503});
- }
- if(r.status>=300&&r.status<400)throw Object.assign(new Error("上游重定向已拦截"),{status:502});
- if(!r.ok){
-  const reason=r.status===401||r.status===403?"密钥无效或没有此模型权限":
-   r.status===402?"账户余额不足":r.status===429?"额度或速率受限":
-   r.status>=500?"服务商暂时不可用":"视频请求被拒绝";
-  throw Object.assign(new Error(provider+"："+reason+"（HTTP "+r.status+"）"),{status:r.status===429?429:r.status===401||r.status===403?403:502});
- }
- try{return await r.json()}catch{throw Object.assign(new Error("服务商没有返回有效 JSON"),{status:502})}
-}
-function videoStatus(provider,data){
- const state=String(provider==="runway"?data?.status:provider==="vidu"?data?.state:provider==="luma"?data?.state:data?.status||"").toLowerCase();
- return ["completed","succeeded","success","done"].includes(state)?"completed":
-  ["failed","error","canceled","cancelled"].includes(state)?"failed":"pending";
-}
-
-/* Shared free upstreams: never fall back to charged providers. Both require
- * the user's own uploaded image. One task at a time, two daily per account. */
+// Historical video read-only delivery. These allowlists do not submit or poll jobs.
 const FREE_VIDEO=Object.freeze({
  freetext:{url:"https://upsampler-wan-2-2-14b-text-to-video.hf.space",model:"wan2.2-ti2v",official:"https://huggingface.co/spaces/Upsampler/wan-2-2-14b-text-to-video"},
  freewan:{url:"https://zerogpu-aoti-wan2-2-fp8da-aoti-faster.hf.space",model:"wan2.2-i2v-fast",official:"https://huggingface.co/spaces/zerogpu-aoti/wan2-2-fp8da-aoti-faster"},
@@ -1965,10 +1897,6 @@ const FV_BACKUPS=Object.freeze({
  freeloop:{url:"https://cakegreen-wan-2-2-first-last-frame.hf.space",official:"https://huggingface.co/spaces/cakegreen/Wan-2-2-first-last-frame",kind:"wan"}
 });
 const FV_LTX=Object.freeze({url:"https://lightricks-ltx-video-distilled.hf.space",official:"https://huggingface.co/spaces/Lightricks/ltx-video-distilled",kind:"ltx",endpoint:"text_to_video"});
-const FV_ATTEMPT_MS=240000;
-function fvEndpoint(cfg){return cfg.endpoint||"generate_video"}
-function fvNewRequest(provider,request){return provider==="freetext"?{...request,routeVersion:3}:request}
-function fvDuration(prompt){const m=String(prompt||"").match(/(?:\b(\d+(?:\.\d+)?)\s*(?:seconds?|sec|s)\b|(\d+(?:\.\d+)?)\s*秒)/i);return Math.max(1,Math.min(5,Number(m?.[1]||m?.[2]||2)))}
 function fvRoute(provider,stage,request){
  if(provider==="freetext"&&request?.routeVersion===3)return stage===0?FV_LTX:null;
  const backup=FV_BACKUPS[provider];
@@ -1976,75 +1904,7 @@ function fvRoute(provider,stage,request){
  // a bounded second attempt on the original free source preserves the request.
  return stage===1&&backup&&(!backup.maxPrompt||!request||request.prompt.length<=backup.maxPrompt)?backup:FREE_VIDEO[provider];
 }
-function fvArgs(provider,cfg,request,file,endFile){
- const {prompt,ratio}=request;
- if(cfg.kind==="ltx"){const [height,width]=ratio==="9:16"?[704,384]:[384,704];return [prompt,FV_BAD,null,null,height,width,"text-to-video",fvDuration(prompt),9,42,true,1,false]}
- if(cfg.kind==="ti2v")return [null,prompt,ratio==="9:16"?"480x832":"832x480",2];
- return provider==="freetext"?[prompt,ratio==="9:16"?"9:16 (480x832)":"16:9 (832x480)",4,FV_BAD,2,1,1,42,true]:
- provider==="freewan"?[file,prompt,4,FV_BAD,2,1,1,42,true]:[file,endFile,prompt,FV_BAD,2.1,8,1,1,42,true];
-}
-function fvOperationalFailure(s){
- return /gpu|quota|credit|rate.limit|429|queue|busy|capacity|overload|timeout|timed.out|deadline|502|503|504|404|410|unavailable|network|connection|暂时|超时|连接|任务编号/i.test(String(s||""));
-}
-const FV_BAD="face morphing, identity drift, blurry eyes, unstable features, flicker, watermark, subtitles";
 const fvId=s=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s||""));
-const fvError=(s,status=503)=>Object.assign(new Error(s),{status});
-async function fvCreate(env,user,b,provider,model,prompt){
- const cfg=FREE_VIDEO[provider];
- if(!cfg||model!==cfg.model)throw fvError("免费视频模型参数无效",400);
- if(!prompt||(provider!=="freetext"&&!fvId(b.imageId)))throw fvError(provider==="freetext"?"请输入视频描述":"请上传图片并填写视频动作描述",400);
- if(provider==="freetext"&&(b.imageId||b.endImageId))throw fvError("文生视频仅使用文字；请改选图生视频",400);
- if(provider==="freeloop"&&(!fvId(b.endImageId)||b.endImageId===b.imageId))throw fvError("首尾帧必须分别上传两张不同的图片",400);
- if(provider!=="freeloop"&&b.endImageId)throw fvError("只有首尾帧视频可以使用结束画面",400);
- if(!env.DB||!env.MEDIA)throw fvError("站点存储暂时不可用",503);
- const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,Date.now()-600000);
- if(active)throw fvError("已有免费视频任务正在生成，请先查询上一条",409);
- const request=fvNewRequest(provider,{prompt,ratio:b.ratio==="9:16"?"9:16":"16:9",imageId:b.imageId||null,endImageId:b.endImageId||null});
- let ref,lastError;
- for(let stage=0;stage<2;stage++){
-  const route=fvRoute(provider,stage,request);
-  if(!route)break;
-  try{ref=await fvSubmitStage(env,user,provider,stage,request);break}
-  catch(e){lastError=e;if(!e.retryable)throw e}
- }
- if(!ref)throw lastError||fvError("当前视频来源不可用，未提交不兼容的任务",503);
- const id=crypto.randomUUID();
- await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'video-free')",id,user.id,JSON.stringify(ref),Date.now());
- return {ok:true,provider,model,requestId:id,status:"pending",free:true};
-}
-async function fvSubmitStage(env,user,provider,stage,b){
- const cfg=fvRoute(provider,stage,b),attemptAt=Date.now(),deadline=attemptAt+FV_ATTEMPT_MS;
- const prompt=b.prompt;
- if(!cfg||(cfg.maxPrompt&&prompt.length>cfg.maxPrompt))throw fvError("备用来源不支持当前完整描述",400);
- const remaining=max=>{const left=deadline-Date.now();if(left<=0)throw Object.assign(fvError("免费来源处理超时"),{retryable:true});return Math.max(1,Math.min(max,left))};
- const uploadImage=async imageId=>{
-  if(!fvId(imageId))throw fvError("参考图编号无效",400);
-  const obj=await env.MEDIA.get(user.id+"/"+imageId);
-  const type=String(obj?.httpMetadata?.contentType||"").toLowerCase();
-  if(!obj||!["image/jpeg","image/png","image/webp"].includes(type)||obj.size>7500000||obj.size<200)
-   throw fvError("请选择7.5MB以内的 JPG、PNG 或 WebP 图片",415);
-  const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[type],form=new FormData();
-  form.append("files",new Blob([await obj.arrayBuffer()],{type}),"source."+ext);
-  let res;
-  try{res=await fetch(cfg.url+"/gradio_api/upload",{method:"POST",headers:{...hfHeaders(env),accept:"application/json"},body:form,redirect:"manual",signal:AbortSignal.timeout(remaining(14000))})}
-  catch{throw Object.assign(fvError("免费来源图片上传连接失败",503),{retryable:true})}
-  if([401,403,429].includes(res.status))throw Object.assign(fvError("免费来源暂时限制图片上传",429),{retryable:res.status===429});
-  if(!res.ok||res.status>=300)throw Object.assign(fvError("免费来源拒绝了图片上传",503),{retryable:[404,410,429,502,503,504].includes(res.status)});
-  const result=await res.json().catch(()=>null),path=String(result?.[0]||"");
-  if(!/^\/tmp\/gradio\/[a-z0-9/_\.-]{10,380}$/i.test(path)||path.includes(".."))throw fvError("免费来源未返回有效图片路径",502);
-  return {path,url:cfg.url+"/gradio_api/file="+path,meta:{_type:"gradio.FileData"},orig_name:"source."+ext,mime_type:type};
- };
- const file=b.imageId?await uploadImage(b.imageId):null;
- const endFile=provider==="freeloop"?await uploadImage(b.endImageId):null;
- const data=fvArgs(provider,cfg,b,file,endFile);
- let submit;
- try{submit=await fetch(cfg.url+"/gradio_api/call/"+fvEndpoint(cfg),{method:"POST",headers:{"content-type":"application/json",accept:"application/json",...hfHeaders(env)},body:JSON.stringify({data}),redirect:"manual",signal:AbortSignal.timeout(remaining(14000))})}
- catch{throw Object.assign(fvError("免费来源提交连接超时"),{retryable:true})}
- if(!submit.ok||submit.status>=300)throw Object.assign(fvError("免费上游拒绝生成请求 HTTP "+submit.status,submit.status===429?429:503),{retryable:[404,410,429,500,502,503,504].includes(submit.status)});
- const reply=await submit.json().catch(()=>null),event=String(reply?.event_id||"");
- if(!/^[a-z0-9_-]{8,128}$/i.test(event))throw Object.assign(fvError("免费上游没有返回有效任务编号",502),{retryable:true});
- return {v:2,p:provider,e:event,stage,attemptAt,request:b};
-}
 function fvOutput(v,cfg,depth=0){
  if(depth>7||v==null)return "";
  if(Array.isArray(v)){for(const o of v){const x=fvOutput(o,cfg,depth+1);if(x)return x}return ""}
@@ -2056,132 +1916,6 @@ function fvOutput(v,cfg,depth=0){
  if(typeof v==="object"){for(const k of ["url","video","path","name","value"]){const x=fvOutput(v[k],cfg,depth+1);if(x)return x}}
  return "";
 }
-function freeVideoFailure(value){
- const s=String(value||"").slice(0,1400).toLowerCase();
- if(/content.safety|moderation|policy|prohibited|not.allowed|unsafe|safety.check/.test(s))return "来源内容规则拒绝请求";
- if(/gpu|quota|credit|exceed|rate.limit|429|allowance|limit reached/.test(s))return "免费GPU额度或请求次数已耗尽";
- if(/login|sign.in|authentication|authorization|unauthorized|token|401|403/.test(s))return "免费来源需要登录或授权";
- if(/queue|busy|no.?worker|capacity|overload/.test(s))return "免费GPU排队或算力不足";
- if(/timeout|timed.out|deadline/.test(s))return "免费来源处理超时";
- return "免费上游生成失败";
-}
-async function fvPoll(env,cfg,eventId,timeoutMs=11500){
- let res;
- try{res=await fetch(cfg.url+"/gradio_api/call/"+fvEndpoint(cfg)+"/"+encodeURIComponent(eventId),{headers:{accept:"text/event-stream",...hfHeaders(env)},redirect:"manual",signal:AbortSignal.timeout(Math.max(1,Math.min(11500,timeoutMs)))})}
- catch{return {status:"pending"}}
- if([401,403,404,410,429,500,502,503,504].includes(res.status))return {status:"failed",error:freeVideoFailure(String(res.status))+" (HTTP "+res.status+")",retryable:[404,410,429,500,502,503,504].includes(res.status)};
- if(!res.ok||!res.body)return {status:"pending"};
- const reader=res.body.getReader(),decode=new TextDecoder();
- let buffer="",result=null,error="",retryable=false,n=0;
- const parse=chunk=>{
-  const event=chunk.match(/(?:^|\n)event:\s*([^\n]+)/)?.[1]?.trim();
-  if(event==="error"||event==="failed"){
-   error=freeVideoFailure(chunk);
-   retryable=error!=="来源内容规则拒绝请求"&&error!=="免费来源需要登录或授权"&&(fvOperationalFailure(chunk)||error==="免费上游生成失败");
-   return;
-  }
-  if(event!=="complete")return;
-  const data=chunk.split("\n").filter(line=>line.startsWith("data:")).map(line=>line.slice(5).trim()).join("\n");
-  try{result=JSON.parse(data)}catch{error="视频结果格式不兼容"}
- };
- try{for(;;){const {value,done}=await reader.read();if(done)break;n+=value.byteLength;if(n>250000)break;buffer+=decode.decode(value,{stream:true}).replace(/\r/g,"");let x;while((x=buffer.indexOf("\n\n"))>=0){parse(buffer.slice(0,x));buffer=buffer.slice(x+2)}if(result!==null||error)break}if(buffer.trim()&&result===null&&!error)parse(buffer)}
- catch{}finally{try{await reader.cancel()}catch{}}
- return error?{status:"failed",error,retryable}:result!==null?{status:"completed",data:result}:{status:"pending"};
-}
-
-// A standalone success may satisfy an identical failed chat request from
-// the same account. Reuse only a real, existing MP4; retain the failed job's audit trail.
-async function fvRecoverMatchingMedia(env,user,job,ref){
- if(!job.message_id||!ref.request||/内容规则|授权|登录/.test(job.error||""))return null;
- const match=await dbGet(env.DB,"SELECT media_id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND status='complete' AND message_id IS NULL AND media_id IS NOT NULL AND created_at>=? AND created_at<=? AND json_extract(external_id,'$.p')=? AND json_extract(external_id,'$.request')=? ORDER BY created_at DESC LIMIT 1",user.id,job.created_at,job.created_at+180000,ref.p,JSON.stringify(ref.request));
- if(!match||!fvId(match.media_id))return null;
- const file=await env.MEDIA.head(user.id+"/"+match.media_id);
- if(!file||file.httpMetadata?.contentType!=="video/mp4")return null;
- return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+match.media_id,temporaryUrl:false,recovered:true};
-}
-async function fvRetry(req,env,user){
- requireUser(user);
- const b=await parseJSON(req),id=String(b.requestId||"");
- if(!fvId(id))throw fvError("视频任务号无效",400);
- const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error FROM image_jobs WHERE id=? AND user_id=? AND charged_day='video-free'",id,user.id);
- if(!job||!job.message_id)throw fvError("聊天视频任务不存在",404);
- if(job.status!=="failed")return fvStatus(env,user,id);
- const ref=JSON.parse(job.external_id||"{}");
- const recovered=await fvRecoverMatchingMedia(env,user,job,ref);if(recovered)return recovered;
- if(!ref.request||!FREE_VIDEO[ref.p]||/内容规则|授权|登录/.test(job.error||""))throw fvError("此任务无法原位重试",409);
- const active=await dbGet(env.DB,"SELECT id FROM image_jobs WHERE user_id=? AND charged_day='video-free' AND id<>? AND status IN ('pending','recovering') AND created_at>=? LIMIT 1",user.id,id,Date.now()-600000);
- if(active)throw fvError("已有视频任务正在生成",409);
- const now=Date.now(),claim=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='failed'",now,id,user.id);
- if(!claim.meta?.changes)return {ok:true,status:"pending",waitSeconds:5,startedAt:now};
- try{
-  const next=await fvSubmitStage(env,user,ref.p,0,fvNewRequest(ref.p,ref.request));
-  await env.DB.batch([
-   env.DB.prepare("UPDATE image_jobs SET external_id=?,status='pending',created_at=?,checked_at=0,finished_at=NULL,error=NULL WHERE id=? AND user_id=? AND status='recovering'").bind(JSON.stringify(next),now,id,user.id),
-   env.DB.prepare("UPDATE messages SET body=? WHERE id=? AND user_id=?").bind("[[aigzt:video-job:"+id+"]]",job.message_id,user.id)
-  ]);
-  return {ok:true,status:"pending",waitSeconds:1,startedAt:now};
- }catch(e){
-  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status='recovering'",String(e.message||"视频重试失败").slice(0,160),Date.now(),id,user.id);
-  throw e;
- }
-}
-async function fvStatus(env,user,id){
- if(!fvId(id))throw fvError("视频任务号无效",400);
- const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error FROM image_jobs WHERE id=? AND user_id=? AND charged_day='video-free'",id,user.id);
- if(!job)throw fvError("视频任务不存在或没有权限",404);
- const ref=JSON.parse(job.external_id||"{}"),cfg=fvRoute(ref.p,Number(ref.stage)||0,ref.request);
- if(!cfg||!/^[a-z0-9_-]{8,128}$/i.test(ref.e||""))throw fvError("视频任务记录无效",422);
- if(job.status==="complete"&&fvId(job.media_id))return {ok:true,status:"completed",provider:ref.p,url:"/api/video/media/"+job.media_id,temporaryUrl:false};
- if(job.status==="complete"&&ref.url&&fvOutput(ref.url,cfg)===ref.url)return {ok:true,status:"completed",provider:ref.p,url:"/api/video/result/"+id,temporaryUrl:true};
- if(job.status==="failed"){
-  const recovered=await fvRecoverMatchingMedia(env,user,job,ref);
-  if(recovered)return recovered;
-  return {ok:true,status:"failed",provider:ref.p,error:job.error||"免费视频生成失败",retryable:Boolean(ref.request&&job.message_id&&!/内容规则|授权|登录/.test(job.error||"")),officialUrl:cfg.official};
- }
- const stage=Number(ref.stage)||0,attemptAt=Number(ref.attemptAt)||job.created_at,deadline=attemptAt+FV_ATTEMPT_MS;
- const pending=()=>({ok:true,status:"pending",waitSeconds:Math.max(1,Math.min(8,Math.ceil((deadline-Date.now())/1000))),startedAt:job.created_at,stage});
- const failJob=async(reason,status="pending")=>{
-  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error=?,finished_at=? WHERE id=? AND user_id=? AND status=?",reason,Date.now(),id,user.id,status);
-  // Keep the job marker in chat so failure, retry and recovery survive reload.
-  return {ok:true,status:"failed",error:reason,retryable:Boolean(ref.request&&job.message_id&&!/内容规则|授权|登录/.test(reason)),officialUrl:cfg.official};
- };
- if(job.status==="recovering"){
-  if(Date.now()-Number(job.checked_at||0)>60000)return failJob("备用来源提交超时","recovering");
-  return {ok:true,status:"pending",waitSeconds:5,startedAt:job.created_at,stage:1};
- }
- const advance=async reason=>{
-  if(stage!==0||!ref.request||!fvRoute(ref.p,1,ref.request))return failJob(reason);
-  const claimed=await dbRun(env.DB,"UPDATE image_jobs SET status='recovering',checked_at=? WHERE id=? AND user_id=? AND status='pending'",Date.now(),id,user.id);
-  if(!claimed.meta?.changes)return pending();
-  try{
-   const next=await fvSubmitStage(env,user,ref.p,1,ref.request);
-   await dbRun(env.DB,"UPDATE image_jobs SET external_id=?,status='pending',checked_at=0 WHERE id=? AND user_id=? AND status='recovering'",JSON.stringify(next),id,user.id);
-   return {ok:true,status:"pending",waitSeconds:1,startedAt:job.created_at,stage:1};
-  }catch(e){return failJob(String(e.message||"免费视频备用来源不可用").slice(0,160),"recovering")}
- };
- if(Date.now()>=deadline)return advance("免费来源超过240秒");
- if(Date.now()-(job.checked_at||0)<9000)return pending();
- const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='pending' AND checked_at<?",Date.now(),id,user.id,Date.now()-8800);
- if(!claimed.meta?.changes)return pending();
- const state=await fvPoll(env,cfg,ref.e,Math.max(1,deadline-Date.now()));
- if(Date.now()>=deadline)return advance("免费来源超过240秒");
- if(state.status==="pending")return pending();
- if(state.status==="failed"){
-  const reason=state.error||"免费来源生成失败";
-  return state.retryable?advance(reason):failJob(reason);
- }
- const url=fvOutput(state.data,cfg);
- if(!url){
-  await dbRun(env.DB,"UPDATE image_jobs SET status='failed',error='上游视频结果格式不兼容' WHERE id=? AND user_id=? AND status='pending'",id,user.id);
-  return {ok:true,status:"failed",error:"生成完成但没有返回可播放的视频",officialUrl:cfg.official};
- }
- const external=JSON.stringify({...ref,url});
- const mark=await dbRun(env.DB,"UPDATE image_jobs SET status='complete',external_id=?,finished_at=? WHERE id=? AND user_id=? AND status='pending'",external,Date.now(),id,user.id);
- if(!mark.meta?.changes)return {ok:true,status:"pending",waitSeconds:15,startedAt:job.created_at};
- if(job.message_id)await dbRun(env.DB,"UPDATE messages SET body=? WHERE id=? AND user_id=? AND (model IS NULL OR model<>?)","视频已生成（保存在原设备，网站不保存）",job.message_id,user.id,"GIF动图").catch(()=>{});
- return {ok:true,status:"completed",provider:ref.p,url:"/api/video/result/"+id,temporaryUrl:true};
-}
-
 async function fvTransientMedia(req,env,user,id){
  requireUser(user);
  const job=await dbGet(env.DB,"SELECT external_id FROM image_jobs WHERE id=? AND user_id=? AND charged_day='video-free' AND status='complete'",id,user.id);
@@ -2215,55 +1949,6 @@ async function fvMedia(req,env,user,id){
  return new Response(obj.body,{status,headers});
 }
 
-async function createVideo(req,env,user){
- requireUser(user);
- const b=await parseJSON(req),provider=String(b.provider||"grok"),model=String(b.model||""),prompt=truncate(b.prompt,1400).trim();
- if(Object.hasOwn(FREE_VIDEO,provider))return fvCreate(env,user,b,provider,model,prompt);
- if(b.confirmed!==true)throw Object.assign(new Error("生成可能收费，必须由用户确认"),{status:400});
- if(!Object.hasOwn(VIDEO_MODELS,provider)||!VIDEO_MODELS[provider].includes(model))throw Object.assign(new Error("该视频模型没有适配的官方接口"),{status:400});
- if(!prompt)throw Object.assign(new Error("请输入视频描述"),{status:400});
- const key=await authorizedVideoKey(env,user,provider),ratio=b.ratio==="9:16"?"9:16":"16:9";
- let endpoint,params,headers={"content-type":"application/json",accept:"application/json"};
- if(provider==="grok"){
-  endpoint="https://api.x.ai/v1/videos/generations";headers.authorization="Bearer "+key;
-  params={model,prompt,duration:6,resolution:"720p"};
- }else if(provider==="runway"){
-  if(prompt.length>1000)throw Object.assign(new Error("Runway 提示词最多 1000 字符"),{status:400});
-  endpoint="https://api.dev.runwayml.com/v1/text_to_video";headers.authorization="Bearer "+key;headers["X-Runway-Version"]="2024-11-06";
-  params={model,promptText:prompt,ratio:ratio==="9:16"?"720:1280":"1280:720",duration:model==="veo3.1_fast"?8:5};
- }else if(provider==="luma"){
-  endpoint="https://api.lumalabs.ai/dream-machine/v1/generations/video";headers.authorization="Bearer "+key;
-  params={model,prompt,aspect_ratio:ratio};
- }else if(provider==="vidu"){
-  endpoint="https://api.vidu.com/ent/v2/text2video";headers.authorization="Token "+key;
-  params={model,prompt,duration:5,aspect_ratio:ratio,resolution:"720p"};
- }
- const result=await requestVideoApi(endpoint,{method:"POST",headers,body:JSON.stringify(params)},provider,true);
- const id=provider==="grok"?result?.request_id:provider==="vidu"?result?.task_id:result?.id;
- if(typeof id!=="string"||!/^[A-Za-z0-9_-]{4,160}$/.test(id))
-  throw Object.assign(new Error("服务商可能已创建任务但未返回有效编号；请先到服务商后台核对，禁止盲目重试"),{status:502});
- return {ok:true,provider,model,requestId:id,status:"pending"};
-}
-async function queryVideo(req,env,user){
- requireUser(user);
- const b=await parseJSON(req),provider=String(b.provider||"grok"),id=String(b.requestId||"");
- if(provider==="free"&&fvId(id))return fvStatus(env,user,id);
- if(Object.hasOwn(FREE_VIDEO,provider))return fvStatus(env,user,id);
- if(!Object.hasOwn(VIDEO_MODELS,provider))throw Object.assign(new Error("不支持此视频服务商"),{status:400});
- if(!/^[A-Za-z0-9_-]{4,160}$/.test(id))throw Object.assign(new Error("无效的视频任务编号"),{status:400});
- const key=await authorizedVideoKey(env,user,provider),headers={accept:"application/json"};
- let endpoint;
- if(provider==="grok"){endpoint="https://api.x.ai/v1/videos/"+encodeURIComponent(id);headers.authorization="Bearer "+key}
- else if(provider==="runway"){endpoint="https://api.dev.runwayml.com/v1/tasks/"+encodeURIComponent(id);headers.authorization="Bearer "+key;headers["X-Runway-Version"]="2024-11-06"}
- else if(provider==="luma"){endpoint="https://api.lumalabs.ai/dream-machine/v1/generations/"+encodeURIComponent(id);headers.authorization="Bearer "+key}
- else if(provider==="vidu"){endpoint="https://api.vidu.com/ent/v2/tasks/"+encodeURIComponent(id)+"/creations";headers.authorization="Token "+key}
- const data=await requestVideoApi(endpoint,{method:"GET",headers},provider,false);
- const status=videoStatus(provider,data);
- const found=provider==="grok"?data?.video?.url:provider==="runway"?(Array.isArray(data?.output)?data.output[0]:null):
-  provider==="luma"?data?.assets?.video:data?.creations?.[0]?.url;
- const url=status==="completed"&&typeof found==="string"&&/^https:\/\/[^ ]{8,4096}$/i.test(found)?found:null;
- return {ok:true,provider,status,url,temporaryUrl:Boolean(url),error:status==="failed"?"服务商生成失败，请检查官方后台任务详情":null};
-}
 async function upstreamConnectivity(req){
  const cache=caches.default,key=new Request(new URL("/health/connectivity",req.url).toString());
  const cached=await cache.match(key).catch(()=>null);
@@ -2441,9 +2126,7 @@ async function main(req,env){
  if(path==="/api/files/upload"&&req.method==="POST")return response(await uploadFile(req,env,user));
  const fm=path.match(/^\/api\/files\/([0-9a-f-]{36})$/);
  if(fm&&req.method==="GET")return readFile(env,user,fm[1]);
- if(path==="/api/video"&&req.method==="POST")return response(await createVideo(req,env,user));
- if(path==="/api/video/status"&&req.method==="POST")return response(await queryVideo(req,env,user));
- if(path==="/api/video/retry"&&req.method==="POST")return response(await fvRetry(req,env,user));
+ if(req.method==="POST"&&(path==="/api/video"||path==="/api/video/status"||path==="/api/video/retry"))return fail("视频生成已下线",410);
  const transientVideo=path.match(/^\/api\/video\/result\/([0-9a-f-]{36})$/i);
  if(transientVideo&&req.method==="GET")return fvTransientMedia(req,env,user,transientVideo[1]);
  const freeVideoFile=path.match(/^\/api\/video\/media\/([0-9a-f-]{36})$/i);
