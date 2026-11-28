@@ -396,6 +396,7 @@ const providerRouteLabel=p=>({official:"官方直连",third:"第三方",free:"�
 const modelRoute=m=>m.availableWith==="openrouter-key"?"openrouter":m.provider;
 const CHAT_PROVIDER_LABELS=Object.freeze({free:"免费自动",freetext:"LTX",freewan:"Wan",freeloop:"Wan",openrouter:"OpenRouter",groq:"Groq",openai:"OpenAI",claude:"Claude",gemini:"Gemini",grok:"Grok",qwen:"千问",cerebras:"Cerebras",deepseek:"DeepSeek",yandex:"Yandex",gigachat:"GigaChat",runway:"Runway",luma:"Luma",vidu:"Vidu"});
 function providerLabel(p){return Object.hasOwn(CHAT_PROVIDER_LABELS,p)?CHAT_PROVIDER_LABELS[p]:$("keyProvider")?.querySelector('option[value="'+p+'"]')?.textContent||p}
+function compactBrand(domain,name){const mark=node("span","provider-brand-mark");mark.setAttribute("aria-hidden","true");mark.append(node("span","provider-brand-fallback",String(name||"AI").slice(0,2).toUpperCase()));const img=node("img","provider-brand-img");img.alt="";img.width=24;img.height=24;img.loading="lazy";img.referrerPolicy="no-referrer";img.onload=()=>{if(img.naturalWidth>=24)mark.classList.add("has-logo");else img.remove()};img.onerror=()=>img.remove();mark.append(img);img.src="https://www.google.com/s2/favicons?domain="+encodeURIComponent(domain)+"&sz=64";return mark}
 function providerLogo(p){
  const mark=node("span","provider-brand-mark");mark.setAttribute("aria-hidden","true");
  const domain=PROVIDER_BRAND_DOMAINS[p];
@@ -409,7 +410,7 @@ function providerLogo(p){
 function renderProviderPicker(){
  const select=$("keyProvider"),picker=$("providerPicker"),summary=$("providerPickerSummary"),list=$("providerPickerList"),p=select.value;
  $("keyProviderNative").hidden=true;picker.hidden=false;
- const summaryKey=p+":"+Boolean(S.savedProviders[p])+":"+Boolean(S.savedProviders[p]?.verified);if(summary.dataset.provider!==summaryKey){summary.dataset.provider=summaryKey;summary.replaceChildren(providerLogo(p),node("strong","",providerLabel(p)),node("span","compact-connect-state"+(S.savedProviders[p]?.verified?" connected":""),S.savedProviders[p]?.verified?"已连接":S.savedProviders[p]?"待验证":""))}
+ const summaryKey=p+":"+Boolean(S.savedProviders[p])+":"+Boolean(S.savedProviders[p]?.verified);if(summary.dataset.provider!==summaryKey){summary.dataset.provider=summaryKey;summary.replaceChildren(providerLogo(p),node("strong","",providerLabel(p)),node("span","compact-connect-state",S.savedProviders[p]&&!S.savedProviders[p]?.verified?"待验证":""))}
  if(!picker.open)return;
  const options=Array.from(select.options);
  const signature=p+"|"+options.map(o=>o.value+":"+Boolean(S.savedProviders[o.value])).join("|");
@@ -425,6 +426,7 @@ function renderProviderPicker(){
  }
 }
 function connected(p){return !!(S.savedProviders[p]||S.keys[p])}
+function syncChatConnectButton(){const b=$("keySaveLabel"),rec=S.savedProviders[$("keyProvider").value],ok=!!rec?.verified&&!$("personalKey").value.trim();b.textContent=ok?"已连接":"连接";b.classList.toggle("connected-button",ok)}
 function refreshKeyPanel(){
  const provider=$("keyProvider").value,rec=S.savedProviders[provider],site=KEY_SITES[provider];
  renderProviderPicker();
@@ -440,7 +442,7 @@ function refreshKeyPanel(){
  provider==="openrouter"?"可用官方账号授权，或创建 API Key。":"登录服务商账号创建 API Key，再返回粘贴。";
  $("personalKey").value="";
  $("personalKey").placeholder=rec?"••••••••••":"API Key";
- $("keySaveLabel").textContent="连接";
+ syncChatConnectButton();
  $("savedConnectionPanel").hidden=!rec;
  $("useSavedKey").hidden=!rec;
  $("disconnectProvider").hidden=!rec;
@@ -796,9 +798,9 @@ function initFilmSkills(){
  const choice=$("videoSkillChoice"),list=$("videoSkillList");if(choice.options.length)return;
  const auto=node("option","","自动匹配");auto.value="auto";choice.append(auto);
  VIDEO_PROJECT_SKILLS.forEach(([name,icon,status,task,url],index)=>{
-  const option=node("option","",name);option.value=String(index);choice.append(option);
-  const row=node("div","video-skill-row"),button=node("button","video-skill-select"),label=node("span","video-skill-label");button.type="button";label.append(node("strong","",name),node("small","",status));button.append(iconSlot(icon),label);button.addEventListener("click",()=>{choice.value=String(index);choice.focus({preventScroll:true})});
-  const source=node("a","video-skill-source","来源");source.href=url;source.target="_blank";source.rel="noopener noreferrer";source.setAttribute("aria-label",name+" 技能来源");row.append(button,source);list.append(row);renderIcons(row);
+  const shortName=name.replace(/\s+Skills?$/i,"");const option=node("option","",shortName);option.value=String(index);choice.append(option);
+  const row=node("div","video-skill-row"),button=node("button","video-skill-select"),label=node("span","video-skill-label");button.type="button";label.append(node("strong","",shortName));const brandDomains={1:"seedance.ai",3:"klingai.com",4:"tiktok.com",6:"jimeng.jianying.com",7:"klingai.com",8:"remotion.dev",9:"heygen.com"};button.append(brandDomains[index]?compactBrand(brandDomains[index],shortName):iconSlot(icon),label);button.addEventListener("click",()=>{choice.value=String(index);void saveFilmSkill()});button.title=task;
+  const source=node("a","video-skill-source","详情");source.href=url;source.target="_blank";source.rel="noopener noreferrer";source.setAttribute("aria-label",name+" 技能来源");row.append(button,source);list.append(row);renderIcons(row);
  });
 }
 function filmPlanUI(status,busy){$("filmPlanStatus").textContent=status;$("videoProjectPlan").disabled=busy;$("filmPlanStop").hidden=!busy;$("filmPlanStop").disabled=filmPlanStopPending;}
@@ -1051,6 +1053,7 @@ async function stopFilmSequence(){
 }
 
 function directFilmVideo(e){e?.preventDefault();void startFilmSequence()}
+function syncFilmConnectButton(){const provider=$("filmProvider").value,own=filmPrefs?.connections?.find(x=>x.provider===provider),ok=provider!=="auto"&&(own?.filmKey===true||(filmPrefs?.provider===provider&&filmPrefs?.hasKey===true))&&!$("filmApiKey").value.trim(),b=$("filmConnect");b.textContent=ok?"已连接":"连接";b.classList.toggle("connected-button",ok)}
 function updateFilmPersonalFields(){
  const provider=$("filmProvider").value;$("filmPersonalFields").hidden=provider==="auto";$("filmProviderLogo").replaceChildren(providerLogo(provider==="auto"?"free":provider));$("filmVideoLogo").replaceChildren(providerLogo("freetext"));const state=$("filmProviderState"),own=filmPrefs?.connections?.find(x=>x.provider===provider);const verified=provider!=="auto"&&(own?.filmKey===true||(filmPrefs?.provider===provider&&filmPrefs?.hasKey===true));state.textContent=provider==="auto"?"平台免费":verified?"已连接":own?"待验证":"";state.classList.toggle("connected",verified);if(KEY_SITES[provider])$("filmKeyLink").href=KEY_SITES[provider].url;
  if(provider!=="auto"&&filmPrefs?.provider!==provider){
@@ -1058,6 +1061,7 @@ function updateFilmPersonalFields(){
   $("filmModel").value=item?.model||"";$("filmApiKey").value="";$("filmPaidConsent").checked=false;
   $("filmApiKey").placeholder=item?"••••••••••":"API Key";
  }
+ syncFilmConnectButton();
 }
 function fillFilmPreferences(p){
  filmPrefs=p;$("filmProvider").value=p.provider||"auto";$("filmModel").value=p.model||"";$("filmApiKey").value="";$("filmApiKey").placeholder=p.hasKey||p.linked?"••••••••••":"API Key";
@@ -1078,7 +1082,7 @@ async function saveFilmPreferences(e){
 }
 async function saveFilmSkill(){
  if(!S.user)return;const owner=S.user.id,skill=$("videoSkillChoice").value;
- try{const r=await api("/api/film/settings/skill",{skill},10000);if(S.user?.id===owner){filmPrefs=r.settings;$("filmSettingsStatus").textContent="技能选择已保存";$("filmSkillSave").textContent="已保存";setTimeout(()=>{$("filmSkillSave").textContent="保存技能选择"},1500)}}catch(e){$("filmSettingsStatus").textContent=humanError(e)}
+ try{const r=await api("/api/film/settings/skill",{skill},10000);if(S.user?.id===owner){filmPrefs=r.settings;$("filmSettingsStatus").textContent="已保存"}}catch(e){$("filmSettingsStatus").textContent=humanError(e)}
 }
 async function clearFilmKey(){if(!S.user)return;try{const r=await api("/api/film/settings/clear-key",{},10000);fillFilmPreferences(r.settings);$("filmSettingsStatus").textContent="已清除电影专用密钥";void loadFilmQuota()}catch(e){$("filmSettingsStatus").textContent=humanError(e)}}
 let filmQuotaEpoch=0;
@@ -1086,11 +1090,7 @@ async function loadFilmQuota(){
  const owner=S.user?.id,epoch=++filmQuotaEpoch,root=$("filmQuotaResults");if(!owner){root.replaceChildren(node("p","video-project-note","登录后查看额度"));return}
  root.replaceChildren(node("p","video-project-note","读取额度…"));
  try{const d=await api("/api/film/quota",undefined,15000);if(S.user?.id!==owner||filmQuotaEpoch!==epoch)return;root.replaceChildren();
-  for(const q of d.quotas||[]){const group=node("section","film-quota-group");group.append(node("strong","",q.name+" · "+q.kind),node("p","video-project-note",q.model||""));
-   if(!q.snapshots?.some(x=>x.fields?.length))group.append(node("p","video-project-note","总量、剩余及重置时间：服务商未提供"));
-   for(const snap of q.snapshots||[]){if(!snap.fields?.length)continue;group.append(node("p","video-project-note",(snap.model||"账号额度")+" · "+new Date(snap.at).toLocaleString()+(snap.stale?"（上次记录）":"")));group.append(usageTable(["额度","总量","已用","剩余","重置"],snap.fields.map(f=>[f.label,usageNum(f.limit),usageNum(f.limit-f.remaining),usageNum(f.remaining),f.resetAt?new Date(f.resetAt).toLocaleString():"未提供"])))}
-   root.append(group);
-  }
+  for(const kind of ["平台免费","个人 API"]){const items=(d.quotas||[]).filter(q=>q.kind===kind);if(items.length)root.append(node("h3","usage-title",kind),compactQuotaTable(items,"name"))}
   root.append(node("h3","","今日电影模式使用量"),usageTable(["类型 / 模型","任务","成功"],(d.usage||[]).map(x=>[x.kind+" / "+(x.model||"未确认"),usageNum(x.total),usageNum(x.succeeded)])));
  }catch(e){if(S.user?.id===owner&&filmQuotaEpoch===epoch)root.replaceChildren(node("p","video-project-note",humanError(e)))}
 }
@@ -1522,6 +1522,7 @@ function usageModelRows(d){
  }
  return [...models.values()].sort((a,b)=>b.requests-a.requests||a.name.localeCompare(b.name,"zh-CN")).map(m=>[m.name+(m.name.startsWith(usageProviderName(m.provider))?"":" · "+usageProviderName(m.provider)),usageNum(m.requests)+" 次"]);
 }
+function compactQuotaTable(items,providerKey){const wrap=node("div","usage-table-wrap"),table=node("table","usage-table"),head=node("thead"),tr=node("tr");for(const label of ["服务商","总量","已用","剩余"])tr.append(node("th","",label));head.append(tr);table.append(head);const body=node("tbody");for(const q of items){const provider=q[providerKey],valid=(q.snapshots||[]).filter(s=>!s.stale).flatMap(s=>(s.fields||[]).filter(f=>/每日请求/.test(f.label)&&(!f.resetAt||f.resetAt>Date.now())&&Number.isFinite(f.limit)&&Number.isFinite(f.remaining)).map(f=>({s,f})));const unique=valid.length===1?valid[0]:valid.find(x=>x.s.model==="account");const row=node("tr"),label=node("td"),btn=node("button","quota-provider-link",providerLabel(provider));btn.type="button";label.append(btn);row.append(label);for(const n of unique&&!q.sharesSitePool?[unique.f.limit,unique.f.limit-unique.f.remaining,unique.f.remaining]:[null,null,null])row.append(node("td","",n===null?"—":usageNum(n)));body.append(row);const detail=node("tr","quota-detail-row"),cell=node("td");cell.colSpan=4;detail.hidden=true;btn.setAttribute("aria-expanded","false");btn.onclick=()=>{detail.hidden=!detail.hidden;btn.setAttribute("aria-expanded",String(!detail.hidden))};if(q.sharesSitePool)cell.append(node("p","small-note","与平台共用额度，不重复统计"));if(!q.snapshots?.length)cell.append(node("p","small-note","服务商未提供额度"));for(const snap of q.snapshots||[]){cell.append(node("p","small-note",(snap.model||"账号")+" · "+new Date(snap.at).toLocaleString()+(snap.stale?" · 上次记录":"")));if(snap.fields?.length)cell.append(usageTable(["项目","总量","已用","剩余","重置"],snap.fields.map(f=>[f.label,usageNum(f.limit),usageNum(f.limit-f.remaining),usageNum(f.remaining),f.resetAt?new Date(f.resetAt).toLocaleString():"—"])));if(snap.source==="key")cell.append(node("p","small-note","今日 Key 消耗："+usageNum(snap.dailyCredit)+" · 支出上限："+usageNum(snap.creditLimit)+" · 剩余支出限额："+usageNum(snap.creditRemaining)))}detail.append(cell);body.append(detail)}table.append(body);wrap.append(table);return wrap}
 function renderUsageOverview(d){
  const root=$("settingsUsageResults"),fragment=document.createDocumentFragment();
  const rows=Array.isArray(d.rows)?d.rows:[],pools=d.pools||{};
@@ -1530,7 +1531,7 @@ function renderUsageOverview(d){
  fragment.append(usageModeBar("个人模式","personal",usageSum(rows.filter(r=>r.mode==="personal")),pools.personal));
  const automaticCount=new Set([...(d.automaticModels||d.sharedModels||[]),...(!d.catalogComplete?(S.sharedFreeModels||[]).map(m=>({provider:"openrouter",model:m.sharedModel||String(m.id||"").replace(/^free:or\//,"")})):[])].filter(m=>m.model).map(m=>m.provider+"|"+m.model)).size;
  const modelHeading=node("div","usage-mode-head usage-title");modelHeading.append(node("strong","","模型用量"),node("span","usage-mode-count",(d.catalogComplete?"":"已知 ")+"免费自动线路 "+automaticCount+" 项"));fragment.append(modelHeading);
- const list=usageModelRows(d);if(list.length)fragment.append(usageTable(["模型名称","今日用量"],list));else fragment.append(node("p","small-note","暂无模型统计"));
+ const list=usageModelRows(d),details=node("details","compact-model-manage");details.append(node("summary","","模型用量详情"));if(list.length)details.append(usageTable(["模型名称","今日用量"],list));else details.append(node("p","small-note","暂无模型统计"));fragment.append(details);for(const [kind,title] of [["shared","平台免费额度"],["personal","个人 API 额度"]]){fragment.append(node("h3","usage-title",title),compactQuotaTable((d.quotas||[]).filter(q=>q.kind===kind),"provider"))}
  root.replaceChildren(fragment);
  renderUsageDetails(d);
 }
@@ -4604,6 +4605,8 @@ function modelIsSelected(m){
  if(m.type==="video")return false;
  return !freeModeChoosing&&S.composerMode==="text"&&(m.type==="text"||m.outputImages)&&S.provider===via&&S.model===m.id;
 }
+function modelSkills(item){const skills=[];if(item.type==="text")skills.push("对话");if(item.reasoning===true||item.reasoning_supported===true||/(?:gpt-oss|deepseek-r1|thinking|reasoner|nemotron)/i.test(item.id))skills.push("推理");if(item.inputImages===true)skills.push("识图");if(item.inputFiles===true)skills.push("文档");if(item.outputImages===true||item.type==="image")skills.push("作图");if(item.type==="audio")skills.push("语音");if(item.type==="text")skills.push("编程");return [...new Set(skills)]}
+function modelDetail(item,via,price,rank,verified,saved,blocked){const root=$("modelDetailContent");root.replaceChildren();const heading=node("div","model-detail-heading");heading.append(providerLogo(via),node("strong","",item.name||item.id));root.append(heading);const fields=[["模型 ID",item.sharedModel||item.id],["服务商",providerLabel(via)],["接入方式",providerRouteLabel(via)],["额度属性",price],["连接状态",via==="free"?"平台线路":verified?"已连接":saved?"待验证":"未连接"],["支持能力",modelSkills(item).join(" · ")||"待核实"],["上下文长度",item.contextLength??item.context_length??item.context??"未提供"],["最大输出",item.maxOutputTokens??item.max_completion_tokens??"未提供"],["输入价格",item.inputPrice??"未提供"],["输出价格",item.outputPrice??"未提供"],["历史状态",blocked?"不可用":rank.health.recentFailure?"近期异常":rank.health.last?"已成功使用":"未记录"],["能力评级",rank.tier.label||"未提供"]];for(const [label,value] of fields){const row=node("div","model-detail-field");row.append(node("span","",label),node("span","",String(value)));root.append(row)}root.append(node("p","small-note","额度、上下文及价格以服务商实际返回为准；未提供的数据不估算。编程指文本代码辅助，不代表能够执行代码。"));if(KEY_SITES[via]){const link=node("a","compact-get","官方密钥入口");link.href=KEY_SITES[via].url;link.target="_blank";link.rel="noopener noreferrer";root.append(link)}show("modelDetailDialog")}
 function renderModels(){
  refreshChatModeUI();
  const models=allModels();ensureModelHistory();
@@ -4625,7 +4628,7 @@ function renderModels(){
  visible.sort((a,b)=>{if(S.source==="favorites")return favoriteRank.get(modelFavoriteKey(a))-favoriteRank.get(modelFavoriteKey(b));const x=ranks.get(a),y=ranks.get(b);return Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||(S.source==="recent"?y.health.last-x.health.last:0)||Number(modelIsSelected(b))-Number(modelIsSelected(a))||x.group-y.group||y.tier.score-x.tier.score||y.health.last-x.health.last||Number(hasFreeAccess(b))-Number(hasFreeAccess(a))||Number(providerRoute(modelRoute(b))==="official")-Number(providerRoute(modelRoute(a))==="official")||a.id.localeCompare(b.id)});
  const count=visible.length,shown=visible.slice(0,(S.modelPage+1)*60);
  const sharedCount=visible.filter(m=>m.free===true&&(m.provider==="free"||m.builtinVideo)).length,personalFree=visible.filter(m=>m.freeTier===true||(m.free===true&&m.provider!=="free"&&!m.builtinVideo)).length;
- $("modelCount").textContent=count+" 个条目"+(S.source==="favorites"?" · 已收藏 "+savedFavorites.length+"/40":S.source==="recent"?" · 最近成功使用":S.source==="free"||S.filter==="free"?" · 直接免费 "+sharedCount+" · 个人额度 "+personalFree:" · 免费优先 · 成功优先");
+ $("modelCount").textContent=count+" 个模型"+(S.source==="favorites"?" · "+savedFavorites.length+"/40":"");
  const retry=$("modelCatalogRetry");retry.hidden=!catalogError;retry.title=catalogError;retry.textContent=S.loadedCatalog?"更新目录":"重试目录";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
@@ -4639,14 +4642,12 @@ function renderModels(){
   const row=node("div","model-row"+(selected?" selected":"")),info=node("div","model-info"),title=node("strong","",item.name||item.id);
   if(selected){row.setAttribute("aria-current","true");row.setAttribute("aria-label","当前聊天模型："+(item.name||item.id))}
   const saved=S.savedProviders[via],verified=!!saved?.verified,blocked=unavailableChatModel(via,item.id),rank=ranks.get(item);
-  const tag=node("span","price-tag"+(item.free?" free":""),blocked?(blocked.code==="MODEL_RETIRED"?"已停用":"当前不可用"):item.unlisted?"目录未列出":selected?"✓ 当前使用":item.builtinVideo?(item.free?"共享免费额度":"个人 API · 可能收费"):via==="free"?(item.shared?"共享免费 · 无需绑定":"免费线路"):verified?"密钥已验证":saved?"待验证":item.free?"免费 · 需连接":"需连接");
-  const priceLabel=item.freeTier?"个人免费额度 · 付费账号可能收费":item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号额度 / 可能收费";
-  title.prepend(providerLogo(via));title.append(node("span","provider-route-label "+providerRoute(via),providerRouteLabel(via)),node("span","price-tag"+(item.free?" free":""),priceLabel));
-  if(rank.health.recentFailure)title.append(node("span","price-tag","近期异常"));
-  else if(rank.health.last)title.append(node("span","price-tag free",rank.health.legacy?"历史成功匹配":"已成功使用"));
-  if(rank.tier.label)title.append(node("span","price-tag",rank.tier.label));title.append(tag);
-  const owner=domesticGroupFor(item);
-  info.append(title,node("small","",via==="free"?(item.shared?"本站共享零价文字模型 · 无需个人密钥 · ID："+item.sharedModel:"免费自动路由 · 实际上游模型可能变化"):(owner?"中国模型 · "+owner.name+" · ":"")+"接入："+providerLabel(via)+" · ID："+item.id+(item.freeTier?" · 需要本人免费计划/API Key，额度及计费由服务商决定":"")+(item.inputImages?" · 支持图片分析":"")+(item.inputFiles?" · 支持PDF":"")+(item.outputImages?" · 支持图片输出":"")));
+  const priceLabel=item.freeTier?"个人免费":item.free===true?"限额免费":via==="openrouter"&&item.inputPrice!=null&&item.outputPrice!=null?"付费":"按账号";
+  title.prepend(providerLogo(via));const line=node("div","model-compact-line"),status=blocked?"不可用":via==="free"?"共享":verified?"已连接":saved?"待验证":"未连接";
+  line.append(node("span","",priceLabel+" · "),node("span",verified&&!blocked?"model-linked":"",status));
+  const skills=modelSkills(item);if(skills.length)line.append(node("span","model-compact-skills"," · "+skills.join(" · ")));
+  const detail=node("button","model-detail-link","详情");detail.type="button";detail.addEventListener("click",()=>modelDetail(item,via,priceLabel,rank,verified,saved,blocked));line.append(detail);
+  info.append(title,line);
   const actionable=["text","image"].includes(item.type);
   const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
   button.disabled=!!blocked||!actionable||selected||!!item.favoriteMissing&&!connected(via);
@@ -5249,8 +5250,8 @@ function wire(){
  $("filmSettingsOpen").addEventListener("click",openFilmSettings);
  $("filmHistoryOpen").addEventListener("click",()=>void openFilmHistory());
  $("filmSettingsForm").addEventListener("submit",e=>void saveFilmPreferences(e));
- $("filmSkillSave").addEventListener("click",()=>void saveFilmSkill());
- $("filmProvider").addEventListener("change",updateFilmPersonalFields);
+ $("videoSkillChoice").addEventListener("change",()=>void saveFilmSkill());
+ $("filmProvider").addEventListener("change",updateFilmPersonalFields);$("filmApiKey").addEventListener("input",syncFilmConnectButton);$("personalKey").addEventListener("input",syncChatConnectButton);
  $("filmRemoveKey").addEventListener("click",()=>void clearFilmKey());
  $("filmQuotaRefresh").addEventListener("click",()=>void loadFilmQuota());
  $("filmSave").addEventListener("click",()=>void saveFilmDraft());
