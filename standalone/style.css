@@ -1401,3 +1401,5 @@ html.aigzt-ios-pwa #workModelDialog[open]{
 .provider-picker-info small{font-size:10px;color:#637b84;line-height:1.2}
 .model-catalog-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
 #bindProviderQuick{font-size:11px;padding:5px 8px;min-height:26px;white-space:nowrap}
+
+.film-sequence-progress{display:grid;gap:8px;padding:10px 0}.film-sequence-progress[hidden],#filmCustomDurationWrap[hidden],#videoProjectPlan[hidden]{display:none}.film-sequence-progress progress{width:100%;height:7px;accent-color:#243e4b}.film-sequence-row{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:36px;border-bottom:1px solid #e7eaee;font-size:13px}.film-sequence-row span{min-width:0;overflow-wrap:anywhere}.film-sequence-row small{white-space:nowrap;color:#64748b}.video-project-form input[type=number]{width:100%;border:1px solid #dce3e9;padding:10px;border-radius:8px;font-size:16px}#filmFinalResult{margin:12px 0}
