@@ -299,6 +299,7 @@ async function refreshAvatar(){
 }
 function setAuthUI(){
  const logged=!!S.user,uid=S.user?.id||null;
+ resetVideoProjectOwner(uid);
  $("accountName").textContent=logged?S.user.email:"登录 / 注册";
  $("avatarQuickInput").disabled=!logged;
  if(uid!==avatarOwner){avatarOwner=uid;refreshAvatar()}
@@ -834,10 +835,15 @@ async function runVideoProject(owner,epoch,id){
   if(videoProjectCurrent(owner,epoch)){videoProjectFlight=false;if(again)scheduleVideoProject(owner,epoch,id,delay)}
  }
 }
+function resetVideoProjectOwner(owner){
+ if(videoProjectOwner===owner)return;
+ clearTimeout(videoProjectTimer);++videoProjectEpoch;videoProjectJob=null;videoProjectFlight=false;clearVideoProjectOutput();videoProjectOwner=owner;
+ $("videoProjectPrompt").value="";videoProjectUI(owner?"":"登录后使用免费视频生成",false);
+}
 async function restoreVideoProject(){
- const owner=S.user?.id;if(!owner){videoProjectUI("登录后使用免费视频生成",false);return}
- if(videoProjectOwner===owner&&videoProjectJob)return;
- if(videoProjectOwner!==owner){clearTimeout(videoProjectTimer);++videoProjectEpoch;videoProjectJob=null;videoProjectFlight=false;clearVideoProjectOutput();videoProjectOwner=owner}
+ const owner=S.user?.id||null;resetVideoProjectOwner(owner);
+ if(!owner){videoProjectUI("登录后使用免费视频生成",false);return}
+ if(videoProjectJob)return;
  const epoch=videoProjectEpoch;
  try{
   const r=await api("/api/video/project/latest",undefined,10000);
