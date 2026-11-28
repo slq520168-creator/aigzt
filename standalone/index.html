@@ -54,7 +54,7 @@
   <main class="main">
    <div class="page-actions" role="group" aria-label="页面快捷操作">
     <div class="page-actions-left"><button class="icon-btn mobile-menu" id="menuBtn" aria-label="打开侧栏"><span class="ui-icon" data-icon="menu" aria-hidden="true"></span></button></div>
-    <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button><button class="icon-btn" id="headerChatModels" aria-label="聊天模型设置" title="聊天模型设置"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span></button></div>
+    <div class="page-actions-right"><button class="icon-btn" id="headerNew" aria-label="新聊天"><span class="ui-icon" data-icon="square-pen" aria-hidden="true"></span></button></div>
    </div>
    <section class="free-tools-board" id="freeToolsBoard" hidden aria-label="免费工具">
     <div class="page-heading free-tools-intro"><button type="button" class="icon-btn free-tools-close page-back" id="freeToolsClose" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>免费工具</h2></div>
@@ -115,7 +115,6 @@
        <button type="button" data-chat-mode="auto" aria-pressed="true"><span>自动模式</span><span class="composer-mode-mark">✓</span></button>
        <button type="button" data-chat-mode="free" aria-pressed="false"><span>自由模式</span><span class="composer-mode-mark"></span></button>
        <button type="button" data-chat-mode="personal" aria-pressed="false"><span>个人模式</span><span class="composer-mode-mark"></span></button>
-       <p id="composerModeNote" class="composer-mode-note" role="status" hidden></p>
       </div>
      </div>
      <div class="composer-inner">
@@ -294,7 +293,7 @@
  </dialog>
 
  <dialog id="modelDialog" class="modal wide-modal workspace-view" aria-label="模型大厅">
-  <div class="page-heading"><button class="close-modal page-back" data-close="modelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>模型大厅</h2><details id="chatModeMenu" class="model-header-menu"><summary aria-label="切换聊天模式" title="切换聊天模式"><strong id="chatModeCurrent">自动模式</strong><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary><div class="model-header-menu-panel"><button type="button" id="chatAutoChoice" class="model-mode-button"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span class="model-mode-text"><strong>自动模式</strong><small>后台切换直接免费模型</small></span><span id="chatAutoMark" class="model-mode-mark" aria-hidden="true"></span></button><button type="button" id="chatBoundChoice" class="model-mode-button"><span class="ui-icon" data-icon="sliders-horizontal" aria-hidden="true"></span><span class="model-mode-text"><strong>自由模式</strong><small>自行选择免费或个人模型</small></span><span id="chatBoundMark" class="model-mode-mark" aria-hidden="true"></span></button></div></details></div>
+  <div class="page-heading"><button class="close-modal page-back" data-close="modelDialog" aria-label="返回上一页"><span class="ui-icon" data-icon="arrow-left" aria-hidden="true"></span></button><h2>模型大厅</h2><details id="chatModeMenu" class="model-header-menu"><summary aria-label="切换聊天模式" title="切换聊天模式"><strong id="chatModeCurrent">自动模式</strong><span class="ui-icon" data-icon="chevron-down" aria-hidden="true"></span></summary><div class="model-header-menu-panel"><button type="button" id="chatAutoChoice" class="model-mode-button"><span class="ui-icon" data-icon="layers" aria-hidden="true"></span><span class="model-mode-text"><strong>自动模式</strong></span><span id="chatAutoMark" class="model-mode-mark" aria-hidden="true"></span></button><button type="button" id="chatBoundChoice" class="model-mode-button"><span class="ui-icon" data-icon="sliders-horizontal" aria-hidden="true"></span><span class="model-mode-text"><strong>自由模式</strong></span><span id="chatBoundMark" class="model-mode-mark" aria-hidden="true"></span></button><button type="button" id="chatPersonalChoice" class="model-mode-button"><span class="ui-icon" data-icon="sliders-horizontal" aria-hidden="true"></span><span class="model-mode-text"><strong>个人模式</strong></span><span id="chatPersonalMark" class="model-mode-mark" aria-hidden="true"></span></button></div></details></div>
   <div class="page-content" id="modelScroll">
     <div class="model-sticky-filters">
   <div class="model-tools"><input id="modelSearch" type="search" placeholder="搜索模型或服务商" aria-label="搜索模型"><select id="modelFilter" aria-label="模型筛选"><option value="all">全部模型</option><option value="free">免费及免费额度</option><option value="code">编程</option><option value="text">文字聊天</option><option value="image">图片模型</option><option value="video">视频模型</option></select></div>

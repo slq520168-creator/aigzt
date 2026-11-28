@@ -123,6 +123,7 @@ async function authentication(req,env,action){
  return response({ok:true,user:{id:row.id,email:row.email}},200,{"set-cookie":await createSession(env,row.id)});
 }
 const NOVAI_PRO_FREE_IDS=new Set(["glm-4.7-flash","glm-4.1v-thinking-flash","glm-4.6v-flash","cogview-3-flash","cogvideox-flash"]);
+function isPersonalFreeChoice(provider,id){return provider!=="free"&&(provider==="openrouter"&&(id==="openrouter/free"||typeof id==="string"&&id.endsWith(":free"))||providerModelIsFree(provider,id)||PERSONAL_FREE_TIER_MODELS.some(m=>m.provider===provider&&m.id===id))}
 function providerModelIsFree(provider,id){
  if(typeof id!=="string"||!id)return false;
  return provider==="novai_pro"?NOVAI_PRO_FREE_IDS.has(id):provider==="novai"?/^\[free\]/i.test(id):false;
@@ -815,7 +816,7 @@ async function callExternal(provider,model,key,messages,consent,timeoutMs=15000,
   }
  }
  if(zeroOnly){
-  if(provider!=="openrouter"||!model.endsWith(":free")||outputImages||imageOnly)throw Error("共享免费模型仅支持零价文字或原生附件分析请求");
+  if(provider!=="openrouter"||!(model==="openrouter/free"||model.endsWith(":free"))||outputImages||imageOnly)throw Error("免费模型仅支持零价文字或原生附件分析请求");
   body.provider={max_price:{prompt:0,completion:0,request:0,image:0},allow_fallbacks:true};
  }
  if(provider==="openrouter"&&outputImages)body.modalities=imageOnly?["image"]:["image","text"];
@@ -1094,6 +1095,7 @@ async function chat(req,env,user,onDelta=null){
  requireUser(user);
  const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
  const typed=typeof body.message==="string"?body.message.trim():"";
+ if(body.chatMode==="auto"&&(provider!=="free"||body.model!=="free:auto")||body.chatMode==="free"&&!isPersonalFreeChoice(provider,body.model)||body.chatMode==="personal"&&provider==="free")throw Object.assign(Error("所选模式与模型不匹配"),{status:400,code:"MODE_MODEL_MISMATCH"});
  const video=automaticVideoRequest(body);
  if(video){
   for(const id of [video.imageId,video.endImageId].filter(Boolean)){const obj=await env.MEDIA?.head(user.id+"/"+id);if(!obj||!["image/jpeg","image/png","image/webp"].includes(obj.httpMetadata?.contentType))throw Object.assign(Error("视频参考图必须为有效图片"),{status:400});}
@@ -1208,7 +1210,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
    const capacity=await cachedChatCapacity(env,provider,model);
    const outputLimit=chatOutputBudget(provider,model,replyLevel,capacity);
    const scope=provider==="groq"?await sha(connected.key):null;
-   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),false,{scope,level:replyLevel,capacity,recordQuota:(usedModel,headers)=>recordQuota(provider,usedModel,connected.key,headers,true)});
+   result=await callExternal(provider,model,connected.key,selectedMessages,connected.consent===true,15000,outputLimit,forward,body.outputImages===true,body.imageOnly===true,nativePlan?.parts||[],remaining(),body.chatMode==="free"&&provider==="openrouter",{scope,level:replyLevel,capacity,recordQuota:(usedModel,headers)=>recordQuota(provider,usedModel,connected.key,headers,true)});
    primarySucceeded=true;
   }
   // Continuation is explicit: never automatically generate a second answer.
