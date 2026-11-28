@@ -78,6 +78,15 @@ a{color:inherit}
 .video-project-form select,.video-project-form textarea{width:100%;min-width:0;font-size:16px;padding:10px;border:1px solid var(--line,#e4e7eb);border-radius:9px;background:transparent;color:inherit}
 .video-project-form textarea{resize:vertical;min-height:100px}
 .video-project-note{font-size:12px;line-height:1.6;color:#64748b;margin:0}
+.video-project-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.video-project-options label{display:grid;gap:6px}
+.video-project-result{display:grid;gap:10px}
+.video-project-result:empty{display:none}
+.video-project-result video{width:100%;max-height:55dvh;background:#111827;border-radius:12px;object-fit:contain}
+.video-project-result a{justify-self:start;text-decoration:none}
+.video-project-planning{font-size:13px;padding:10px 0}
+.video-project-planning[open]{display:grid;gap:10px}
+.video-project-planning summary{cursor:pointer;font-weight:550}
 .video-project-body h3{font-size:15px;margin:18px 0 6px}
 .video-skill-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:0 20px}
 .video-skill-row{display:flex;align-items:center;min-width:0;min-height:58px;border-bottom:1px solid var(--line,#e4e7eb);gap:10px}

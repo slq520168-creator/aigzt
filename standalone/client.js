@@ -781,14 +781,98 @@ function openVideoProject(mode="video"){
  $("videoProjectDialog").setAttribute("aria-label",film?"电影模式":"视频模式");
  choice.value=film?"2":"0";
  show("videoProjectDialog");
+ void restoreVideoProject();
 }
-function startVideoProject(e){
+function startVideoProjectPlan(e){
  e.preventDefault();if(S.busy||chatOpenLoading||S.uploading)return;
  if(!S.user){hide("videoProjectDialog");show("authDialog");return}
  const topic=$("videoProjectPrompt").value.trim(),skill=VIDEO_PROJECT_SKILLS[Number($("videoSkillChoice").value)];if(!topic||!skill)return;
  hide("videoProjectDialog");newChat();
  $("prompt").value="视频创作策划（"+skill[0]+"）\\n"+skill[3]+"\\n本次只输出真实可交付的文本或源码，不调用视频生成服务，不声称已生成视频，不使用付费额度。\\n用户要求：\\n"+topic;
  settlePromptSize();void sendMessage(null,true,null,null,true);
+}
+let videoProjectJob=null,videoProjectEpoch=0,videoProjectFlight=false,videoProjectOwner=null,videoProjectObjectUrl=null,videoProjectTimer=null;
+function videoProjectUI(status,busy){
+ $("videoProjectStatus").textContent=status;$("videoProjectStart").disabled=busy;
+ $("videoProjectStop").hidden=!busy;$("videoProjectStop").disabled=!videoProjectJob;
+}
+function clearVideoProjectOutput(){
+ if(videoProjectObjectUrl)URL.revokeObjectURL(videoProjectObjectUrl);
+ videoProjectObjectUrl=null;$("videoProjectResult").replaceChildren();
+}
+function videoProjectCurrent(owner,epoch){return owner===S.user?.id&&epoch===videoProjectEpoch}
+async function showVideoProjectResult(owner,epoch,id){
+ const key=owner+":"+id;
+ let blob=await deviceMediaGet(key);
+ if(!(blob instanceof Blob)||!blob.type.startsWith("video/")){
+  blob=await deviceMediaBlob("/api/video/result/"+id);
+  if(!(blob instanceof Blob)||!blob.size)throw Error("视频已生成，但原文件暂时不可下载；可重新打开视频模式恢复");
+  await deviceMediaPut(key,blob);
+ }
+ if(!videoProjectCurrent(owner,epoch))return;
+ clearVideoProjectOutput();videoProjectObjectUrl=URL.createObjectURL(blob);
+ const video=node("video","chat-generated-video");video.controls=true;video.playsInline=true;video.preload="metadata";video.src=videoProjectObjectUrl;
+ const link=node("a","chat-image-stop","下载 MP4");link.href=videoProjectObjectUrl;link.download="aigzt-"+id.slice(0,8)+".mp4";
+ $("videoProjectResult").append(video,link);videoProjectUI("视频已生成",false);
+}
+function scheduleVideoProject(owner,epoch,id,delay=1500){
+ clearTimeout(videoProjectTimer);
+ videoProjectTimer=setTimeout(()=>void runVideoProject(owner,epoch,id),delay);
+}
+async function runVideoProject(owner,epoch,id){
+ if(!videoProjectCurrent(owner,epoch)||videoProjectFlight)return;
+ videoProjectFlight=true;let again=false,delay=3000;
+ try{
+  const result=await api("/api/video/project/"+id+"/advance",{},200000);
+  if(!videoProjectCurrent(owner,epoch))return;
+  if(result.status==="complete"){await showVideoProjectResult(owner,epoch,id);videoProjectJob=null}
+  else if(result.status==="failed"){videoProjectUI(result.cancelled?"已停止生成":result.error||"免费视频服务暂不可用",false);videoProjectJob=null}
+  else{videoProjectUI(result.phase==="new"?"等待提交免费模型…":result.phase==="submitting"?"正在连接免费模型…":"生成中 · 共享 GPU 排队",true);again=true;delay=Math.max(1500,Math.min(15000,(result.waitSeconds||3)*1000))}
+ }catch(e){
+  if(videoProjectCurrent(owner,epoch)){videoProjectUI("连接中断，保留原任务并继续查询",true);again=true;delay=12000}
+ }finally{
+  if(videoProjectCurrent(owner,epoch)){videoProjectFlight=false;if(again)scheduleVideoProject(owner,epoch,id,delay)}
+ }
+}
+async function restoreVideoProject(){
+ const owner=S.user?.id;if(!owner){videoProjectUI("登录后使用免费视频生成",false);return}
+ if(videoProjectOwner===owner&&videoProjectJob)return;
+ if(videoProjectOwner!==owner){clearTimeout(videoProjectTimer);++videoProjectEpoch;videoProjectJob=null;videoProjectFlight=false;clearVideoProjectOutput();videoProjectOwner=owner}
+ const epoch=videoProjectEpoch;
+ try{
+  const r=await api("/api/video/project/latest",undefined,10000);
+  if(!videoProjectCurrent(owner,epoch)||videoProjectJob||!r.job)return;
+  if(r.job.status==="complete"){await showVideoProjectResult(owner,epoch,r.job.id);return}
+  if(r.job.status==="pending"||r.job.status==="recovering"){videoProjectJob=r.job.id;videoProjectUI("恢复视频任务…",true);void runVideoProject(owner,epoch,r.job.id)}
+  else videoProjectUI(r.job.cancelled?"已停止生成":r.job.error||"",false);
+ }catch(e){if(videoProjectCurrent(owner,epoch))videoProjectUI(humanError(e),false)}
+}
+async function startVideoProject(e){
+ e.preventDefault();if(!S.user){hide("videoProjectDialog");show("authDialog");return}
+ if(videoProjectJob||$("videoProjectStart").disabled)return;
+ const prompt=$("videoProjectPrompt").value.trim();if(!prompt)return;
+ const owner=S.user.id,epoch=++videoProjectEpoch,id=crypto.randomUUID();
+ videoProjectOwner=owner;videoProjectJob=id;videoProjectFlight=false;clearTimeout(videoProjectTimer);clearVideoProjectOutput();videoProjectUI("正在创建视频任务…",true);
+ $("videoProjectStop").disabled=true;
+ try{
+  const r=await api("/api/video/project/create",{requestId:id,prompt,ratio:$("videoProjectRatio").value,duration:Number($("videoProjectDuration").value)},15000);
+  if(!videoProjectCurrent(owner,epoch))return;
+  videoProjectJob=r.job.id;videoProjectUI("正在连接 LTX 免费模型…",true);void runVideoProject(owner,epoch,r.job.id);
+ }catch(e){
+  if(!videoProjectCurrent(owner,epoch))return;
+  videoProjectJob=null;videoProjectUI(humanError(e)+"；可重新打开视频模式核对原任务",false);
+ }
+}
+async function stopVideoProject(){
+ const id=videoProjectJob,owner=S.user?.id;if(!id||!owner)return;
+ const epoch=++videoProjectEpoch;clearTimeout(videoProjectTimer);videoProjectFlight=false;$("videoProjectStop").disabled=true;
+ try{
+  const r=await api("/api/video/project/"+id+"/cancel",{},12000);
+  if(!videoProjectCurrent(owner,epoch))return;
+  videoProjectJob=null;
+  if(r.status==="complete")await showVideoProjectResult(owner,epoch,id);
+  else videoProjectUI("已停止生成；已发送的上游计算可能仍在运行",false);
+ }catch(e){if(videoProjectCurrent(owner,epoch)){videoProjectUI("停止尚未确认，可重试停止",true)}}
 }
 let projectFetchSerial=0;
 async function fetchProjects(){
@@ -4814,7 +4898,9 @@ function wire(){
  })}
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
- $("videoProjectForm").addEventListener("submit",startVideoProject);
+ $("videoProjectForm").addEventListener("submit",e=>void startVideoProject(e));
+ $("videoProjectPlan").addEventListener("click",startVideoProjectPlan);
+ $("videoProjectStop").addEventListener("click",()=>void stopVideoProject());
  $("videoProjectOpen").addEventListener("click",()=>openVideoProject("video"));
  $("filmProjectOpen").addEventListener("click",()=>openVideoProject("film"));
  $("deleteProject").addEventListener("click",()=>void deleteProject());
