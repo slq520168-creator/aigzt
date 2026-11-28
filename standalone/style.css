@@ -226,9 +226,8 @@ html.aigzt-keyboard-visible .conversation.empty-chat:not([hidden])~.composer-are
 .composer-mode-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;gap:16px;border:0;background:transparent;border-radius:8px;padding:10px 12px;color:inherit;text-align:left;font-size:13px;min-height:38px;cursor:pointer;white-space:nowrap}
 .composer-mode-menu button.selected,.composer-mode-menu button:hover,.composer-mode-menu button:focus-visible{background:#edf3f8;color:#3d6b9b}
 .composer-mode-mark{min-width:14px;text-align:center}
-.composer-model-catalog{flex:0 1 auto;min-width:0}
-.composer-model-catalog .composer-model-symbol,.composer-model-catalog .model-switch-chevron{flex:none}
-.composer-model-caption:empty{display:none}
+.composer-model-catalog{flex:none;min-width:0}
+.composer-model-catalog .composer-model-symbol{flex:none}
 .composer-mode-trigger{flex:none;white-space:nowrap;border-left:1px solid #dce4ea!important;border-radius:0!important;padding-left:8px!important;font-size:11px}
 .composer-mode-note{max-width:176px;margin:3px 8px 6px;font-size:11px;line-height:1.45;color:#64748b;white-space:normal}
 .composer-mode-note[hidden]{display:none}
@@ -236,8 +235,7 @@ html.aigzt-keyboard-visible .conversation.empty-chat:not([hidden])~.composer-are
 .composer-model-switch{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;height:27px;padding:0 4px 0 0;border:0;background:transparent;border-radius:7px;color:#7460b7;cursor:pointer;text-align:left}.composer-model-symbol{display:grid;place-items:center;width:24px;height:24px;border:1px solid #e3e5ee;background:#f5f4fa;border-radius:7px}.composer-model-switch .model-switch-chevron{color:#81909b;width:12px;height:12px}.composer-model-switch .model-switch-chevron svg{width:12px;height:12px}
 .composer-model-switch .ui-icon,.composer-model-switch .ui-icon svg{display:block;width:16px;height:16px}
 .composer-model-switch:hover,.composer-model-switch:focus-visible{background:#f3f5f8}
-.composer-model-caption{color:#899ba4;white-space:nowrap;font-size:10px;font-weight:500}
-.composer-model-name{flex:0 1 auto;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#405a6b;font-size:10px;font-weight:600}.composer-model-name.is-auto-model{color:#7460b7}
+.composer-model-name{flex:0 1 auto;min-width:0;max-width:100%;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#405a6b;font-size:10px;font-weight:600}.composer-model-name:empty{display:none}.composer-model-name.is-auto-model{color:#7460b7}
 .voice-chat-entry{display:inline-flex;align-items:center;justify-content:center;gap:2px;width:46px;height:32px;min-width:46px;padding:2px;color:#2b7199;border-radius:12px;font-size:11px;font-weight:650}.voice-chat-entry .ui-icon,.voice-chat-entry .ui-icon svg{width:14px;height:14px}
 .voice-chat-entry:hover,.voice-chat-entry:focus-visible{background:#eaf5fa}
 .composer-inner{display:flex;align-items:flex-end;gap:6px;min-height:32px;min-width:0;max-width:100%}
