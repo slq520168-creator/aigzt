@@ -16,6 +16,8 @@ function node(tag,cls,text){
  return e;
 }
 const ICONS={
+ 'briefcase':'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M2 13h20M10 13v2h4v-2"/>',
+ 'folder-plus':'<path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z M12 10v6m-3-3h6"/>',
  dice:'<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="7.5" cy="7.5" r="0.9"/><circle cx="16.5" cy="7.5" r="0.9"/><circle cx="12" cy="12" r="0.9"/><circle cx="7.5" cy="16.5" r="0.9"/><circle cx="16.5" cy="16.5" r="0.9"/>',
  menu:'<path d="M4 6h16M4 12h10M4 18h16"/>',
  "arrow-left":'<path d="M19 12H5m7 7-7-7 7-7"/>',
@@ -97,7 +99,7 @@ function renderIcons(scope=document){
  if(scope.matches?.("[data-icon]"))icons.unshift(scope);
  for(const el of icons){
   const name=el.dataset.icon,path=ICONS[name]||ICONS.info;
-  if(el.closest(".model-mode-button,.composer-model-switch,.sidebar-projects,#projectDialog,#moveDialog")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
+  if(el.closest(".model-mode-button,.composer-model-switch,.sidebar-projects,#projectDialog,#moveDialog,#videoProjectDialog")){el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+path+'</svg>';continue;}
   const [from,to]=(el.closest(".message-copy-btn")&&MESSAGE_ICON_COLORS[name])||ICON_GRADIENTS[ICON_TONES[name]||"blue"];
   const id="aigzt-icon-"+(++iconGradientSerial);
   el.innerHTML='<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="url(#'+id+')" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="'+from+'"/><stop offset="100%" stop-color="'+to+'"/></linearGradient></defs>'+path+'</svg>';
@@ -754,6 +756,7 @@ function renderProjects(){
  $("projectsToggle").setAttribute("aria-expanded",String(S.projectsExpanded));
  $("projectsToggle").classList.toggle("expanded",S.projectsExpanded);
  if(!S.projectsExpanded)return;
+ const video=node("button","project-select video-project-entry");video.type="button";video.append(iconSlot("clapperboard"),node("span","project-name","视频模式"),iconSlot("chevron-right"));video.addEventListener("click",openVideoProject);const videoRow=node("div","project-row");videoRow.append(video);box.append(videoRow);renderIcons(videoRow);
  if(!S.user){box.append(node("div","hint","登录后查看个人项目"));return}
  for(const p of S.projects){
   const row=node("div","project-row"+(S.activeProjectId===p.id?" active":""));
@@ -763,6 +766,26 @@ function renderProjects(){
   edit.append(iconSlot("ellipsis"));edit.addEventListener("click",()=>openProject(p));row.append(b,edit);box.append(row);renderIcons(row);
  }
  if(!S.projects.length)box.append(node("div","hint","暂无个人项目"));
+}
+const VIDEO_PROJECT_SKILLS=Object.freeze([["视频规划 Skill","list-checks","免费策划","输出主题、受众、分段时长、镜头清单、素材需求和完整时间轴。","https://github.com/agentara/skills/blob/main/skills/aigc/video-plan/SKILL.md"],["Seedance 导演 Skill","clapperboard","免费策划","输出连续镜头脚本、人物一致性约束、镜头运动、转场及逐镜头中英文提示词。","https://github.com/liyue-aigc/seedance-2-5-video-director"],["AI 电影导演 Skills","film","免费策划","输出叙事结构、景别、构图、光线、运镜及逐镜头提示词。","https://github.com/smixs/visual-skills"],["可灵提示词 Skill","file-text","免费策划","输出可灵适用的主体、动作、环境、镜头、时长及负面约束的中英文提示词。","https://github.com/kevingao-ai/kling-ai-guide"],["TikTok 视频 Skill","video","免费策划","输出开场钩子、短视频脚本、镜头、口播、字幕与音乐节奏表。","https://github.com/Fangyuan025/tiktok-video-skill"],["UGC 视频 Skill","camera","免费策划","输出真实感用户原创视频的口播、场景、动作、镜头和字幕脚本，避免虚假体验。","https://github.com/Jarad-z/ugc-video-skill"],["即梦 Skills","image","生成需授权","输出即梦适用的素材与逐镜头中英文提示词；不声称已调用即梦。","https://github.com/full-aigc-skills/dreamina-skills"],["可灵 Skills","video","生成需授权","输出可灵视频镜头描述、动作与镜头约束；不声称已调用可灵。","https://github.com/full-aigc-skills/kling-skills"],["Remotion 视频 Skill","code-2","渲染环境待接入","输出可运行的 Remotion React 源码、素材清单、依赖和本地渲染命令；不声称已经渲染。","https://github.com/remotion-dev/skills"],["HeyGen Hyperframes","layers","渲染环境待接入","输出 HTML 动画视频场景、时间轴、素材清单及渲染步骤；不声称已经渲染。","https://github.com/heygen-com/hyperframes"]]);
+function openVideoProject(){
+ const choice=$("videoSkillChoice"),list=$("videoSkillList");
+ if(!choice.options.length){
+  VIDEO_PROJECT_SKILLS.forEach(([name,icon,status,task,url],index)=>{
+   const option=node("option","",name);option.value=String(index);choice.append(option);
+   const row=node("div","video-skill-row"),button=node("button","video-skill-select"),label=node("span","video-skill-label");button.type="button";label.append(node("strong","",name),node("small","",status));button.append(iconSlot(icon),label);button.addEventListener("click",()=>{choice.value=String(index);choice.focus({preventScroll:true})});
+   const source=node("a","video-skill-source","来源");source.href=url;source.target="_blank";source.rel="noopener noreferrer";source.setAttribute("aria-label",name+" 技能来源");row.append(button,source);list.append(row);renderIcons(row);
+  });
+ }
+ show("videoProjectDialog");
+}
+function startVideoProject(e){
+ e.preventDefault();if(S.busy||chatOpenLoading||S.uploading)return;
+ if(!S.user){hide("videoProjectDialog");show("authDialog");return}
+ const topic=$("videoProjectPrompt").value.trim(),skill=VIDEO_PROJECT_SKILLS[Number($("videoSkillChoice").value)];if(!topic||!skill)return;
+ hide("videoProjectDialog");newChat();
+ $("prompt").value="视频创作策划（"+skill[0]+"）\\n"+skill[3]+"\\n本次只输出真实可交付的文本或源码，不调用视频生成服务，不声称已生成视频，不使用付费额度。\\n用户要求：\\n"+topic;
+ settlePromptSize();void sendMessage(null,true,null,null,true);
 }
 let projectFetchSerial=0;
 async function fetchProjects(){
@@ -3042,7 +3065,6 @@ function updateComposerModel(){
  switcher.setAttribute("aria-label","切换模式");switcher.title="切换模式";
 }
 function updateModelTitle(){
- $("modelTitle").textContent=selectedChatMode==="auto"?"自动模式":S.modelTitle||chatModeLabel();
  updateComposerModel();refreshChatModeUI();
 }
 function setModel(row){
@@ -3696,15 +3718,15 @@ function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments}){
  if(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt)))return {mode:"image"};
  return {mode:"text"};
 }
-async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,retryContext=null){
+async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,retryContext=null,forceText=false){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  
  if(S.busy||chatOpenLoading)return;
  if(!S.model&&!forceFreeOnce&&!retryContext?.payload)return;
- if(freeModeChoosing&&!retryContext?.payload){openModels();return}
+ if(freeModeChoosing&&!forceFreeOnce&&!retryContext?.payload){openModels();return}
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
  const submittedCode=retryContext?.payload?retryContext.payload.mode==="code":S.code;
- const turn=retryContext?.payload?{mode:retryContext.payload.mode==="image"?"image":"text"}:voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments});
+ const turn=retryContext?.payload?{mode:retryContext.payload.mode==="image"?"image":"text"}:forceText||voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments});
  const submittedMode=turn.mode;
  const requestId=retryContext?.requestId||crypto.randomUUID();
  let submittedPayload=null;
@@ -3787,7 +3809,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
      },60);
     };
     try{submittedPayload=retryContext?.payload?{...retryContext.payload,requestId}:{requestId,chatId:requestChatId,provider:requestProvider,model:requestModel,message:prompt,continueFrom:typeof continueFrom==="string"?continueFrom:undefined,attachments:attached.map(x=>x.id),
-      mode:submittedCode?"code":"general",chatMode:requestChatMode,freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:requestProvider===S.provider&&S.allowPaid,apiKey:undefined};result=await apiChatStream(submittedPayload,onDelta);}
+      mode:submittedCode?"code":"general",chatMode:requestChatMode,freeFallback:false,outputImages:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages),imageOnly:requestProvider==="openrouter"&&S.remoteModels.some(m=>m.id===requestModel&&m.outputImages&&!m.outputText),replyLevel,creativeMode:S.creativeMode,projectId:S.activeProjectId,allowPaid:!forceFreeOnce&&requestProvider===S.provider&&S.allowPaid,apiKey:undefined};result=await apiChatStream(submittedPayload,onDelta);}
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
@@ -4684,7 +4706,6 @@ function wire(){
  $("sideShade").addEventListener("click",closeMenu);
  $("navChat").addEventListener("click",()=>{S.activeProjectId=null;S.archivedView=false;newChat();void fetchChats();renderProjects()});
  $("projectsToggle").addEventListener("click",()=>{S.projectsExpanded=!S.projectsExpanded;renderProjects()});
- $("navModels").addEventListener("click",()=>{closeMenu();openModels()});
  $("navFreeTools").addEventListener("click",()=>enterWorkspace("tools"));
  $("navDraw").addEventListener("click",openCreate);
  $("freeToolsClose").addEventListener("click",returnWorkspace);
@@ -4745,6 +4766,7 @@ function wire(){
  })}
  $("settingsLogout").addEventListener("click",()=>{hide("settingsDialog");void account(true)});
  $("projectForm").addEventListener("submit",e=>void saveProject(e));
+ $("videoProjectForm").addEventListener("submit",startVideoProject);
  $("deleteProject").addEventListener("click",()=>void deleteProject());
  $("searchForm").addEventListener("submit",searchChats);
  $("chatSearchInput").addEventListener("compositionstart",()=>{chatSearchComposing=true;clearTimeout(chatSearchTimer);++chatSearchSerial});
