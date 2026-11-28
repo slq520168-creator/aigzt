@@ -3528,7 +3528,7 @@ function updateModelTitle(){
  updateComposerModel();refreshChatModeUI();
 }
 function setModel(row){
- if(row.type==="video"||retiredVideoModel(row.provider,row.id))return;
+ if(row.type==="video"||retiredVideoModel(row.provider,row.id)||catalogModeRestriction(row))return;
  const route=row.availableWith==="openrouter-key"?"openrouter":row.provider;
  if(unavailableChatModel(route,row.id)){flashError("此模型当前不可调用，请选择其他模型");return}
  if(row.type!=="text"&&!(row.type==="image"&&row.availableWith==="openrouter-key"&&row.outputImages)){
@@ -4564,12 +4564,10 @@ function allModels(){
  return [...index.values()].filter(m=>m.type!=="video"&&!retiredVideoModel(m.provider,m.id));
 }
 function hasFreeAccess(m){return m.free===true||m.freeTier===true}
+function catalogModeRestriction(m){const route=modelRoute(m);if(composerCatalogMode==="auto"&&route!=="free")return personalFreeChoice(route,m.id)?"自由模式":"个人模式";if((composerCatalogMode==="free"||composerCatalogMode==="personal")&&route==="free")return "自动模式";if(composerCatalogMode==="free"&&!personalFreeChoice(route,m.id))return "个人模式";return ""}
 function modelMatches(m,favoriteRank=null){
  if(m.type==="video"||retiredVideoModel(m.provider,m.id))return false;
  const route=modelRoute(m);
- if(composerCatalogMode==="auto"&&route!=="free")return false;
- if(composerCatalogMode==="free"&&(!connected(route)||!personalFreeChoice(route,m.id)))return false;
- if(composerCatalogMode==="personal"&&(route==="free"||!connected(route)))return false;
  const query=S.query.trim().toLowerCase();
  const owner=domesticGroupFor(m),russian=russianGroupFor(m);const t=(m.name+" "+m.id+" "+m.provider+" "+(m.author||"")+" "+(m.description||"")+" "+(owner?.name||"")+" "+(russian?russian.name+" 俄罗斯":"")).toLowerCase();
  if(query&&!t.includes(query))return false;
@@ -4632,7 +4630,7 @@ function renderModels(){
  const retry=$("modelCatalogRetry");retry.hidden=!catalogError;retry.title=catalogError;retry.textContent=S.loadedCatalog?"更新目录":"重试目录";
  $("moreModels").hidden=count<=shown.length;
  const list=$("modelList"),viewKey=[S.source,S.filter,S.query].join("|");
- const signature=viewKey+"|"+JSON.stringify(savedFavorites.map(x=>x.key))+"|"+chatModeLabel()+":"+freeModeChoosing+"|"+S.composerMode+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+Boolean(m.favoriteMissing)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
+ const signature=viewKey+"|"+String(composerCatalogMode)+"|"+JSON.stringify(savedFavorites.map(x=>x.key))+"|"+chatModeLabel()+":"+freeModeChoosing+"|"+S.composerMode+"|"+S.provider+":"+S.model+"|"+shown.map(m=>m.provider+":"+m.id+":"+m.name+":"+m.type+":"+m.free+":"+Boolean(m.freeTier)+":"+Boolean(S.savedProviders[m.availableWith==="openrouter-key"?"openrouter":m.provider]?.verified)+":"+(unavailableChatModel(m.availableWith==="openrouter-key"?"openrouter":m.provider,m.id)?.code||"")+":"+Boolean(m.unlisted)+":"+Boolean(m.favoriteMissing)+":"+ranks.get(m).group+":"+ranks.get(m).health.last+":"+ranks.get(m).tier.score).join("|");
  if(shown.length&&list.dataset.renderSignature===signature&&list.querySelectorAll(".model-row").length===shown.length)return;
  const dialog=$("modelScroll"),previousTop=list.dataset.viewKey===viewKey?dialog.scrollTop:0;
  list.replaceChildren();list.dataset.renderSignature=signature;list.dataset.viewKey=viewKey;
@@ -4648,11 +4646,12 @@ function renderModels(){
   const skills=modelSkills(item);if(skills.length)line.append(node("span","model-compact-skills"," · "+skills.join(" · ")));
   const detail=node("button","model-detail-link","详情");detail.type="button";detail.addEventListener("click",()=>modelDetail(item,via,priceLabel,rank,verified,saved,blocked));line.append(detail);
   info.append(title,line);
-  const actionable=["text","image"].includes(item.type);
-  const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":item.type!=="text"?"使用":via==="free"||verified?"选择":"连接");
-  button.disabled=!!blocked||!actionable||selected||!!item.favoriteMissing&&!connected(via);
-   if(item.favoriteMissing&&!connected(via))button.textContent="待目录确认";
-  if(actionable&&!blocked&&(!item.favoriteMissing||connected(via)))button.addEventListener("click",()=>setModel(item));
+  const actionable=["text","image"].includes(item.type),restriction=catalogModeRestriction(item);
+  const button=node("button","model-action",blocked?"不可用":!actionable?"暂不支持":selected?"✓ 已选定":restriction|| (item.type!=="text"?"使用":via==="free"||verified?"选择":"连接"));
+  button.disabled=!!blocked||!actionable||selected||!!restriction||!!item.favoriteMissing&&!connected(via);
+  if(restriction)button.title="请在顶部切换至"+restriction;
+  if(item.favoriteMissing&&!connected(via))button.textContent="待目录确认";
+  if(actionable&&!blocked&&!restriction&&(!item.favoriteMissing||connected(via)))button.addEventListener("click",()=>setModel(item));
   row.append(info,favoriteButton("models",modelFavoriteEntry(item),renderModels,favoriteRank.has(modelFavoriteKey(item))),button);list.append(row);
  }
  dialog.scrollTop=previousTop;
