@@ -1,5 +1,0 @@
-const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs");
-const w=fs.readFileSync("standalone/worker.js","utf8"),c=fs.readFileSync("standalone/client.js","utf8");
-test("Qwen waits beyond its GPU execution budget and does not discard completion at timeout",()=>{assert.match(w,/QWEN_EDIT_WAIT_MS=180000/);assert.match(w,/Math.min\(40000,Math.max\(1000,deadline-Date.now\(\)\)\)/);assert.match(w,/if\(state.status==="pending"\)return Date.now\(\)>=deadline\?failure/);assert.match(w,/if\(state.availability===true\)return qwenFailoverToHorde/);assert.doesNotMatch(w,/Qwen 免费图生图超过50秒/);});
-test("uncertain submit is not duplicated, anonymous fallback uses smaller task",()=>{assert.match(w,/图生图来源提交状态未确认.*definite:false/);assert.match(w,/width:512,height:512,steps:18/);assert.match(w,/allow_downgrade:true/);assert.match(w,/HORDE_EDIT_WAIT_MS=480000/);});
-test("image retry retains original file id and routes to image mode",()=>{assert.match(c,/void retryImageMessage\(row\)/);assert.match(c,/S\.attachments=\[\{id,name,url,type\}\];setComposerMode\("image"\)/);assert.match(c,/api\("\/api\/image\/task\/"\+id,undefined,55000\)/);});

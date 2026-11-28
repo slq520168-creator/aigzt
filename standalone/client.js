@@ -1491,6 +1491,7 @@ function renderImageJob(bubble,id){
 function showImageRetry(bubble){
  delete bubble.dataset.imageTask;delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");
  const row=bubble.closest(".message");
+ if(row&&retiredImageMessage(row)){bubble.textContent="图生图已下线";setPortraitState(row,"idle");return}
  const button=messageTool("refresh-cw","重新作图",()=>{if(row)void retryImageMessage(row)});
  bubble.replaceChildren(button);renderIcons(button);setPortraitState(row,"idle");
 }
@@ -1513,6 +1514,7 @@ async function pollImageJob(bubble,id,manual){
   if(Number.isFinite(r.startedAt)&&r.startedAt>0)bubble.dataset.imageStart=String(r.startedAt);
   if(r.done){
    delete bubble.dataset.imageTask;
+   if(r.retired){delete bubble.dataset.imageFinalizing;bubble.classList.remove("chat-image-task");bubble.textContent="图生图已下线";setPortraitState(bubble.closest(".message"),"idle");return}
    if(r.failed){showImageRetry(bubble);return}
    const img=blob instanceof Blob?localImageElement(blob):node("img","chat-generated-image");
    img.alt="生成图片";img.loading="eager";bubble.dataset.imageFinalizing=id;
@@ -2569,28 +2571,17 @@ function messageDraft(content,send=false,mode="text",continueFrom=null){
  if(send)void sendMessage(continueFrom);else input.focus();
  return true;
 }
-async function retryImageMessage(row){
- if(S.busy||S.freeToolsMode||!row?.isConnected)return;
+function retiredImageMessage(row){
+ return /图生图/.test(String(row?.dataset.usedModel||""))||/^(?:图生图失败|图生图排队超时|图生图已下线)/.test(String(row?.textContent||"").trim())||/\[文件：参考图\]\(\/api\/files\//.test(messageQuestion(row));
+}
+function retryImageMessage(row){
+ if(S.busy||S.freeToolsMode||!row?.isConnected||retiredImageMessage(row))return;
  const original=messageQuestion(row);
- const refs=[...original.matchAll(/\[文件：([^\]]+)\]\((\/api\/files\/([0-9a-f-]{36}))\)/gi)];
- if(!refs.length){if(messageDraft(original,false,"image"))void sendMessage();return}
- if(refs.length!==1)return;
- const [full,name,url,id]=refs[0],prompt=original.replace(full,"").trim();
- if(!prompt)return;
- const owner=S.user?.id,chat=S.chatId,draft=$("prompt").value,attachments=S.attachments.slice();
- if((draft.trim()||attachments.length)&&!confirm("重新作图会替换当前草稿和附件，继续吗？"))return;
- try{
-  const response=await fetch(url,{credentials:"same-origin",cache:"no-store"});
-  if(!response.ok)throw Error("参考图不可读取");
-  const type=String(response.headers.get("content-type")||"").split(";")[0].toLowerCase();
-  void response.body?.cancel().catch(()=>{});
-  if(!["image/jpeg","image/png","image/webp"].includes(type))throw Error("参考图不可读取");
-  if(S.busy||S.user?.id!==owner||S.chatId!==chat||$("prompt").value!==draft||S.attachments.length!==attachments.length||S.attachments.some((a,i)=>a!==attachments[i]))return;
-  $("prompt").value=prompt;S.attachments=[{id,name,url,type}];setComposerMode("image");
-  S.miniToolChoice=row.dataset.mediaFormat==="sticker"?"sticker":"image-edit";syncMiniTools();renderAttachments();settlePromptSize();void sendMessage();
- }catch{flashError("原参考图不可读取，请重新选择图片")}
+ if(/\[文件：/.test(original))return;
+ if(messageDraft(original,false,"image"))void sendMessage();
 }
 function retryMessage(row){
+ if(retiredImageMessage(row))return;
  const text=messageQuestion(row);
  if(!text){flashError("找不到当前回复对应的问题");return}
  const image=row.dataset.messageKind==="image"||!!row.querySelector("img.chat-generated-image");
@@ -2776,7 +2767,7 @@ function appendMessageCopy(row,content){
   bm.dataset.action="bookmark";bm.classList.toggle("is-active",row.dataset.saved==="1");bar.append(bm);
  }
  if(!user){
-  bar.append(messageTool("refresh-cw","重新生成",()=>retryMessage(row)));
+  if(!retiredImageMessage(row))bar.append(messageTool("refresh-cw","重新生成",()=>retryMessage(row)));
   if(MESSAGE_READ_ALOUD_ENABLED&&!image){
    const play=messageTool("volume-2","朗读回复",b=>startMessageReader(row,text,b));
    play.setAttribute("aria-pressed","false");bar.append(play);
@@ -2806,7 +2797,7 @@ function appendMessageCopy(row,content){
      setMessageMoreOpen(more,false);if(messageDraft(messageQuestion(row)))openModels();
     }));
    }
-   if(text.trim()&&text.length<480000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
+   if(!retiredImageMessage(row)&&text.trim()&&text.length<480000&&!row.dataset.messageKind&&!/^!\[/.test(text)){
     const next=messageTool("continue-write","继续生成",b=>continueTextReply(row,text,b));
     next.classList.add("message-continue-btn");bar.append(next);
    }
@@ -3294,7 +3285,6 @@ function syncMobileHeight(){
 /* Tool selections live exclusively in the + menu. */
 function syncMiniTools(){
  const active={
-  miniImageEdit:S.composerMode==="image"&&S.miniToolChoice==="image-edit",
   miniImageVideo:S.composerMode==="video"&&S.videoProvider==="freewan"&&S.miniToolChoice!=="gif",
   miniFrameVideo:S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.miniToolChoice!=="gif",
   miniSticker:S.miniToolChoice==="sticker",miniGif:S.miniToolChoice==="gif"
@@ -3308,20 +3298,13 @@ function syncMiniTools(){
 function chooseMiniTool(action){
  if(S.busy)return;
  hideAttachMenu();
- const isEdit=action==="image-edit";
  const isImageVideo=action==="image-video";
  const isFrameVideo=action==="frame-video";
- if(!isEdit&&!isImageVideo&&!isFrameVideo)return;
- if(isEdit){
-  setComposerMode("image");
-  S.miniToolChoice="image-edit";
-  $("prompt").placeholder="上传参考图，然后描述需要修改的内容…";
- }else{
-  const provider=isImageVideo?"freewan":"freeloop";
-  selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
-  setComposerMode("video");
-  $("prompt").placeholder=isFrameVideo?"添加首帧和尾帧两张图，描述过渡动作…":"添加参考图，描述画面需要的动作…";
- }
+ if(!isImageVideo&&!isFrameVideo)return;
+ const provider=isImageVideo?"freewan":"freeloop";
+ selectVideoModel(provider,VIDEO_OPTIONS[provider][0]);
+ setComposerMode("video");
+ $("prompt").placeholder=isFrameVideo?"添加首帧和尾帧两张图，描述过渡动作…":"添加参考图，描述画面需要的动作…";
  syncMiniTools();updateComposerModel();
  $("prompt").focus({preventScroll:true});
 }
@@ -3424,9 +3407,6 @@ async function uploadSelected(files){
  if(!files.length)return;
  if(S.attachments.length+files.length>4){flashError("一次最多上传4个附件");return}
  if(S.composerMode==="video"&&S.videoProvider==="freeloop"&&S.attachments.length+files.length>2){flashError("首尾帧需要两张图片，请先移除多余附件");return}
- if(S.composerMode==="image"&&S.miniToolChoice==="image-edit"&&(files.length!==1||S.attachments.length)){
-  flashError("图生图一次仅允许一张参考图片，请先移除原图再选择");return
- }
  S.uploading=true;$("attachButton").disabled=true;flashError("");
  try{
  for(const file of files){
@@ -3791,14 +3771,15 @@ function isReferenceImageEditRequest(value){
 function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments,videoProvider,videoModel,tool}){
  const compatible=attachments.every(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
  const format=tool==="sticker"||tool==="gif"?tool:mode==="text"&&provider==="free"&&!code&&!continueFrom?requestedMediaFormat(prompt):"";
- if(format){if(!compatible||attachments.length>(format==="gif"?2:1))return {error:"贴纸最多1张参考图，GIF最多2张"};if(format==="sticker")return {mode:"image",format,videoProvider,videoModel};const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";return {mode:"video",format,videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};}
+ if(format){if(format==="sticker"&&attachments.length)return {error:"贴纸仅支持文字生成"};if(!compatible||attachments.length>2)return {error:"GIF最多使用两张图片"};if(format==="sticker")return {mode:"image",format,videoProvider,videoModel};const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";return {mode:"video",format,videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};}
  if(mode==="text"&&!continueFrom&&compatible){
   if(provider==="free"&&isDirectVideoRequest(prompt)){
    if(attachments.length>2)return {error:"自动视频最多使用两张首尾帧图片"};
    const selected=attachments.length===2?"freeloop":attachments.length===1?"freewan":"freetext";
    return {mode:"video",videoProvider:selected,videoModel:VIDEO_OPTIONS[selected][0]};
   }
-  if(!code&&(isDirectImageRequest(prompt)||(provider==="free"&&(pastedImagePrompt(prompt)||(attachments.length>0&&isReferenceImageEditRequest(prompt))))))return {mode:"image",videoProvider,videoModel};
+  if(!code&&attachments.length&&(isDirectImageRequest(prompt)||isReferenceImageEditRequest(prompt)))return {error:"图生图已下线，仍可识别图片或生成视频"};
+  if(!code&&!attachments.length&&(isDirectImageRequest(prompt)||(provider==="free"&&pastedImagePrompt(prompt))))return {mode:"image",videoProvider,videoModel};
  }
  return {mode,videoProvider,videoModel};
 }
@@ -3825,10 +3806,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  }
  if(freeVideo&&!prompt){flashError("请输入视频描述");return}
  if(freeVideo&&submittedVideoProvider==="freetext"&&S.attachments.length){flashError("文生视频只接受文字，上传参考图请使用图生视频");return}
- if(submittedMode==="image"&&!prompt){flashError("请输入图片生成或修改描述");return}
- if(submittedMode==="image"&&submittedTool==="image-edit"&&!S.attachments.length){
-  flashError("请点击＋中的照片上传参考图片");showAttachMenu();return
- }
+ if(submittedMode==="image"&&!prompt){flashError("请输入图片生成描述");return}
  if(freeVideo&&submittedVideoProvider!=="freetext"&&videoImages.length<(submittedVideoProvider==="freeloop"?2:1)){
   flashError(submittedVideoProvider==="freeloop"?"请点击＋中的照片上传首帧与尾帧":"请点击＋中的照片上传参考图");
   showAttachMenu();return
@@ -3836,9 +3814,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  if(freeVideo&&submittedVideoProvider==="freeloop"&&(videoImages.length!==2||videoImages[0].id===videoImages[1].id)){
   flashError("首尾帧需要两张不同的图片附件");return
  }
- if(submittedMode==="image"&&S.attachments.length&&(S.attachments.length!==1||!["image/jpeg","image/png","image/webp"].includes(S.attachments[0]?.type))){
-  flashError("图生图请只上传一张 JPG、PNG 或 WebP 参考图");return
- }
+ if(submittedMode==="image"&&S.attachments.length){flashError("普通作图仅支持文字描述");return}
  // Request routing is independent of the selected model preference.
  let requestProvider=S.provider,requestModel=S.model;
  const requestChatMode=forceFreeOnce?"auto":selectedChatMode;
@@ -3917,8 +3893,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
     finally{active=false;pending="";}
    }
   else if(isImageMessage){
-   const reference=attached.find(x=>["image/jpeg","image/png","image/webp"].includes(x.type));
-   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",format:mediaFormat,prompt,imageId:reference?.id});
+   result=await api("/api/chat/media",{chatId:S.chatId,projectId:S.activeProjectId,mode:"image",format:mediaFormat,prompt});
   }
   else if(freeVideo){
    const img=attached.find(a=>["image/jpeg","image/png","image/webp"].includes(a.type));
@@ -4919,7 +4894,7 @@ function wire(){
   updateComposerModel();
   $("prompt").focus({preventScroll:true});
  });
- for(const [id,action] of [["miniImageEdit","image-edit"],["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
+ for(const [id,action] of [["miniImageVideo","image-video"],["miniFrameVideo","frame-video"]]){
   $(id).addEventListener("click",()=>chooseMiniTool(action));
  }
  for(const [id,format] of [["miniSticker","sticker"],["miniGif","gif"]])$(id).addEventListener("click",()=>{if(S.busy)return;hideAttachMenu();setComposerMode(format==="gif"?"video":"image");S.miniToolChoice=format;syncMiniTools();updateComposerModel();$("prompt").placeholder=format==="gif"?"描述动图内容和动作…":"描述贴纸内容…";$("prompt").focus({preventScroll:true})});
