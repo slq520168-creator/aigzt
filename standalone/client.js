@@ -635,8 +635,8 @@ async function fetchMe(){
  try{
   const v=await api("/api/me",undefined,8000);if(epoch!==accountFetchEpoch)return;
   const old=String(S.user?.id||""),owner=String(v.user?.id||"");
-  if(old!==owner){S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
-  S.user=v.user;S.quota=v.quota;accountCheckedAt=Date.now();setAuthUI();
+  if(old!==owner){++chatOpenEpoch;chatOpenLoading=false;S.savedProviders={};S.connected={};S.connectionsLoaded=false;S.connectionsLoading=false;connectionsFlight=null;restoredChatModelOwner=null;activateModelPrefOwner(owner||null);setFreeDefault(false)}
+  S.user=v.user;S.quota=v.quota;accountCheckedAt=Date.now();if(old&&old!==owner){S.chats=[];S.projects=[];S.notes=[];S.activeProjectId=null;newChat();renderProjects();if(owner){void fetchProjects();void fetchChats()}}setAuthUI();
   restoreChatModelSelection();chatModelPreferenceReady=true;updateModelTitle();void loadModelHistory();
   if(owner){void hydrateModelPreferences(owner);if(!S.connectionsLoaded)void fetchConnections();if($("modelDialog").open)void syncCatalogFavorites("models");if(S.freeToolsMode)void syncCatalogFavorites("tools")}
  }catch(e){if(epoch!==accountFetchEpoch)return;chatModelPreferenceReady=true;updateModelTitle();flashError("账号状态读取失败："+humanError(e))}
@@ -2907,9 +2907,9 @@ function appendMessage(role,content,model,existingRow=null,incomplete=false,mess
  }
  return row;
 }
-let chatOpenEpoch=0;
+let chatOpenEpoch=0,chatOpenLoading=false;
 function newChat(keepDrawer=false){
- ++chatOpenEpoch;
+ ++chatOpenEpoch;chatOpenLoading=false;
  stopDictation(true);
  closeMessageMore();
  stopMessageReader();if(voiceSession.active||voiceSession.reading){voiceStop();hide("voiceDialog")}
@@ -2930,7 +2930,7 @@ function startCoding(){
 }
 async function loadChat(id){
  if(S.busy)return;
- const epoch=++chatOpenEpoch,owner=S.user?.id;
+ const epoch=++chatOpenEpoch,owner=S.user?.id;chatOpenLoading=true;
  stopDictation(true);
  closeMessageMore();
  stopMessageReader();if(voiceSession.active||voiceSession.reading){voiceStop();hide("voiceDialog")}
@@ -2948,6 +2948,7 @@ async function loadChat(id){
   updateModelTitle();
   renderHistory();closeMenu();
  }catch(e){if(epoch===chatOpenEpoch&&S.user?.id===owner)flashError("会话读取失败："+humanError(e))}
+ finally{if(epoch===chatOpenEpoch)chatOpenLoading=false}
 }
 function isAutoChatModel(){return S.provider==="free"&&S.model==="free:auto"}
 // Mode restoration is based on real successful calls, not the last catalog click.
@@ -3324,43 +3325,78 @@ function normalizeFavorites(value){
   seen.add(item.key);out.push(item);if(out.length===FAVORITE_LIMIT)break;
  }return out;
 }
-function readFavorites(kind){
- try{return normalizeFavorites(JSON.parse(localStorage.getItem(favoriteScope(kind))||"[]"))}catch{return []}
+const favoriteFlights=new Map(),favoriteAgain=new Set(),favoriteLastSync=new Map(),favoriteBackupTail=new Map();
+function favoriteRecord(scope){
+ try{
+  const value=JSON.parse(localStorage.getItem(scope)||"null");
+  if(value&&!Array.isArray(value))return {items:normalizeFavorites(value.items),seeded:value.seeded===true,ops:Array.isArray(value.ops)?value.ops.filter(x=>x&&typeof x.id==="string"&&typeof x.entry?.key==="string"&&typeof x.active==="boolean"):[]};
+  const legacy=JSON.parse(localStorage.getItem(scope+":sync")||"null");
+  return {items:normalizeFavorites(value),seeded:legacy?.seeded===true,ops:Array.isArray(legacy?.ops)?legacy.ops.filter(x=>x&&typeof x.id==="string"&&typeof x.entry?.key==="string"&&typeof x.active==="boolean"):[]};
+ }catch{return {items:[],seeded:false,ops:[]}}
 }
-const favoriteFlights=new Map();
-function favoriteSyncState(scope){
- try{const value=JSON.parse(localStorage.getItem(scope+":sync")||"null");return {seeded:value?.seeded===true,ops:Array.isArray(value?.ops)?value.ops:[]}}catch{return {seeded:false,ops:[]}}
+function readFavorites(kind){return favoriteRecord(favoriteScope(kind)).items}
+function saveFavoriteRecord(scope,state){
+ const raw=JSON.stringify(state);localStorage.setItem(scope,raw);
+ if(typeof deviceMediaPut==="function"&&typeof Blob!=="undefined"){
+  const previous=favoriteBackupTail.get(scope)||Promise.resolve();
+  const next=previous.catch(()=>{}).then(()=>deviceMediaPut("favorites:"+scope,new Blob([raw],{type:"application/json"})));
+  favoriteBackupTail.set(scope,next);void next.finally(()=>{if(favoriteBackupTail.get(scope)===next)favoriteBackupTail.delete(scope)}).catch(()=>{});
+ }
 }
-function queueFavoriteSync(kind,entry,active){
- if(!S.user?.id)return;
- const scope=favoriteScope(kind),state=favoriteSyncState(scope);
- state.ops=state.ops.filter(x=>x.entry.key!==entry.key);state.ops.push({id:crypto.randomUUID(),entry,active});
- try{localStorage.setItem(scope+":sync",JSON.stringify(state))}catch{return}
- void syncCatalogFavorites(kind);
+function favoriteOp(entry,active){return {id:crypto.randomUUID(),entry,active}}
+function prepareFavoriteRecord(record,owner){
+ if(owner&&!record.seeded){
+  const edited=new Set(record.ops.map(x=>x.entry.key));
+  record.ops=[...record.items].reverse().filter(x=>!edited.has(x.key)).map(x=>favoriteOp(x,true)).concat(record.ops);
+  record.seeded=true;
+ }
+ return record;
 }
-async function syncCatalogFavorites(kind){
- const owner=S.user?.id;if(!owner)return;
- const scope=favoriteScope(kind);if(favoriteFlights.has(scope))return favoriteFlights.get(scope);
+function overlayFavoriteOps(items,ops){
+ let rows=normalizeFavorites(items);
+ for(const op of ops)if(!op.active)rows=rows.filter(x=>x.key!==op.entry.key);
+ for(const op of ops)if(op.active&&!rows.some(x=>x.key===op.entry.key)&&rows.length<FAVORITE_LIMIT)rows.unshift(op.entry);
+ return rows;
+}
+function refreshFavoriteView(kind,scope){
+ if(favoriteScope(kind)!==scope)return;
+ if(kind==="models"&&$("modelDialog").open)renderModels();
+ if(kind==="tools"&&S.freeToolsMode)renderFreeTools();
+}
+async function syncCatalogFavorites(kind,force=false){
+ const owner=S.user?.id,scope=favoriteScope(kind);
+ if(favoriteFlights.has(scope)){if(force)favoriteAgain.add(scope);return favoriteFlights.get(scope)}
  let synced=false;
  const flight=(async()=>{
-  const state=favoriteSyncState(scope),seed=state.seeded?null:readFavorites(kind),ops=state.ops.slice(0,80);
   try{
-   const result=await api("/api/catalog-favorites",{owner,kind,seed,ops},12000);
+   if(localStorage.getItem(scope)===null&&typeof deviceMediaGet==="function"){
+    const backup=await deviceMediaGet("favorites:"+scope);
+    if(backup&&localStorage.getItem(scope)===null&&favoriteScope(kind)===scope){localStorage.setItem(scope,await backup.text());refreshFavoriteView(kind,scope)}
+   }
+   if(!owner||S.user?.id!==owner||favoriteScope(kind)!==scope)return;
+   const state=prepareFavoriteRecord(favoriteRecord(scope),owner);
+   if(!force&&!state.ops.length&&Date.now()-(favoriteLastSync.get(scope)||0)<60000)return;
+   saveFavoriteRecord(scope,state);
+   const ops=state.ops.slice(0,80),result=await api("/api/catalog-favorites",{owner,kind,seed:null,ops},12000);
    if(S.user?.id!==owner||favoriteScope(kind)!==scope)return;
-   const completed=new Set(ops.map(x=>x.id)),now=favoriteSyncState(scope);
-   const remaining=now.ops.filter(x=>!completed.has(x.id));let rows=normalizeFavorites(result.items);
-   for(const op of remaining){rows=rows.filter(x=>x.key!==op.entry.key);if(op.active&&rows.length<FAVORITE_LIMIT)rows.unshift(op.entry)}
-   localStorage.setItem(scope,JSON.stringify(rows));localStorage.setItem(scope+":sync",JSON.stringify({seeded:true,ops:remaining}));synced=true;
-   if(kind==="models"&&$("modelDialog").open)renderModels();else if(kind==="tools"&&S.freeToolsMode)renderFreeTools();
-  }catch{/* Offline or server unavailable: retain local favorites and pending changes. */}
- })().finally(()=>{favoriteFlights.delete(scope);if(synced&&S.user?.id===owner&&favoriteSyncState(scope).ops.length)void syncCatalogFavorites(kind)});
+   const rejected=new Set(result.rejected||[]),completed=new Set(ops.filter(x=>!rejected.has(x.id)).map(x=>x.id)),latest=favoriteRecord(scope);
+   latest.ops=latest.ops.filter(x=>!completed.has(x.id));
+   latest.items=overlayFavoriteOps(result.items,latest.ops);latest.seeded=true;
+   saveFavoriteRecord(scope,latest);favoriteLastSync.set(scope,Date.now());refreshFavoriteView(kind,scope);synced=true;
+   if(rejected.size){flashError("另一设备的收藏已满，未同步项目已保留；取消收藏后可继续同步")}
+   else if(latest.ops.length)favoriteAgain.add(scope);
+  }catch{/* Preserve local data and pending operations when offline. */}
+ })().finally(()=>{favoriteFlights.delete(scope);if(favoriteAgain.delete(scope)&&S.user?.id===owner&&favoriteScope(kind)===scope)void syncCatalogFavorites(kind,true)});
  favoriteFlights.set(scope,flight);return flight;
 }
 function toggleFavorite(kind,entry){
- const rows=readFavorites(kind),exists=rows.some(x=>x.key===entry.key);
+ const scope=favoriteScope(kind),record=favoriteRecord(scope),rows=record.items,exists=rows.some(x=>x.key===entry.key);
  if(!exists&&rows.length>=FAVORITE_LIMIT)return "full";
- const next=exists?rows.filter(x=>x.key!==entry.key):[entry,...rows];
- try{localStorage.setItem(favoriteScope(kind),JSON.stringify(next));queueFavoriteSync(kind,entry,!exists);return exists?"removed":"added"}catch{return "storage"}
+ try{
+  prepareFavoriteRecord(record,S.user?.id);record.items=exists?rows.filter(x=>x.key!==entry.key):[entry,...rows];
+  if(S.user?.id){record.ops=record.ops.filter(x=>x.entry.key!==entry.key);record.ops.push(favoriteOp(entry,!exists))}
+  saveFavoriteRecord(scope,record);if(S.user?.id)void syncCatalogFavorites(kind,true);return exists?"removed":"added";
+ }catch{return "storage"}
 }
 function modelFavoriteKey(m){return modelRoute(m)+"\0"+m.id}
 function modelFavoriteEntry(m){
@@ -3580,7 +3616,7 @@ function returnWorkspace(){
 }
 function syncTopMode(){}
 function setFreeToolsMode(enabled){
- if(enabled)stopMessageReader();
+ if(enabled){++chatOpenEpoch;chatOpenLoading=false;stopMessageReader()}
  S.freeToolsMode=!!enabled;$("shell").classList.toggle("free-tools-active",S.freeToolsMode);
  if(enabled){
   $("conversation").hidden=true;
@@ -3634,16 +3670,18 @@ async function apiChatStream(payload,onDelta){
 }
 // One user click, one continuation request; retain the original row and draft.
 async function continueTextReply(row,original,button){
- if(S.busy||S.freeToolsMode||!S.chatId||!row.dataset.messageId)return;
+ if(S.busy||chatOpenLoading||S.freeToolsMode||!S.chatId||!row.dataset.messageId)return;
  const chatId=S.chatId,provider=S.provider,model=S.model;
  if(provider!=="free"&&(!connected(provider)||(!isFreeModel(provider,model)&&!S.allowPaid))){openKeyPanel(provider);return}
  S.busy=true;button.disabled=true;$("sendBtn").disabled=true;
  const bubble=row.querySelector(".bubble"),status=node("span","message-send-pending","正在继续生成…");
  bubble.append(status);let tail="";
  try{
-  const result=await apiChatStream({chatId,provider,model,message:"请继续原任务，从中断处直接写，不重复已完成内容。",continueFrom:row.dataset.messageId,attachments:[],mode:S.code?"code":"general",chatMode:selectedChatMode,freeFallback:false,outputImages:false,imageOnly:false,replyLevel:"long",allowPaid:S.allowPaid},token=>{tail+=token});
+  const payload=row._continuationPayload||(row._continuationPayload={requestId:crypto.randomUUID(),chatId,provider,model,message:"请继续原任务，从中断处直接写，不重复已完成内容。",continueFrom:row.dataset.messageId,attachments:[],mode:S.code?"code":"general",chatMode:selectedChatMode,freeFallback:false,outputImages:false,imageOnly:false,replyLevel:"long",allowPaid:S.allowPaid});
+  const result=await apiChatStream(payload,token=>{tail+=token});
   if(!row.isConnected||S.chatId!==chatId)return;
   if(result.assistantMessageId!==row.dataset.messageId)throw Error("续写消息编号不一致");
+  delete row._continuationPayload;
   status.remove();delete row.dataset.usage;
   appendMessage("assistant",result.reply,result.usedModel||result.model||null,row,Boolean(result.incomplete),result.assistantMessageId,row.dataset.saved==="1",Number(row.dataset.feedback)||0,result.usage||null,result.createdAt);
   setPortraitState(row,"finished");void fetchChats();
@@ -3652,8 +3690,8 @@ async function continueTextReply(row,original,button){
   if(row.isConnected&&S.chatId===chatId){
    let saved=null;
    try{const data=await api("/api/chats/"+chatId);saved=data.messages?.find(m=>m.id===row.dataset.messageId&&m.body!==original)}catch{}
-   if(saved){let incomplete=false;try{incomplete=!!JSON.parse(saved.usage_json||"null")?.incomplete}catch{}delete row.dataset.usage;appendMessage("assistant",saved.body,saved.model,row,incomplete,saved.id,!!saved.saved,saved.feedback,saved.usage_json,saved.created_at)}
-   else {flashError("续写未完成，原回复已保留");if(tail.trim()){const notice=node("div","message-send-pending","收到的续写未确认保存");notice.append(messageTool("copy","复制未保存内容",b=>copyMessageText(tail,b)));bubble.append(notice)}}
+   if(saved){delete row._continuationPayload;let incomplete=false;try{incomplete=!!JSON.parse(saved.usage_json||"null")?.incomplete}catch{}delete row.dataset.usage;appendMessage("assistant",saved.body,saved.model,row,incomplete,saved.id,!!saved.saved,saved.feedback,saved.usage_json,saved.created_at)}
+   else {if(e?.code==="REQUEST_RETRYABLE")delete row._continuationPayload;flashError("续写未完成，原回复已保留");if(tail.trim()){const notice=node("div","message-send-pending","收到的续写未确认保存");notice.append(messageTool("copy","复制未保存内容",b=>copyMessageText(tail,b)));bubble.append(notice)}}
   }
  }finally{S.busy=false;button.disabled=false;$("sendBtn").disabled=false}
 }
@@ -3668,12 +3706,12 @@ function resolveChatTurn({mode,provider,code,continueFrom,prompt,attachments}){
 async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,retryContext=null){
  if(S.uploading){flashError("附件正在上传，请稍候再发送");return}
  
- if(S.busy)return;
- if(!S.model&&!forceFreeOnce)return;
- if(freeModeChoosing){openModels();return}
+ if(S.busy||chatOpenLoading)return;
+ if(!S.model&&!forceFreeOnce&&!retryContext?.payload)return;
+ if(freeModeChoosing&&!retryContext?.payload){openModels();return}
  const prompt=$("prompt").value.trim();if(!prompt&&S.attachments.length===0)return;
- const submittedCode=S.code;
- const turn=voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments});
+ const submittedCode=retryContext?.payload?retryContext.payload.mode==="code":S.code;
+ const turn=retryContext?.payload?{mode:retryContext.payload.mode==="image"?"image":"text"}:voiceTurn!==null?{mode:"text"}:resolveChatTurn({mode:S.composerMode,provider:forceFreeOnce?"free":S.provider,code:submittedCode,continueFrom,prompt,attachments:S.attachments});
  const submittedMode=turn.mode;
  const requestId=retryContext?.requestId||crypto.randomUUID();
  let submittedPayload=null;
@@ -3683,12 +3721,12 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
  // Request routing is independent of the selected model preference.
  let requestProvider=retryContext?.payload?.provider||S.provider,requestModel=retryContext?.payload?.model||S.model;
  const requestChatMode=retryContext?.payload?.chatMode||(forceFreeOnce?"auto":selectedChatMode);
- if(submittedMode==="text"&&S.provider!=="free"&&!forceFreeOnce){
+ if(submittedMode==="text"&&S.provider!=="free"&&!forceFreeOnce&&!retryContext?.payload){
   if(requestChatMode==="free"&&!personalFreeChoice(S.provider,S.model))return;
   if(!S.connectionsLoaded&&!connected(S.provider)){
-   const selectedProvider=S.provider,selectedModel=S.model;
+   const selectedProvider=S.provider,selectedModel=S.model,viewEpoch=chatOpenEpoch,owner=S.user?.id;
    if(!await fetchConnections()){flashError("个人模型连接暂未同步，可重试或切换自动模式");return}
-   if(S.busy||S.provider!==selectedProvider||S.model!==selectedModel||$("prompt").value.trim()!==prompt)return;
+   if(S.busy||chatOpenLoading||viewEpoch!==chatOpenEpoch||owner!==S.user?.id||S.provider!==selectedProvider||S.model!==selectedModel||$("prompt").value.trim()!==prompt)return;
   }
   const imageOutput=S.provider==="openrouter"&&S.remoteModels.some(m=>m.id===S.model&&m.outputImages);
   const incompatible=S.provider==="groq"&&S.attachments.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")&&
@@ -3696,7 +3734,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
   if(!connected(S.provider)||(!isFreeModel(S.provider,S.model)&&!S.allowPaid)){openKeyPanel(S.provider);return}
   if(incompatible&&!imageOutput){flashError("当前个人模型不支持此附件，可选择自动模式识图");return}
  }
- if(submittedMode==="text"&&forceFreeOnce){requestProvider="free";requestModel="free:auto"}
+ if(submittedMode==="text"&&forceFreeOnce&&!retryContext?.payload){requestProvider="free";requestModel="free:auto"}
  hideWelcome();flashError("");
  const mediaOwner=S.user?.id;
  const requestChatId=retryContext&&"originalChatId" in retryContext?retryContext.originalChatId:S.chatId;
@@ -3764,7 +3802,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    }
   // A completed response never changes the user's selected model.
   if(loading.isConnected&&submittedMode==="text"&&!result.mediaMode&&!/^\[\[aigzt:video-job:/.test(result.reply||"")&&!receivedStreamingText&&!result.images?.length){setPortraitState(loading,"speaking");updateAssistantText(loadingBubble,result.reply,true)}
-  if(loading.isConnected){
+  if(loading.isConnected&&S.user?.id===mediaOwner){
    S.chatId=result.chatId;
    if(submittedMode==="text"){
     if(!result.incomplete&&(result.primarySucceeded===true||(!result.freeFallback&&result.primarySucceeded===undefined))){recordModelOutcome(requestProvider,requestProvider==="free"&&attached.some(x=>x.type?.startsWith("image/")||x.type==="application/pdf")?"free:auto":requestModel,true);unavailableChatModels.delete(chatModelKey(requestProvider,requestModel));if(S.user?.id&&["free","personal"].includes(requestChatMode))writeModelPref(chatModelStorageKey(S.user.id)+":success:"+requestChatMode,{provider:requestProvider,model:requestModel})}
@@ -3774,6 +3812,7 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    // Keep the selected preference; the actual reply model is recorded below.
    if(result.userMessageId){sentRow.dataset.messageId=result.userMessageId;appendMessageCopy(sentRow,sentBody)}
    appendMessage("assistant",result.reply,result.usedModel||result.model||null,loading,Boolean(result.incomplete),result.assistantMessageId||null,false,0,result.usage||null,result.createdAt||Date.now(),result.images||[]);
+     if(result.replayed&&!result.images?.length&&result.assistantMessageId)void restoreReplyImages(loading.querySelector(".bubble"),result.assistantMessageId);
      if(result.images?.length){void cacheReplyImages(mediaOwner,result.assistantMessageId,result.images).catch(()=>false).then(saved=>{if(!saved&&loading.isConnected&&S.user?.id===mediaOwner&&loading.dataset.messageId===result.assistantMessageId)mediaCacheWarning(loading.querySelector(".bubble"))})}
     if(submittedMode==="text")setPortraitState(loading,"finished");
   }
@@ -3809,9 +3848,9 @@ async function sendMessage(continueFrom=null,forceFreeOnce=false,voiceTurn=null,
    input.value=prompt;S.attachments=attached.slice();renderAttachments();
    settlePromptSize();void sendMessage(continueFrom,forceFreeOnce||(requestProvider==="free"&&requestModel==="free:auto"),null,{sentRow,loading,requestId:e?.code==="REQUEST_RETRYABLE"?undefined:requestId,originalChatId:requestChatId,payload:submittedPayload});
   });
-  retry.append(node("span","",automaticTurn?"继续":"重试"));
+  retry.append(node("span","",["REQUEST_PENDING","REQUEST_UNCERTAIN"].includes(e?.code)?"继续查询":automaticTurn?"继续":"重试"));
   const transient=["REQUEST_PENDING","REQUEST_RETRYABLE","UPSTREAM_NETWORK","UPSTREAM_EMPTY","UPSTREAM_ERROR","FREE_FALLBACK_FAILED","RATE_LIMIT","CAPACITY"].includes(e?.code);
-  const detail=automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):transient?"消息已保留":humanError(e);
+  const detail=e?.code==="REQUEST_UNCERTAIN"?"原请求结果未确认，请核对聊天记录":e?.code==="REQUEST_PENDING"?"原请求尚未确认，点击继续查询":automaticTurn?(nativeAnalysis||attached.length?"原图及消息已保留":"消息已保留"):transient?"消息已保留":humanError(e);
   if(isImageMessage){status.append(node("span","",detail),retry);setPortraitState(loading,"idle")}else status.append(node("span","",streamedContent.trim()?(automaticTurn?"已保留当前内容":"回复中断，已保留收到的内容"):detail),retry);
   if(submittedMode==="text"&&requestProvider!=="free"&&e?.code==="REQUEST_RETRYABLE"){
     const alternate=messageTool("layers","手动使用免费自动重试",()=>{
@@ -4365,22 +4404,24 @@ function showDrawRetry(tile,reason){
  tile.caption.textContent=String(reason||"免费来源暂未返回图片");
  if(tile.tile.querySelector(".draw-retry"))return;
  const b=node("button","outline draw-retry","重新尝试");b.type="button";
- b.addEventListener("click",()=>{if(S.drawBatch)return;void runFreeDraw()});tile.tile.append(b);
+ b.addEventListener("click",()=>{if(S.drawBatch)return;void retryDrawTile(tile)});tile.tile.append(b);
 }
 async function drawTrackJob(id,tile,batch){
- for(let tries=0;tries<150&&!batch.cancelled;tries++){
+ const deadline=Date.now()+720000;
+ for(let tries=0;tries<150&&!batch.cancelled&&Date.now()<deadline;tries++){
   let waitMs=12000;
   try{
    const r=await api("/api/image/task/"+encodeURIComponent(id),undefined,55000);
    if(batch.cancelled)return false;
    if(r.done){
-    if(r.failed){showDrawRetry(tile,r.error||"免费来源暂未返回图片");return false}
+    if(r.failed){tile.jobId=null;tile.submitPayload=null;showDrawRetry(tile,r.error||"免费来源暂未返回图片");return false}
     if(typeof r.image==="string")return await drawResult(tile,r.image);
     showDrawRetry(tile,"作图服务未返回图片");return false;
    }
    tile.caption.textContent="正在生成";
    waitMs=Math.max(1000,Math.min(14000,Number(r.waitSeconds||12)*1000));
   }catch(e){
+   if(e?.code==="IMAGE_TASK_NOT_FOUND"){tile.jobId=null;tile.submitPayload=null;showDrawRetry(tile,"原任务已不存在");return false}
    tile.caption.textContent="本次查询暂时中断";
   }
   if(!await drawSleep(waitMs,batch.controller.signal))return false;
@@ -4395,6 +4436,16 @@ function stopDrawBatch(){
  $("drawCancel").hidden=true;$("createButton").disabled=false;
  for(const el of $("drawResults").querySelectorAll(".draw-photo"))if(el.querySelector(".image-loading-card"))el.replaceChildren(node("span","draw-stopped","已停止查询"));
  $("createStatus").textContent="已停止查询；离开后无法恢复生成图片";
+}
+async function retryDrawTile(tile){
+ if(S.drawBatch||!S.user||!tile.tile.isConnected)return;
+ const batch={cancelled:false,controller:new AbortController(),startedAt:Date.now(),clockTimer:null};S.drawBatch=batch;
+ $("createButton").disabled=true;$("drawCancel").hidden=false;tile.tile.querySelector(".draw-retry")?.remove();tile.picture.replaceChildren(createImageWaitingFrame());
+ try{
+  if(!tile.jobId){const payload=tile.submitPayload||(tile.submitPayload={requestId:crypto.randomUUID(),prompt:tile.sourcePrompt,style:tile.sourceStyle,shape:tile.sourceShape});const r=await api("/api/image",payload,18000);if(typeof r.jobId!=="string")throw Error("没有返回图片任务编号");tile.jobId=r.jobId}
+  if(!batch.cancelled)await drawTrackJob(tile.jobId,tile,batch);
+ }catch(e){if(e?.code==="REQUEST_RETRYABLE")tile.submitPayload=null;if(!batch.cancelled)showDrawRetry(tile,humanError(e))}
+ finally{if(S.drawBatch===batch){S.drawBatch=null;$("createButton").disabled=false;$("drawCancel").hidden=true}}
 }
 async function runFreeDraw(){
  const prompt=$("createPrompt").value.trim();
@@ -4422,18 +4473,18 @@ async function runFreeDraw(){
  let success=0,failed=0,finished=0;
  const task=async tile=>{
   if(batch.cancelled)return;
-  tile.startedAt=Date.now();tile.sourcePrompt=prompt;tile.clock.hidden=false;tile.caption.textContent="正在提交";
+  tile.startedAt=Date.now();tile.sourcePrompt=prompt;tile.sourceStyle=style;tile.sourceShape=shape;tile.clock.hidden=false;tile.caption.textContent="正在提交";
   try{
-   const result=await api("/api/image",{prompt,style,shape,requestId:crypto.randomUUID()},25000);
+   tile.submitPayload={prompt,style,shape,requestId:crypto.randomUUID()};const result=await api("/api/image",tile.submitPayload,18000);
    if(batch.cancelled)return;
-   if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");
+   if(typeof result.jobId!=="string")throw Error("没有返回图片任务编号");tile.jobId=result.jobId;
    tile.caption.textContent="正在生成图片";
    const ok=await drawTrackJob(result.jobId,tile,batch);
    if(batch.cancelled)return;
    if(ok)success++;else failed++;
   }catch(error){
    if(batch.cancelled)return;
-   failed++;showDrawRetry(tile,humanError(error));
+   if(error?.code==="REQUEST_RETRYABLE")tile.submitPayload=null;failed++;showDrawRetry(tile,humanError(error));
   }finally{
    tile.finishedAt=Date.now();finished++;
    if(!batch.cancelled&&S.drawBatch===batch)

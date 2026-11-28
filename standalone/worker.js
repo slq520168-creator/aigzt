@@ -13,7 +13,7 @@ const ICON_MASKABLE_BASE64="iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAMAAADDpiTIAAAAM1BM
 const IMAI_ROBOT_IDLE="R0lGODlhJAAwAIIAAOTg+nXI9Y6M2kNluB4TTwACeAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQJFAAHACwAAAAAJAAwAAAI/wAPCBxIsKDBgwgTHgwQAIDChxAZCnAIsaLBAAMGULTI8UDGiR07ChggQEBIiABSAiA5cePJgg1VylT5kmBMlSVz0qx5UwABAgZ+EmCZ8mVKhkCFCmXZMiTDlAKCThwgtGVJACYtMtS40kBJjVRJEvgKIADHrVOHKl2bsexZjF/HUh068ufHlR0lfh1QwK7PpSVP6h2ZMSNdq1lP5mQY86ZLnnAxfhxZc6AAxhKTEjjAOHFHrJcxB6jLeEDDkDqhZhQtuWjIwhrrDt1KF+vLuXKHmh4Nu6bh3FaxhjXqswDnoSmpNpwLkiPOgSSx8k7O9XHCmQJzlmyovaVrhaChCracvPvjgas5H36kK1DyT9qxfbJ82JJke6iHCRQASbjpdaxDCSTTAOON5VpY3x20l3Hn/RTYeXsJpJt9CfWWHWEEEVbUUAUQqJ6HB5TFnWXRMTTeSSKOtpF2pxkl3WiJLcYYcYNBx5JEKL6YXntM7eQcVFAlBpd31im0l3YbwdidZxBpR1VzEP7l3WcyjZTYb9hZNJNq0HUYnUwVXbbbViaOx9JqpVXEWkYFnTlmmRGlGVFldB4QEAA7";
 const IMAI_ROBOT_MOTION="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";
 const IMAI_ROBOT_ATLAS="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";
-const VERSION="aigzt-cf-5.45-stability";
+const VERSION="aigzt-cf-5.46-stability-hardening";
 const FREE_MODELS=[
  {id:"free:auto",name:"免费自动",provider:"free",type:"text",free:true,isRoute:true}
 ];
@@ -1108,51 +1108,56 @@ function normalizeCatalogFavorites(kind,items){
  const out=[],seen=new Set();for(const raw of Array.isArray(items)?items:[]){const item=cleanCatalogFavorite(kind,raw);if(item&&!seen.has(item.key)){seen.add(item.key);out.push(item);if(out.length===40)break}}
  return out;
 }
+function catalogFavoriteState(raw){
+ const v=JSON.parse(raw||"[]");return Array.isArray(v)?{items:v,applied:[]}:{items:Array.isArray(v.items)?v.items:[],applied:Array.isArray(v.applied)?v.applied.filter(x=>typeof x==="string").slice(-512):[]};
+}
 async function catalogFavorites(req,env,user){
- requireUser(user);const b=await parseJSON(req,120000),kind=b.kind;
+ requireUser(user);const b=await parseJSON(req,160000),kind=b.kind;
  if(b.owner!==user.id||!["models","tools"].includes(kind))return fail("收藏参数无效",400);
- if(!Array.isArray(b.ops)||b.ops.length>80)return fail("收藏操作无效",400);
+ if(!Array.isArray(b.ops)||b.ops.length>80||b.ops.some(op=>!op||typeof op.id!=="string"||op.id.length>80||typeof op.active!=="boolean"||!cleanCatalogFavorite(kind,op.entry)))return fail("收藏操作无效",400);
  await ensureStabilitySchema(env);
  const seed=normalizeCatalogFavorites(kind,b.seed);
  for(let tries=0;tries<4;tries++){
   const old=await dbGet(env.DB,"SELECT items_json,revision FROM imai_catalog_favorites WHERE user_id=? AND kind=?",user.id,kind);
-  let items=normalizeCatalogFavorites(kind,old?JSON.parse(old.items_json):[]);
-  const original=JSON.stringify(items);
-  if(seed.length)items=normalizeCatalogFavorites(kind,[...items,...seed]);
-  for(const op of b.ops){
-   const item=cleanCatalogFavorite(kind,op?.entry);if(!item||typeof op.active!=="boolean")continue;
-   const exists=items.some(x=>x.key===item.key);
-   if(!op.active){items=items.filter(x=>x.key!==item.key);continue}
-   if(exists)continue;if(items.length<40)items.unshift(item);
-  }
-  const encoded=JSON.stringify(items);
-  if(old&&encoded===original)return response({ok:true,items,revision:old.revision});
+  const state=catalogFavoriteState(old?.items_json),already=new Set(state.applied),fresh=b.ops.filter(op=>!already.has(op.id));
+  let items=normalizeCatalogFavorites(kind,state.items);
+  const rejected=[],rejectedSeed=[];
+  // Process removals before additions, never silently discard an existing favorite.
+  for(const op of fresh)if(!op.active)items=items.filter(x=>x.key!==op.entry.key);
+  for(const item of seed){if(items.some(x=>x.key===item.key))continue;if(items.length>=40)rejectedSeed.push(item.key);else items.push(item)}
+  for(const op of fresh){if(!op.active)continue;const item=cleanCatalogFavorite(kind,op.entry);if(items.some(x=>x.key===item.key))continue;if(items.length>=40)rejected.push(op.id);else items.unshift(item)}
+  const failed=new Set(rejected),applied=[...state.applied,...fresh.filter(op=>!failed.has(op.id)).map(op=>op.id)].slice(-512);
+  const encoded=JSON.stringify({items,applied});
+  if(old&&encoded===old.items_json)return response({ok:true,items,revision:old.revision,rejected,rejectedSeed});
   const revision=(old?.revision||0)+1;
   const updated=old?await dbRun(env.DB,"UPDATE imai_catalog_favorites SET items_json=?,revision=? WHERE user_id=? AND kind=? AND revision=?",encoded,revision,user.id,kind,old.revision):await dbRun(env.DB,"INSERT INTO imai_catalog_favorites(user_id,kind,items_json,revision) VALUES(?,?,?,?) ON CONFLICT(user_id,kind) DO NOTHING",user.id,kind,encoded,revision);
-  if(updated.meta?.changes)return response({ok:true,items,revision});
+  if(updated.meta?.changes)return response({ok:true,items,revision,rejected,rejectedSeed});
  }
  return fail("收藏正在同步，请稍后重试",409);
 }
 async function reservedSubmission(req,env,user,kind,execute){
  requireUser(user);
  const b=await parseJSON(req.clone(),CHAT_REQUEST_BYTES);
- if(b.requestId==null)return execute();
+ if(b.requestId==null)return execute(()=>{});
  const id=String(b.requestId);
  if(!/^[0-9a-f-]{36}$/i.test(id))throw Object.assign(Error("请求编号无效"),{status:400});
  await ensureStabilitySchema(env);
  const fingerprint=await sha(kind+"\n"+JSON.stringify(b));
- const existing=async()=>dbGet(env.DB,"SELECT fingerprint,state,result_json FROM imai_request_receipts WHERE user_id=? AND request_id=?",user.id,id);
+ const existing=async()=>dbGet(env.DB,"SELECT fingerprint,state,result_json,created_at FROM imai_request_receipts WHERE user_id=? AND request_id=?",user.id,id);
  const replay=async row=>{
   if(!row||row.fingerprint!==fingerprint)throw Object.assign(Error("请求参数已改变，请重新发送"),{status:409,code:"REQUEST_CONFLICT"});
-  if(row.state==="complete"&&row.result_json){const receipt=JSON.parse(row.result_json);if(receipt.replyFromMessage){const saved=await dbGet(env.DB,"SELECT body FROM messages WHERE id=? AND user_id=?",receipt.assistantMessageId,user.id);if(!saved)throw Object.assign(Error("原回复已不存在"),{status:404});receipt.reply=saved.body;delete receipt.replyFromMessage}return receipt}
+  if(row.state==="complete"&&row.result_json){const receipt=JSON.parse(row.result_json);if(receipt.replyFromMessage){const saved=await dbGet(env.DB,"SELECT body FROM messages WHERE id=? AND user_id=?",receipt.assistantMessageId,user.id);if(!saved)throw Object.assign(Error("原回复已不存在"),{status:404});receipt.reply=saved.body;delete receipt.replyFromMessage}return {...receipt,replayed:true}}
   if(row.state==="retryable")throw Object.assign(Error("本次未完成，可重新发送"),{status:409,code:"REQUEST_RETRYABLE"});
+  if(Date.now()-Number(row.created_at||Date.now())>300000)throw Object.assign(Error("原请求结果未确认，请先核对聊天记录"),{status:409,code:"REQUEST_UNCERTAIN"});
   throw Object.assign(Error("原请求仍在处理或待确认，请稍后继续"),{status:409,code:"REQUEST_PENDING"});
  };
  const found=await existing();if(found)return replay(found);
  const claim=await dbRun(env.DB,"INSERT INTO imai_request_receipts(user_id,request_id,fingerprint,state,created_at) VALUES(?,?,?,'pending',?) ON CONFLICT(user_id,request_id) DO NOTHING",user.id,id,fingerprint,Date.now());
  if(!claim.meta?.changes)return replay(await existing());
+ if(id.endsWith("0"))await dbRun(env.DB,"DELETE FROM imai_request_receipts WHERE rowid IN (SELECT rowid FROM imai_request_receipts WHERE state IN ('complete','retryable') AND created_at<? LIMIT 100)",Date.now()-7*86400000).catch(()=>{});
+ let began=false;
  try{
-  const result=await execute();
+  const result=await execute(()=>{began=true});
   // Temporary image bytes remain on the originating device; never write them to the receipt.
   const receipt={...result,images:[]};
   if(kind==="chat"&&result.assistantMessageId){delete receipt.reply;receipt.replyFromMessage=true}
@@ -1160,11 +1165,11 @@ async function reservedSubmission(req,env,user,kind,execute){
   return result;
  }catch(e){
   // Only explicitly proven pre-commit failures are retryable. Unknown outcomes keep the reservation.
-  if(e?.safeRetry===true){await dbRun(env.DB,"UPDATE imai_request_receipts SET state='retryable' WHERE user_id=? AND request_id=? AND state='pending'",user.id,id);throw Object.assign(e,{code:"REQUEST_RETRYABLE"})}
+  if(!began||e?.safeRetry===true){await dbRun(env.DB,"UPDATE imai_request_receipts SET state='retryable' WHERE user_id=? AND request_id=? AND state='pending'",user.id,id);throw Object.assign(e,{code:"REQUEST_RETRYABLE"})}
   throw e;
  }
 }
-async function chat(req,env,user,onDelta=null){
+async function chat(req,env,user,onDelta=null,markMutation=()=>{}){
  requireUser(user);
  const body=await parseJSON(req,CHAT_REQUEST_BYTES),provider=body.provider==="free"?"free":String(body.provider||"free");
  const typed=typeof body.message==="string"?body.message.trim():"";
@@ -1211,7 +1216,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   const found=await dbGet(env.DB,"SELECT id FROM chats WHERE id=? AND user_id=?",chatId,user.id);
   if(!found)throw Error("找不到该聊天，或没有访问权限");
  }else{
-  chatId=crypto.randomUUID();
+  markMutation();chatId=crypto.randomUUID();
   await dbRun(env.DB,"INSERT INTO chats(id,user_id,title,provider,model,created_at,updated_at,project_id) VALUES(?,?,?,?,?,?,?,?)",chatId,user.id,message.slice(0,36),provider,model,Date.now(),Date.now(),projectId);
  }
  let continuation=null;
@@ -1221,7 +1226,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   if(!continuation||!String(continuation.body||"").trim())throw Object.assign(new Error("找不到所选回复"),{status:404});
   if(continuation.body.length>=CHAT_CONTINUATION_CHARS||/^\[\[aigzt:|^!\[|^(?:图片|视频|图生图)已生成/.test(continuation.body)||body.outputImages||body.imageOnly)throw Object.assign(Error("此回复无法继续追加，请开启新消息"),{status:400});
  }
- const messageId=continuation?null:crypto.randomUUID();
+ markMutation();const messageId=continuation?null:crypto.randomUUID();
  if(messageId)await dbRun(env.DB,"INSERT INTO messages(id,chat_id,user_id,role,body,model,created_at) VALUES(?,?,?,?,?,?,?)",messageId,chatId,user.id,"user",message,model,Date.now());
  const previous=continuation?await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? AND created_at<=? ORDER BY created_at DESC LIMIT 11").bind(chatId,user.id,continuation.created_at).all():await env.DB.prepare("SELECT role,body FROM messages WHERE chat_id=? AND user_id=? ORDER BY created_at DESC LIMIT 12").bind(chatId,user.id).all();
  const messages=(previous.results||[]).reverse();
@@ -1285,7 +1290,7 @@ const attachments=Array.isArray(body.attachments)?body.attachments:[];
   let cleaned=true;
   if(messageId)try{await dbRun(env.DB,"DELETE FROM messages WHERE id=? AND user_id=?",messageId,user.id)}catch{cleaned=false}
   if(!body.chatId)try{await dbRun(env.DB,"DELETE FROM chats WHERE id=? AND user_id=?",chatId,user.id)}catch{cleaned=false}
-  if(cleaned&&!emitted&&!continuation&&(provider==="free"||["AUTH","MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","ACCESS"].includes(e?.code)))e.safeRetry=true;
+  if(cleaned&&!emitted&&(["AUTH","MODEL_RETIRED","MODEL_UNAVAILABLE","BILLING","BILLING_LIMIT","QUOTA","RATE_LIMIT","ACCESS","CAPACITY"].includes(e?.code)||provider==="free"&&["UPSTREAM_EMPTY","FREE_FALLBACK_FAILED"].includes(e?.code)))e.safeRetry=true;
   throw e;
  }
  const actualProvider=provider==="free"?(result.source||(nativePlan||sharedModel?"openrouter":"")):provider;
@@ -1354,8 +1359,8 @@ function chatStream(req,env,user){
   async start(controller){
    const send=(event)=>{try{controller.enqueue(encoder.encode("data: "+JSON.stringify(event)+"\n\n"))}catch{}};
    try{
-    const result=await reservedSubmission(req,env,user,"chat",()=>chat(req,env,user,token=>send({type:"delta",text:token})));
-    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,freeFallback:result.freeFallback===true,primarySucceeded:result.primarySucceeded===true,primaryFailure:result.primaryFailure||null,usage:result.usage||null,incomplete:result.incomplete,mediaMode:result.mediaMode,requestId:result.requestId,pending:result.pending});
+    const result=await reservedSubmission(req,env,user,"chat",mark=>chat(req,env,user,token=>send({type:"delta",text:token}),mark));
+    send({type:"done",chatId:result.chatId,userMessageId:result.userMessageId,assistantMessageId:result.assistantMessageId,reply:result.reply,images:result.images||[],createdAt:result.createdAt,model:result.model,usedModel:result.usedModel,provider:result.provider,freeFallback:result.freeFallback===true,primarySucceeded:result.primarySucceeded===true,primaryFailure:result.primaryFailure||null,usage:result.usage||null,incomplete:result.incomplete,mediaMode:result.mediaMode,requestId:result.requestId,pending:result.pending,replayed:result.replayed===true});
    }catch(e){send({type:"error",error:e?.message||"回复未完成",code:e?.code||null,upstreamStatus:e?.upstreamStatus||null})}
    finally{controller.close()}
   }
@@ -1417,7 +1422,7 @@ async function readFile(env,user,id){
  const type=obj.httpMetadata?.contentType||"application/octet-stream";
  return new Response(obj.body,{headers:{"content-type":type,"cache-control":"private, no-store","x-content-type-options":"nosniff","content-security-policy":"default-src 'none'; sandbox","content-disposition":type.startsWith("image/")?"inline":"attachment"}});
 }
-async function mediaChat(req,env,user){
+async function mediaChat(req,env,user,markMutation=()=>{}){
  requireUser(user);
  const b=await parseJSON(req),mode=String(b.mode||""),prompt=truncate(b.prompt,1400).trim();
  if(mode!=="image"||b.format||b.imageId||b.endImageId)throw Object.assign(Error("仅支持文字生成普通图片"),{status:410});
@@ -1431,7 +1436,7 @@ async function mediaChat(req,env,user){
   // Persist only task metadata and text; generated image bytes remain session-only.
   const projectId=typeof b.projectId==="string"&&/^[0-9a-f-]{36}$/i.test(b.projectId)?b.projectId:null;
   if(!exists&&projectId&&!await dbGet(env.DB,"SELECT id FROM projects WHERE id=? AND user_id=?",projectId,user.id))throw Object.assign(new Error("项目不存在"),{status:404});
-  const result=await submitKrea(mediaReq,env,user);
+  const result=await submitKrea(mediaReq,env,user,markMutation);
   const chatId=exists?.id||crypto.randomUUID(),now=Date.now(),messageId=crypto.randomUUID(),userMessageId=crypto.randomUUID();
   const reply="[[aigzt:image-job:"+result.jobId+"]]";
   const writes=[];
@@ -1610,7 +1615,7 @@ async function submitZImageFast(env,ref){
  if(!/^[A-Za-z0-9_-]{8,128}$/.test(id))throw Object.assign(Error("快速来源未返回任务编号"),{definite:true});
  return id;
 }
-async function submitKrea(req,env,user){
+async function submitKrea(req,env,user,markMutation=()=>{}){
  requireUser(user);
  const input=await parseJSON(req),prompt=truncate(input.prompt,1200).trim();
  if(input.imageId||input.format)throw Object.assign(Error("仅支持文字生成普通图片"),{status:410});
@@ -1618,7 +1623,7 @@ async function submitKrea(req,env,user){
  const shape=Object.hasOwn(KREA_SHAPES,input.shape)?input.shape:"portrait",style=Object.hasOwn(KREA_STYLES,input.style)?input.style:"portrait-master";
  // Persist first, then schedule exactly one upstream submission on status read.
  // Existing v6 jobs and their stage positions remain compatible with deployment restarts.
- const now=Date.now(),id=crypto.randomUUID();
+ markMutation();const now=Date.now(),id=crypto.randomUUID();
  const ref={v:11,stage:0,phase:"new",id:"",taskId:"",p:prompt,s:shape,t:style,seed:Math.floor(Math.random()*2147483647),stageAt:now};
  await dbRun(env.DB,"DELETE FROM image_jobs WHERE id IN (SELECT id FROM image_jobs WHERE user_id=? AND created_at<? AND charged_day='image-unmetered' AND status='failed' AND message_id IS NULL ORDER BY created_at ASC LIMIT 24)",user.id,now-7*86400000).catch(()=>{});
  await dbRun(env.DB,"INSERT INTO image_jobs(id,user_id,external_id,status,created_at,checked_at,charged_day) VALUES(?,?,?,'pending',?,0,'image-unmetered')",id,user.id,JSON.stringify(ref),now);
@@ -1818,7 +1823,7 @@ async function imageV4Status(env,user,job,ref){
   return response({ok:true,done:true,failed:true,error:ref.v===9?"免费来源排队过久，本次已停止等待":"作图超时"});
  }
  if(job.status==="recovering"){
-  if(now-job.checked_at>50000){
+  if(now-job.checked_at>75000){
    const claimed=await dbRun(env.DB,"UPDATE image_jobs SET checked_at=? WHERE id=? AND user_id=? AND status='recovering' AND checked_at=?",now,job.id,user.id,job.checked_at);
    if(claimed.meta?.changes)return imageV4Move(env,{...job,checked_at:now},ref,ref.stage+1);
   }
@@ -1905,7 +1910,7 @@ async function imageV4Status(env,user,job,ref){
 async function imageJobStatus(env,user,id){
  requireUser(user);
  const job=await dbGet(env.DB,"SELECT id,user_id,message_id,external_id,status,created_at,checked_at,media_id,error,charged_day,(SELECT model FROM messages WHERE id=image_jobs.message_id AND user_id=image_jobs.user_id) AS message_model FROM image_jobs WHERE id=? AND user_id=?",id,user.id);
- if(!job)return fail("作图任务不存在",404);
+ if(!job)return response({ok:false,error:"作图任务不存在",code:"IMAGE_TASK_NOT_FOUND"},404);
  if(job.status==="complete")return job.media_id?response({ok:true,done:true,image:"/api/files/"+job.media_id,model:"免费作图"}):recoverDeliveredImage(env,user,job);
  if(job.charged_day==="image-edit-free"||job.charged_day==="video-free"||job.message_model==="贴纸"){
   const reason="RETIRED_TASK";
@@ -2194,7 +2199,7 @@ async function main(req,env){
 
  if(path==="/api/provider-models"&&req.method==="POST")return response(await providerModels(await parseJSON(req)));
  if(path==="/api/openrouter/exchange"&&req.method==="POST")return response(await exchangeOpenRouter(await parseJSON(req)));
- if(path==="/api/image"&&req.method==="POST")return response(await reservedSubmission(req,env,user,"image",()=>submitKrea(req,env,user)));
+ if(path==="/api/image"&&req.method==="POST")return response(await reservedSubmission(req,env,user,"image",mark=>submitKrea(req,env,user,mark)));
  if(path==="/api/image/jobs"&&req.method==="GET"){
   requireUser(user);
   return response({ok:true,jobs:[]});
@@ -2203,7 +2208,7 @@ async function main(req,env){
  if(imageJob&&req.method==="GET")return imageJobStatus(env,user,imageJob[1]);
  if(path==="/api/message/read-aloud"&&req.method==="POST")return readAloudAudio(req,env,user);
  if(path==="/api/message/translate"&&req.method==="POST")return response(await translateChatMessage(req,env,user));
- if(path==="/api/chat/media"&&req.method==="POST")return response(await reservedSubmission(req,env,user,"chat-image",()=>mediaChat(req,env,user)));
+ if(path==="/api/chat/media"&&req.method==="POST")return response(await reservedSubmission(req,env,user,"chat-image",mark=>mediaChat(req,env,user,mark)));
   if(path==="/api/avatar"&&req.method==="GET")return avatarRead(env,user);
   if(path==="/api/avatar"&&req.method==="POST")return avatarUpload(req,env,user);
  if(path==="/api/files/upload"&&req.method==="POST")return response(await uploadFile(req,env,user));
@@ -2216,7 +2221,7 @@ async function main(req,env){
  if(freeVideoFile&&req.method==="GET")return fvMedia(req,env,user,freeVideoFile[1]);
  if(path==="/api/voice/transcribe"&&req.method==="POST")return transcribeVoice(req,env,user);
  if(path==="/api/chat/stream"&&req.method==="POST")return chatStream(req,env,user);
-  if(path==="/api/chat"&&req.method==="POST")return response(await reservedSubmission(req,env,user,"chat",()=>chat(req,env,user)));
+  if(path==="/api/chat"&&req.method==="POST")return response(await reservedSubmission(req,env,user,"chat",mark=>chat(req,env,user,null,mark)));
 
 
  if(path==="/api/work"||path.startsWith("/api/work/"))return fail("工作模式已移除",410);
