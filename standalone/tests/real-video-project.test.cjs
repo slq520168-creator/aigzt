@@ -4,3 +4,5 @@ test("actual free LTX request schema, dimensions and strict video result URL",()
 test("generation stays separate from normal chat and supports real MP4 download",()=>{assert.match(h,/id="videoProjectStart"[^>]*>生成视频/);assert.match(c,/\/api\/video\/project\/create/);assert.match(c,/\/api\/video\/result\//);assert.match(w,/videoProjectVerify\(result.url\)/);assert.match(w,/USER_CANCELLED/);assert.doesNotThrow(()=>new Function(c))});
 
 test("video preview clears at account change",()=>{assert.match(c,/resetVideoProjectOwner\(uid\)/);assert.match(c,/function resetVideoProjectOwner\(owner\)[\s\S]*?clearVideoProjectOutput\(\)/)});
+
+test("film mode sends a true cinematic-shot request with null optional media",()=>{const a=f.videoProjectArgs("a train","landscape",8,"film");assert.match(a[0],/Cinematic single continuous shot/);assert.match(a[0],/a train/);assert.equal(a[2],null);assert.equal(a[3],null);assert.equal(a[7],8);assert.match(c,/mode:videoProjectMode/);assert.match(c,/videoProjectStopPending/);assert.match(w,/VIDEO_PROJECT_POLL_LEASE/);assert.match(c,/重新读取视频/)});

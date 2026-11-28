@@ -778,9 +778,14 @@ function openVideoProject(mode="video"){
   });
  }
  const film=mode==="film";
+ videoProjectMode=film?"film":"video";
+ $("videoProjectPromptLabel").textContent=film?"电影镜头描述":"视频描述";
+ $("videoProjectModeHint").textContent=film?"电影模式：生成单个电影镜头，长片请先做分镜，再逐镜头制作。":"视频模式：生成 3–8 秒短视频。";
+ $("videoProjectPrompt").placeholder=film?"人物、场景、景别、运镜、光线、动作及视觉风格…":"描述人物、动作、场景及镜头运动…";
+ $("videoProjectPlan").textContent=film?"生成剧本与分镜":"生成策划";
  $("videoProjectTitle").textContent=film?"电影模式":"视频模式";
  $("videoProjectDialog").setAttribute("aria-label",film?"电影模式":"视频模式");
- choice.value=film?"2":"0";
+ if(!videoProjectJob)choice.value=film?"2":"0";
  show("videoProjectDialog");
  void restoreVideoProject();
 }
@@ -793,9 +798,10 @@ function startVideoProjectPlan(e){
  settlePromptSize();void sendMessage(null,true,null,null,true);
 }
 let videoProjectJob=null,videoProjectEpoch=0,videoProjectFlight=false,videoProjectOwner=null,videoProjectObjectUrl=null,videoProjectTimer=null;
+let videoProjectMode="video",videoProjectSubmitting=false,videoProjectStopPending=false,videoProjectRestoreFlight=null;
 function videoProjectUI(status,busy){
  $("videoProjectStatus").textContent=status;$("videoProjectStart").disabled=busy;
- $("videoProjectStop").hidden=!busy;$("videoProjectStop").disabled=!videoProjectJob;
+ $("videoProjectStop").hidden=!busy;$("videoProjectStop").disabled=!videoProjectJob||videoProjectStopPending;
 }
 function clearVideoProjectOutput(){
  if(videoProjectObjectUrl)URL.revokeObjectURL(videoProjectObjectUrl);
@@ -816,6 +822,15 @@ async function showVideoProjectResult(owner,epoch,id){
  const link=node("a","chat-image-stop","下载 MP4");link.href=videoProjectObjectUrl;link.download="aigzt-"+id.slice(0,8)+".mp4";
  $("videoProjectResult").append(video,link);videoProjectUI("视频已生成",false);
 }
+async function deliverVideoProject(owner,epoch,id){
+ if(!videoProjectCurrent(owner,epoch))return;
+ videoProjectJob=null;videoProjectUI("视频已生成，正在读取文件…",false);
+ try{await showVideoProjectResult(owner,epoch,id)}
+ catch(e){if(videoProjectCurrent(owner,epoch)){
+  videoProjectUI("视频已生成，文件暂不可读取",false);
+  const retry=node("button","chat-image-stop","重新读取视频");retry.type="button";retry.addEventListener("click",()=>{retry.remove();void deliverVideoProject(owner,epoch,id)},{once:true});$("videoProjectResult").append(retry);
+ }}
+}
 function scheduleVideoProject(owner,epoch,id,delay=1500){
  clearTimeout(videoProjectTimer);
  videoProjectTimer=setTimeout(()=>void runVideoProject(owner,epoch,id),delay);
@@ -826,7 +841,7 @@ async function runVideoProject(owner,epoch,id){
  try{
   const result=await api("/api/video/project/"+id+"/advance",{},200000);
   if(!videoProjectCurrent(owner,epoch))return;
-  if(result.status==="complete"){await showVideoProjectResult(owner,epoch,id);videoProjectJob=null}
+  if(result.status==="complete"){await deliverVideoProject(owner,epoch,id)}
   else if(result.status==="failed"){videoProjectUI(result.cancelled?"已停止生成":result.error||"免费视频服务暂不可用",false);videoProjectJob=null}
   else{videoProjectUI(result.phase==="new"?"等待提交免费模型…":result.phase==="submitting"?"正在连接免费模型…":"生成中 · 共享 GPU 排队",true);again=true;delay=Math.max(1500,Math.min(15000,(result.waitSeconds||3)*1000))}
  }catch(e){
@@ -837,48 +852,57 @@ async function runVideoProject(owner,epoch,id){
 }
 function resetVideoProjectOwner(owner){
  if(videoProjectOwner===owner)return;
- clearTimeout(videoProjectTimer);++videoProjectEpoch;videoProjectJob=null;videoProjectFlight=false;clearVideoProjectOutput();videoProjectOwner=owner;
+ clearTimeout(videoProjectTimer);++videoProjectEpoch;videoProjectJob=null;videoProjectFlight=false;videoProjectSubmitting=false;videoProjectStopPending=false;videoProjectRestoreFlight=null;clearVideoProjectOutput();videoProjectOwner=owner;
  $("videoProjectPrompt").value="";videoProjectUI(owner?"":"登录后使用免费视频生成",false);
 }
 async function restoreVideoProject(){
  const owner=S.user?.id||null;resetVideoProjectOwner(owner);
  if(!owner){videoProjectUI("登录后使用免费视频生成",false);return}
- if(videoProjectJob)return;
- const epoch=videoProjectEpoch;
+ if(videoProjectJob||videoProjectRestoreFlight)return;
+ const epoch=videoProjectEpoch,token={owner,epoch};videoProjectRestoreFlight=token;
  try{
   const r=await api("/api/video/project/latest",undefined,10000);
   if(!videoProjectCurrent(owner,epoch)||videoProjectJob||!r.job)return;
-  if(r.job.status==="complete"){await showVideoProjectResult(owner,epoch,r.job.id);return}
+  if(r.job.status==="complete"){await deliverVideoProject(owner,epoch,r.job.id);return}
   if(r.job.status==="pending"||r.job.status==="recovering"){videoProjectJob=r.job.id;videoProjectUI("恢复视频任务…",true);void runVideoProject(owner,epoch,r.job.id)}
   else videoProjectUI(r.job.cancelled?"已停止生成":r.job.error||"",false);
- }catch(e){if(videoProjectCurrent(owner,epoch))videoProjectUI(humanError(e),false)}
+ }catch(e){if(videoProjectCurrent(owner,epoch))videoProjectUI(humanError(e),false)}finally{if(videoProjectRestoreFlight===token)videoProjectRestoreFlight=null}
 }
 async function startVideoProject(e){
  e.preventDefault();if(!S.user){hide("videoProjectDialog");show("authDialog");return}
  if(videoProjectJob||$("videoProjectStart").disabled)return;
  const prompt=$("videoProjectPrompt").value.trim();if(!prompt)return;
  const owner=S.user.id,epoch=++videoProjectEpoch,id=crypto.randomUUID();
- videoProjectOwner=owner;videoProjectJob=id;videoProjectFlight=false;clearTimeout(videoProjectTimer);clearVideoProjectOutput();videoProjectUI("正在创建视频任务…",true);
- $("videoProjectStop").disabled=true;
+ videoProjectOwner=owner;videoProjectJob=id;videoProjectFlight=false;videoProjectSubmitting=true;videoProjectStopPending=false;clearTimeout(videoProjectTimer);clearVideoProjectOutput();videoProjectUI("正在创建视频任务…",true);
+ const payload={requestId:id,prompt,ratio:$("videoProjectRatio").value,duration:Number($("videoProjectDuration").value),mode:videoProjectMode};
+ let job=null;
  try{
-  const r=await api("/api/video/project/create",{requestId:id,prompt,ratio:$("videoProjectRatio").value,duration:Number($("videoProjectDuration").value)},15000);
-  if(!videoProjectCurrent(owner,epoch))return;
-  videoProjectJob=r.job.id;videoProjectUI("正在连接 LTX 免费模型…",true);void runVideoProject(owner,epoch,r.job.id);
+  const r=await api("/api/video/project/create",payload,15000);job=r.job;
  }catch(e){
   if(!videoProjectCurrent(owner,epoch))return;
-  videoProjectJob=null;videoProjectUI(humanError(e)+"；可重新打开视频模式核对原任务",false);
+  // Reconcile uncertain creation without allocating a second request id.
+  try{const latest=await api("/api/video/project/latest",undefined,8000);if(latest.job?.id===id)job=latest.job}catch{}
+  if(!videoProjectCurrent(owner,epoch))return;
+  if(!job){videoProjectSubmitting=false;videoProjectJob=null;videoProjectStopPending=false;videoProjectUI("原任务未确认，请重新打开页面核对后再生成",false);return}
  }
+ if(!videoProjectCurrent(owner,epoch))return;
+ videoProjectSubmitting=false;videoProjectJob=job.id;
+ if(videoProjectStopPending){videoProjectStopPending=false;void stopVideoProject();return}
+ if(job.status==="complete"){await deliverVideoProject(owner,epoch,job.id);return}
+ if(job.status==="failed"){videoProjectJob=null;videoProjectUI(job.cancelled?"已停止生成":job.error||"视频任务未完成",false);return}
+ videoProjectUI("正在连接 LTX 免费模型…",true);void runVideoProject(owner,epoch,job.id);
 }
 async function stopVideoProject(){
- const id=videoProjectJob,owner=S.user?.id;if(!id||!owner)return;
- const epoch=++videoProjectEpoch;clearTimeout(videoProjectTimer);videoProjectFlight=false;$("videoProjectStop").disabled=true;
+ const id=videoProjectJob,owner=S.user?.id;if(!id||!owner||videoProjectStopPending)return;
+ if(videoProjectSubmitting){videoProjectStopPending=true;videoProjectUI("正在停止生成…",true);return}
+ const epoch=++videoProjectEpoch;clearTimeout(videoProjectTimer);videoProjectFlight=false;videoProjectStopPending=true;videoProjectUI("正在停止生成…",true);
  try{
   const r=await api("/api/video/project/"+id+"/cancel",{},12000);
   if(!videoProjectCurrent(owner,epoch))return;
-  videoProjectJob=null;
-  if(r.status==="complete")await showVideoProjectResult(owner,epoch,id);
+  videoProjectJob=null;videoProjectStopPending=false;
+  if(r.status==="complete")await deliverVideoProject(owner,epoch,id);
   else videoProjectUI("已停止生成；已发送的上游计算可能仍在运行",false);
- }catch(e){if(videoProjectCurrent(owner,epoch)){videoProjectUI("停止尚未确认，可重试停止",true)}}
+ }catch(e){if(videoProjectCurrent(owner,epoch)){videoProjectStopPending=false;videoProjectUI("停止尚未确认，可重试停止",true)}}
 }
 let projectFetchSerial=0;
 async function fetchProjects(){
